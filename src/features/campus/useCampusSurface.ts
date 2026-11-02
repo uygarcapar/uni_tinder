@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { File } from "expo-file-system";
 import { useTranslation } from "react-i18next";
@@ -27,6 +28,7 @@ import { campusCodeOf, campusMessageOf } from "./campusService";
 import {
   removeMomentFromCaches,
   useCampusMe,
+  dedupeMomentsByUser,
   mergeKeptMoments,
   useCampusBoundary,
   useCampusMoments,
@@ -39,6 +41,7 @@ import {
   resolveCampusPresence,
   resolveCampusPresenceHint,
 } from "./campusPresence";
+import { onCampusPresenceDirty } from "./campusPresenceBus";
 import { syncCampusGeofence } from "./campusGeofence";
 import type { CampusMomentDto } from "./campusTypes";
 
@@ -192,23 +195,67 @@ export function useCampusSurface({
    * butonu çizerdi. İpucu yalnız bandın küçük kartını açıyor.
    */
   const [insideHint, setInsideHint] = useState(false);
+  /**
+   * Gövde effect'ten callback'e ÇIKARILDI: mount dışında iki canlı tetikleyici
+   * daha var (bus dirty + app foreground dönüşü, aşağıda) ve üçü aynı ucuz
+   * hesabı koşuyor. `alive` bayrağının yerini mountedRef aldı — callback'in
+   * kendi closure'ı birden çok çağrıda paylaşılıyor.
+   */
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const refreshHint = useCallback(() => {
     if (!available) {
       setInsideHint(false);
       return;
     }
-    let alive = true;
     resolveCampusPresenceHint({ domain, boundary })
       .then((hint) => {
-        if (alive) setInsideHint(hint);
+        if (mountedRef.current) setInsideHint(hint);
       })
       .catch(() => {
         /* no-op — ipucu yoksa kart da yok. */
       });
-    return () => {
-      alive = false;
-    };
   }, [available, boundary, domain]);
+  useEffect(() => {
+    refreshHint();
+  }, [refreshHint]);
+
+  /**
+   * ── CANLI PRESENCE: kampüse giriş SAYFA YENİLEMEDEN yüzeye yansısın ───────
+   *
+   * Yayıncılar: DEV simülasyonu aç/kapat ve geofence task'ının önplanda
+   * yakaladığı Enter/Exit (bkz. campusPresenceBus). İpucu HER ZAMAN tazeleniyor
+   * (ucuz, son bilinen konum); `inside` YALNIZ harita açıkken ve `force` ile —
+   * `resolveCampusPresence` yüksek doğruluklu 12sn'lik bir GPS okuması ve onu
+   * kapalı yüzey için koşmak pil kuralını bozar (dosya başındaki uyarı).
+   * Harita kapalıyken kapı zaten açılışta okunuyor (üstteki `enabled` effect'i).
+   */
+  useEffect(
+    () =>
+      onCampusPresenceDirty(() => {
+        refreshHint();
+        if (enabled) void refreshPresence(true);
+      }),
+    [enabled, refreshHint, refreshPresence],
+  );
+
+  /**
+   * App öne dönünce yalnız UCUZ ipucu: kullanıcı kampüse app arka plandayken
+   * girmiş olabilir ve geofence izni yoksa başka sinyal yok. Yüksek doğruluklu
+   * okuma BİLEREK yok — foreground dönüşü sık, GPS'i her seferinde uyandırmak
+   * pili yakar; gerçek kapı harita açılışında/paylaşım anında zaten taze.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshHint();
+    });
+    return () => sub.remove();
+  }, [refreshHint]);
 
   /** Sınır indiğinde/değiştiğinde geofence'i senkronla (izin varsa). */
   useEffect(() => {
@@ -602,11 +649,20 @@ export function useCampusSurface({
    * var), başka modda beğenilmiş bir an bu listeye girmemeli — kullanıcı
    * Dating'de beğendiği birini Friends şeridinde görürdü.
    */
+  /**
+   * ⚠️ KİŞİ SÜZGECİ MERGE'DEN SONRA DA KOŞUYOR: liste `select` içinde zaten
+   * kişi başına tekilleştirildi (`dedupeMomentsByUser`), ama geri karıştırma
+   * sunucunun DÜŞÜRDÜĞÜ bir anı ekliyor — aynı kişinin başka bir anı listede
+   * duruyorsa o kişi ikinci kez girerdi. Süzgeç idempotent, yani normal yolda
+   * (merge no-op) aynı diziyi geri veriyor.
+   */
   const moments = useMemo(
     () =>
-      mergeKeptMoments(
-        momentsQuery.data?.items ?? [],
-        likedMoments.filter((m) => (m.mode ?? mode) === mode),
+      dedupeMomentsByUser(
+        mergeKeptMoments(
+          momentsQuery.data?.items ?? [],
+          likedMoments.filter((m) => (m.mode ?? mode) === mode),
+        ),
       ),
     [likedMoments, mode, momentsQuery.data?.items],
   );
@@ -621,6 +677,23 @@ export function useCampusSurface({
    */
   const decidedMomentIds = useMemo(
     () => new Set(likedMoments.map((m) => m.id)),
+    [likedMoments],
+  );
+
+  /**
+   * KARAR VERİLEN KİŞİLER — tik kapısının ÜÇÜNCÜ kaynağı ve kota koruması.
+   *
+   * ⚠️🔴 AYRI KÜME ŞART, `decidedMomentIds` YETMİYOR: aynı kişinin iki canlı
+   * anı olabiliyor (gerekçe `dedupeMomentsByUser`da) ve sunucunun `canLike`ı
+   * AN başına geliyor — ikinci an `true` ile dönüyor. Kimlik kümesi o anı
+   * tanımıyor, kişi kümesi tanıyor.
+   *
+   * ⚠️ `dedupeMomentsByUser` BU KAPIYI KURMUYOR: o yalnız listede GÖRÜNEN
+   * kartı tekilleştiriyor; tazeleme sırası değişip kazanan kart öbürü olursa
+   * (ya da geri karıştırma devreye girerse) karar butonu yine çizilirdi.
+   */
+  const decidedUserIds = useMemo(
+    () => new Set(likedMoments.map((m) => m.userId).filter(Boolean)),
     [likedMoments],
   );
 
@@ -644,6 +717,11 @@ export function useCampusSurface({
     moments,
     /** Beğenilmiş an kimlikleri — kararı tekrar sormayan yüzeyler için. */
     decidedMomentIds,
+    /**
+     * Karar verilen KİŞİLER — `decidedMomentIds` ile BİRLİKTE okunuyor
+     * (`isMomentDecided`ın üçüncü parametresi); gerekçe orada.
+     */
+    decidedUserIds,
     loading: momentsQuery.isLoading,
     decisionsRemaining,
     /**
