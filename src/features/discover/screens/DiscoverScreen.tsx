@@ -2890,8 +2890,8 @@ export default function DiscoverScreen() {
   });
 
   // ReportModal bir bottom sheet; kart expanded'ken üstüne açılıyor. Şikayet
-  // sonucu "blocked" gelirse kartı da düşürüyoruz (ReportModal'ın engelle
-  // switch'i işaretlenmişse).
+  // başarıyla kaydedilince kart desteden düşüyor — engelleme switch'inden
+  // bağımsız: şikayet eden kullanıcı o profille işini bitirmiştir.
   const [reportTarget, setReportTarget] = useState<string | null>(null);
   /**
    * Üç noktaya basılan profil — seçenekler sheet'inin hedefi.
@@ -3508,9 +3508,10 @@ export default function DiscoverScreen() {
         visible={!!reportTarget}
         onClose={() => setReportTarget(null)}
         reportedUserId={reportTarget}
-        onSuccess={(result: any) => {
-          // Şikayetle birlikte engellediyse kart destede kalmasın.
-          if (result?.blocked && reportTarget) dropProfileFromDeck(reportTarget);
+        onSuccess={() => {
+          // Şikayet edilen kart destede kalmasın — engelleme işaretli olsun olmasın.
+          // Sunucu tarafı eleme talebi: backend_discover_report_exclusion_2026-11-02.md
+          if (reportTarget) dropProfileFromDeck(reportTarget);
         }}
       />
     </GestureHandlerRootView>
