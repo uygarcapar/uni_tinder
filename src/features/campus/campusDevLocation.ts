@@ -7,6 +7,7 @@ import {
 } from "./campusBoundary";
 import type { CampusBoundaryDto, GeoRing } from "./campusTypes";
 import type { CampusFix } from "./campusPresence";
+import { emitCampusPresenceDirty } from "./campusPresenceBus";
 
 /**
  * KAMPÜSTE OLMA SİMÜLASYONU — yalnız DEV.
@@ -301,6 +302,9 @@ export function simulateCampusLocation(
   };
   appPrefs.set(KEY, JSON.stringify(fix));
   devLog("[campus][dev] konum simülasyonu AÇIK:", fix);
+  // Yüzey ("+"/ipucu) canlı dinliyor — sinyal yoksa akış yenilenene kadar
+  // eski karar görünür kalırdı (bkz. campusPresenceBus).
+  emitCampusPresenceDirty();
   return { point: fix, failure: null };
 }
 
@@ -308,6 +312,7 @@ export function simulateCampusLocation(
 export function clearSimulatedCampusLocation(): void {
   appPrefs.remove(KEY);
   devLog("[campus][dev] konum simülasyonu kapalı");
+  emitCampusPresenceDirty();
 }
 
 /**

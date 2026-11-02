@@ -6,6 +6,9 @@ import { CAMPUS_GEOFENCE_TASK } from "./campusGeofence";
 import { getTaskManager } from "./campusTaskManager";
 import { isInsideCampus, readCachedBoundary } from "./campusBoundary";
 import { readCampusFix } from "./campusPresence";
+// ⚠️ Bu import ÇIPLAK kurala uyuyor: campusPresenceBus SIFIR import taşıyor
+// (kaynak kuralı olarak testte çivili) — headless context'e hiçbir şey taşımaz.
+import { emitCampusPresenceDirty } from "./campusPresenceBus";
 
 /**
  * KAMPÜS GEOFENCE GÖREVİ — uygulama KAPALIYKEN de çalışan kod.
@@ -123,6 +126,9 @@ function defineCampusGeofenceTask(): void {
     if (eventType === LocationGeofencingEventType.Exit) {
       const exitFix = await readCampusFix({ force: true });
       if (exitFix) await reportPresence("Exit", exitFix);
+      // Önplanda task ANA JS context'te koşuyor → mount'lu yüzey ("+"/ipucu)
+      // bunu duyup anında tazeleniyor. Headless'ta dinleyici yok, no-op.
+      emitCampusPresenceDirty();
       return;
     }
 
@@ -145,6 +151,8 @@ function defineCampusGeofenceTask(): void {
     if (!isInsideCampus(fix.latitude, fix.longitude, boundary)) return;
 
     await reportPresence("Enter", fix);
+    // Gerekçe Exit dalındakiyle aynı: önplandaki yüzey girişi anında görsün.
+    emitCampusPresenceDirty();
   });
 }
 

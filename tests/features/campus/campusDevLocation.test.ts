@@ -26,6 +26,7 @@ import type {
   GeoPolygon,
   GeoRing,
 } from '@/features/campus/campusTypes';
+import { onCampusPresenceDirty } from '@/features/campus/campusPresenceBus';
 
 /**
  * KAMPÜSTE OLMA SİMÜLASYONU (DEV aracı).
@@ -255,6 +256,37 @@ describe('kampüs konum simülasyonu', () => {
       expect(isCampusLocationSimulated()).toBe(false);
     } finally {
       appPrefs.remove(OTHER_KEY);
+    }
+  });
+
+  it('simülasyon AÇILINCA ve KAPANINCA bus dirty yayıyor', () => {
+    // Yüzey ("+"/ipucu) bu sinyale abone — sinyal yoksa kullanıcı akışı
+    // yenilemek zorunda kalıyor (yaşanan şikayet buydu).
+    writeCachedBoundary(TR_DOMAIN, boundary());
+    let hits = 0;
+    const off = onCampusPresenceDirty(() => {
+      hits += 1;
+    });
+    try {
+      simulateCampusLocation(TR_DOMAIN);
+      expect(hits).toBe(1);
+      clearSimulatedCampusLocation();
+      expect(hits).toBe(2);
+    } finally {
+      off();
+    }
+  });
+
+  it('BAŞARISIZ simülasyon denemesi dirty yaymıyor', () => {
+    let hits = 0;
+    const off = onCampusPresenceDirty(() => {
+      hits += 1;
+    });
+    try {
+      expect(simulateCampusLocation(TR_DOMAIN).failure).toBe('noBoundary');
+      expect(hits).toBe(0);
+    } finally {
+      off();
     }
   });
 
