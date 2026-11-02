@@ -313,6 +313,33 @@ export function isConfidentlyInsideCampus(
   return edge >= accuracyMeters;
 }
 
+/**
+ * İPUCU KURALI — "büyük ihtimalle kampüste mi".
+ *
+ * Son bilinen konum (Wi-Fi/hücre) neredeyse hiç `isConfidentlyInsideCampus`ten
+ * geçecek kadar keskin değil: sınıra 25 m mesafedeki gerçek kampüs kullanıcısı
+ * 40 m'lik bir okumayla sıkı kuralda düşüyor ve ipucu kartını hiç göremiyordu.
+ * Burada göreli kural (sınıra uzaklık >= accuracy) YOK; yalnız ham poligon
+ * cevabı + "okuma çöp mü" tavanı var. Tavanın işi Tam Konum kapalıyken gelen
+ * ~2 km'lik okumayla bütün semte kart çizmemek.
+ *
+ * ⚠️ PAYLAŞIM KAPISI DEĞİL. "+" ve gövde kurulumu `isConfidentlyInsideCampus`
+ * ile taze GPS'te kalıyor; bu yalnız bandın küçük kartını açıyor ve yanlış
+ * tarafa hata yapacaksa GÖSTERME yönünde yapıyor.
+ */
+const HINT_MAX_ACCURACY_M = 250;
+
+export function isLikelyInsideCampus(
+  latitude: number,
+  longitude: number,
+  accuracyMeters: number | null | undefined,
+  boundary: CampusBoundaryDto | null | undefined,
+): boolean {
+  if (!isInsideCampus(latitude, longitude, boundary)) return false;
+  if (!isFiniteNumber(accuracyMeters) || accuracyMeters <= 0) return true;
+  return accuracyMeters <= HINT_MAX_ACCURACY_M;
+}
+
 // ── Geofence bölgesi ───────────────────────────────────────────────────────
 
 /**
@@ -364,36 +391,14 @@ export function readCachedBoundary(
 }
 
 /**
- * DİSKTEKİ HERHANGİ BİR SINIR — domain bilinmeden.
- *
- * ⚠️ ÜRÜN YOLLARINDA KULLANILMAZ ve kullanılmamalı: kullanıcının birden fazla
- * kampüsün sınırını görmüş olması mümkün (akışta başka üniversiteyi seçmek) ve
- * o durumda "herhangi biri" yanlış kampüs demek. Tek tüketicisi DEV konum
- * simülasyonu (bkz. campusDevLocation): orada Ayarlar ekranının elinde
- * kullanıcının domain'i yok ve onu oraya taşımak yalnız bu araç için üç
- * katmanlık prop/sorgu eklemek olurdu.
- *
- * Birden fazla kayıt varsa ilki dönüyor — hangisi olduğu `domain` alanından
- * görülüyor ve araç onu kullanıcıya gösteriyor.
+ * 🔴 `readAnyCachedBoundary` ("diskteki herhangi bir sınır") SİLİNDİ
+ * (2026-11-03): tek tüketicisi DEV konum simülasyonuydu ve "herhangi biri"
+ * yanlış kampüs demekti — akışta başka üniversitenin haritasına bakan
+ * kullanıcı O kampüse sabitlendi (Bilgi'li kullanıcı Acıbadem'de
+ * "kampüsteyim"). Sınır okuma artık HER ZAMAN domain ile (üstteki fonksiyon);
+ * domain bilinmiyorsa simülasyon açılmıyor (bkz. campusDevLocation
+ * "noDomain"). Geri getirilecekse bu tarihçe okunmalı.
  */
-export function readAnyCachedBoundary(): CampusBoundaryDto | null {
-  try {
-    const keys = appPrefs
-      .getAllKeys()
-      .filter((k: string) => k.startsWith(KEY_PREFIX));
-    for (const key of keys) {
-      const raw = appPrefs.getString(key);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as StoredBoundary;
-      if (parsed?.v !== SCHEMA_VERSION) continue;
-      const dto = normalizeCampusBoundary(parsed.dto);
-      if (dto) return dto;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 /** `requestedDomain` = isteği atarken kullandığın domain (bkz. okuma uyarısı). */
 export function writeCachedBoundary(

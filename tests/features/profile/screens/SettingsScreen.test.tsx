@@ -130,13 +130,18 @@ import { Alert, Linking, Switch } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SettingsScreen from '@/features/profile/screens/SettingsScreen';
+import { feedKeys } from '@/features/feed/feedKeys';
+import { writeCachedBoundary } from '@/features/campus/campusBoundary';
+import { isCampusLocationSimulated } from '@/features/campus/campusDevLocation';
+import { appPrefs } from '@/shared/utils/appPrefs';
 
 // Ayarlar dil değişiminde desteyi invalidate ediyor (useQueryClient) —
 // provider olmadan hook fırlatıyor ve suite'in tamamı render'da düşüyordu.
-const setup = () => {
+const setup = (seedClient?: (client: QueryClient) => void) => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  seedClient?.(client);
   return render(
     <QueryClientProvider client={client}>
       <SettingsScreen />
@@ -736,5 +741,170 @@ describe('SettingsScreen — hesabı sil', () => {
         (c) => c[0] === 'Hata' && c[1] === 'Yapamazsın'
       )
     ).toBe(true);
+  });
+});
+
+describe('SettingsScreen — kampüs simülasyonu (DEV)', () => {
+  // Yaşanan bug: kullanıcı akışta BAŞKA üniversiteyi seçip haritasını açınca
+  // sınır o kampüs için cache'leniyor; menü domain'siz çağırınca araç
+  // "diskteki herhangi bir sınır"a düşüp kullanıcıyı YANLIŞ kampüsün içine
+  // sabitliyordu (Bilgi'li kullanıcı Acıbadem'de "kampüsteyim" oldu). Menü
+  // artık kullanıcının KENDİ domain'ini (feed/me query cache'i) geçmek
+  // zorunda — kendi sınırı diskte yoksa cevap "kurulamadı", başka kampüs değil.
+  const OTHER_DOMAIN = 'acibadem.edu.tr';
+  const OTHER_KEY = `campusBoundary:${OTHER_DOMAIN}`;
+  const FIX_KEY = 'campus.devFix';
+
+  afterEach(() => {
+    appPrefs.remove(OTHER_KEY);
+    appPrefs.remove(FIX_KEY);
+  });
+
+  /** Uzun basış → teşhis menüsü → "Kampüs simülasyonu" → "Kampüste say". */
+  const pressTurnOn = async (tree: any) => {
+    await act(async () => {});
+    fireEvent(tree.getByTestId('settings-env-row'), 'longPress');
+    const diag = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Teşhis raporu',
+    );
+    diag[2].find((b: any) => b.text === 'Kampüs simülasyonu').onPress();
+    const menu = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Kampüs simülasyonu',
+    );
+    menu[2].find((b: any) => b.text === 'Kampüste say').onPress();
+  };
+
+  it('diskte yalnız BAŞKA kampüsün sınırı varken oraya sabitlemiyor', async () => {
+    // Diskte yalnız Acıbadem'in sınırı var…
+    writeCachedBoundary(OTHER_DOMAIN, {
+      domain: OTHER_DOMAIN,
+      isApproximate: false,
+      circle: { lat: 41.08448, lon: 29.05359, radiusMeters: 600 },
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [29.045, 41.08],
+            [29.062, 41.08],
+            [29.062, 41.089],
+            [29.045, 41.089],
+            [29.045, 41.08],
+          ],
+        ],
+      },
+      version: 'v1',
+      enabled: true,
+    });
+
+    // …ama kullanıcı Bilgi'li (feed/me cache'i öyle diyor).
+    const tree = setup((client) => {
+      client.setQueryData(feedKeys.me, { universityDomain: 'bilgiedu.net' });
+    });
+    await pressTurnOn(tree);
+
+    // Acıbadem'e sabitlenmek YOK: simülasyon kapalı kaldı ve araç sebebini
+    // söyledi (kendi sınırın diskte yok → haritanı aç).
+    expect(isCampusLocationSimulated()).toBe(false);
+    const result = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Simülasyon kurulamadı',
+    );
+    expect(result).toBeTruthy();
+    expect(result[1]).toContain('KENDİ kampüsün');
+  });
+
+  it('feed/me cache boşsa AÇILMIYOR — başka kampüse düşmek yerine sebep söyleniyor', async () => {
+    // Eski "son çare" (diskteki herhangi bir sınır) Acıbadem bug'ının ikinci
+    // yoluydu: akış hiç yüklenmemişken bile yanlış kampüse sabitliyordu.
+    writeCachedBoundary(OTHER_DOMAIN, {
+      domain: OTHER_DOMAIN,
+      isApproximate: false,
+      circle: { lat: 41.08448, lon: 29.05359, radiusMeters: 600 },
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [29.045, 41.08],
+            [29.062, 41.08],
+            [29.062, 41.089],
+            [29.045, 41.089],
+            [29.045, 41.08],
+          ],
+        ],
+      },
+      version: 'v1',
+      enabled: true,
+    });
+
+    const tree = setup();
+    await pressTurnOn(tree);
+
+    expect(isCampusLocationSimulated()).toBe(false);
+    const result = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Simülasyon kurulamadı',
+    );
+    expect(result).toBeTruthy();
+  });
+
+  it('AÇIK ama YANLIŞ kampüsteyse menü "kendi kampüsüne taşı" sunuyor', async () => {
+    // Yaşanan durumun ikinci yarısı: eski bug'dan kalma Acıbadem kaydı diskte
+    // duruyor ve menü onu gösterip duruyor. Kullanıcıdan kapat/aç ritüeli
+    // beklemek yerine menü bozukluğu kendisi görüp tek dokunuşla onarmalı.
+    const rect = {
+      isApproximate: false,
+      circle: { lat: 41.08448, lon: 29.05359, radiusMeters: 600 },
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [29.045, 41.08],
+            [29.062, 41.08],
+            [29.062, 41.089],
+            [29.045, 41.089],
+            [29.045, 41.08],
+          ] as [number, number][],
+        ],
+      },
+      version: 'v1',
+      enabled: true,
+    };
+    const MY_DOMAIN = 'bilgiedu.net';
+    const MY_KEY = `campusBoundary:${MY_DOMAIN}`;
+    writeCachedBoundary(OTHER_DOMAIN, { domain: OTHER_DOMAIN, ...rect });
+    writeCachedBoundary(MY_DOMAIN, { domain: MY_DOMAIN, ...rect });
+    // Eski bug'ın bıraktığı kayıt: Acıbadem'e sabitlenmiş simülasyon.
+    appPrefs.set(
+      FIX_KEY,
+      JSON.stringify({
+        latitude: 41.08448,
+        longitude: 29.05359,
+        domain: OTHER_DOMAIN,
+      }),
+    );
+
+    try {
+      const tree = setup((client) => {
+        client.setQueryData(feedKeys.me, { universityDomain: MY_DOMAIN });
+      });
+      await act(async () => {});
+      fireEvent(tree.getByTestId('settings-env-row'), 'longPress');
+      const diag = (Alert.alert as jest.Mock).mock.calls.find(
+        (c) => c[0] === 'Teşhis raporu',
+      );
+      diag[2].find((b: any) => b.text === 'Kampüs simülasyonu').onPress();
+      const menu = (Alert.alert as jest.Mock).mock.calls.find(
+        (c) => c[0] === 'Kampüs simülasyonu',
+      );
+      // Durum satırı yanlışlığı söylüyor…
+      expect(menu[1]).toContain(OTHER_DOMAIN);
+      expect(menu[1].toLowerCase()).toContain('senin kampüsün değil');
+      // …ve onarım düğmesi tek dokunuşla kendi kampüsüne taşıyor.
+      menu[2]
+        .find((b: any) => b.text === 'Kendi kampüsüne taşı')
+        .onPress();
+      const moved = JSON.parse(appPrefs.getString(FIX_KEY)!);
+      expect(moved.domain).toBe(MY_DOMAIN);
+    } finally {
+      appPrefs.remove(MY_KEY);
+    }
   });
 });

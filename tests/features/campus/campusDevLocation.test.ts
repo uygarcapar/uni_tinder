@@ -229,10 +229,33 @@ describe('kampüs konum simülasyonu', () => {
     expect(fix.isMocked).toBe(false);
   });
 
-  it('domain verilmezse diskteki sınır bulunuyor', () => {
-    // Ayarlar ekranının elinde kullanıcının domain'i yok.
+  it('domain bilinmiyorsa AÇILMIYOR — "herhangi bir sınır" yolu YOK', () => {
+    // Eski "son çare" (diskteki herhangi bir sınır) KALDIRILDI: feed/me cache'i
+    // boşken bile yanlış kampüse sabitleyebiliyordu (Acıbadem bug'ının ikinci
+    // yolu). Domain bilinmiyorsa cevap "noDomain" — çaresi akışı bir kez açmak.
     writeCachedBoundary(TR_DOMAIN, boundary());
-    expect(simulateCampusLocation().point?.domain).toBe(TR_DOMAIN);
+    const res = simulateCampusLocation();
+    expect(res.point).toBeNull();
+    expect(res.failure).toBe('noDomain');
+    expect(isCampusLocationSimulated()).toBe(false);
+  });
+
+  it('🔴 domain verilmişken BAŞKA kampüsün sınırına DÜŞMÜYOR', () => {
+    // Yaşanan bug: kullanıcı akışta başka üniversiteyi seçip haritasını açmış
+    // (sınır o kampüs için cache'leniyor), kendi kampüsünün sınırı diskte yok.
+    // Eski davranış "herhangi bir sınır"a düşüp kullanıcıyı YANLIŞ kampüsün
+    // içine sabitliyordu — Bilgi'li kullanıcı Acıbadem'de "kampüsteyim" oldu.
+    const OTHER_DOMAIN = 'acibadem.edu.tr';
+    const OTHER_KEY = `campusBoundary:${OTHER_DOMAIN}`;
+    writeCachedBoundary(OTHER_DOMAIN, boundary({ domain: OTHER_DOMAIN }));
+    try {
+      const res = simulateCampusLocation(TR_DOMAIN);
+      expect(res.point).toBeNull();
+      expect(res.failure).toBe('noBoundary');
+      expect(isCampusLocationSimulated()).toBe(false);
+    } finally {
+      appPrefs.remove(OTHER_KEY);
+    }
   });
 
   it('kapatınca gerçek GPS\'e dönüyor', () => {
@@ -253,10 +276,12 @@ describe('kampüs konum simülasyonu', () => {
   });
 
   it('her başarısızlık sebebi KENDİ mesajını veriyor', () => {
-    const messages = (['noBoundary', 'approximate', 'noInsidePoint'] as const).map(
+    const messages = (
+      ['noBoundary', 'approximate', 'noInsidePoint', 'noDomain'] as const
+    ).map(
       (failure) => describeSimulateResult({ point: null, failure }).message,
     );
-    expect(new Set(messages).size).toBe(3);
+    expect(new Set(messages).size).toBe(4);
     // "noBoundary"in çaresi haritayı bir kez açmak — araç bunu söylemek
     // zorunda, yoksa kullanıcı anahtarın bozuk olduğunu sanıyor.
     expect(messages[0]).toContain('harita');

@@ -3,7 +3,6 @@ import { devLog } from "@/shared/utils/devLog";
 import {
   distanceToCampusEdgeMeters,
   isInsideCampus,
-  readAnyCachedBoundary,
   readCachedBoundary,
 } from "./campusBoundary";
 import type { CampusBoundaryDto, GeoRing } from "./campusTypes";
@@ -222,6 +221,11 @@ function insidePoint(
 }
 
 export type SimulateFailure =
+  /**
+   * Kullanıcının domain'i bilinmiyor (feed/me hiç yüklenmemiş). Eski "diskteki
+   * herhangi bir sınır" son çaresi KALDIRILDI: yanlış kampüse sabitliyordu.
+   */
+  | "noDomain"
   /** Sınır diskte yok — harita bir kez açılmalı (sınır orada çekiliyor). */
   | "noBoundary"
   /** Koordinat il merkezi → yüzey o kampüste kapalı, simüle etmek anlamsız. */
@@ -261,9 +265,15 @@ export interface SimulateResult {
  * harita açıldığında oluyor — "noBoundary" cevabının anlamı bu, ve araç
  * kullanıcıya bunu söylüyor.
  *
- * `domain` verilmezse diskteki herhangi bir sınır kullanılıyor: aracı çağıran
- * Ayarlar ekranının elinde kullanıcının domain'i yok (gerekçe
- * `readAnyCachedBoundary`).
+ * ── 🔴 BAŞKA KAMPÜSE DÜŞMEK YOK — iki yolu da kapatıldı ───────────────────
+ * Eski davranış "o domain'in sınırı yoksa (ya da domain bilinmiyorsa)
+ * diskteki herhangi biri" idi ve yaşandı: kullanıcı akışta başka üniversiteyi
+ * seçip haritasını açınca sınır O kampüs için cache'leniyor, anahtar da
+ * kullanıcıyı YANLIŞ kampüsün içine sabitliyordu (Bilgi'li kullanıcı
+ * Acıbadem'de "kampüsteyim" oldu). Artık:
+ *   • domain bilinmiyorsa → "noDomain" (çaresi akışı bir kez açmak),
+ *   • domain'in kendi sınırı diskte yoksa → "noBoundary".
+ * `readAnyCachedBoundary` tamamen söküldü — tek tüketicisi burasıydı.
  */
 export function simulateCampusLocation(
   domain?: string | null,
@@ -273,9 +283,9 @@ export function simulateCampusLocation(
     failure,
   });
   if (!__DEV__) return fail("noBoundary");
+  if (!domain) return fail("noDomain");
 
-  const boundary =
-    (domain ? readCachedBoundary(domain) : null) ?? readAnyCachedBoundary();
+  const boundary = readCachedBoundary(domain);
   if (!boundary) return fail("noBoundary");
   // Yüzeyin ANA KAPISI: il merkezi koordinatında sınır kontrolü hiç yapılmıyor.
   if (boundary.isApproximate) return fail("approximate");
@@ -352,8 +362,10 @@ export function describeSimulateResult(res: SimulateResult): {
     };
   }
   const message =
-    res.failure === "noBoundary"
-      ? "Kampüs sınırı diskte yok. Önce akışta haritaya bir kez bas (sınır orada çekiliyor), sonra tekrar dene."
+    res.failure === "noDomain"
+      ? "Kendi kampüsünün hangisi olduğu bilinmiyor (akış hiç yüklenmemiş). Akış sekmesini bir kez aç, sonra tekrar dene."
+      : res.failure === "noBoundary"
+      ? "Kampüsünün sınırı diskte yok. Akışta KENDİ kampüsün seçiliyken haritaya bir kez bas (sınır orada çekiliyor), sonra tekrar dene."
       : res.failure === "approximate"
         ? "Bu kampüsün koordinatı il merkezi (isApproximate) — yüzey o kampüste KAPALI, simüle etmenin etkisi olmaz."
         : "Bu kampüsün poligonu yok (ya da bozuk) — yüzey orada kapalı, içeride olduğu doğrulanmış bir nokta üretilemiyor.";

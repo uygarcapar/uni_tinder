@@ -34,6 +34,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { useSelector } from "react-redux";
 import { useAppDispatch } from "@/shared/hooks/redux";
@@ -84,6 +85,12 @@ import {
 import DeleteAccountModal from "@/features/profile/components/DeleteAccountModal";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
 import { feedEnabledForSession } from '@/features/feed/feedFlag';
+// Yalnız kampüs simülasyonu için: kullanıcının KENDİ domain'i feed/me'de
+// duruyor ve bu ekranda başka hiçbir kaynaktan bilinmiyor (authUser'da ad var,
+// domain yok). feedKeys saf bir anahtar modülü — feedQueries'in hook/mutation
+// ağacını buraya taşımıyor.
+import { feedKeys } from "@/features/feed/feedKeys";
+import type { FeedMeDto } from "@/features/feed/feedTypes";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import api from "@/shared/services/api";
@@ -261,6 +268,9 @@ export default function SettingsScreen() {
       s.settings?.languagePreference ?? s.settings?.language ?? 'tr',
   );
   const authUser = useSelector((s: RootState) => s.auth?.user);
+  // Kampüs simülasyonu kullanıcının KENDİ domain'ini geçmek zorunda (bkz.
+  // handleCampusSimMenu) — cache'ten basılma anında okunuyor, fetch yok.
+  const queryClient = useQueryClient();
   // Yalnız oturum teşhis raporu için — rapor "redux ne diyor" ile "diskte ne
   // var"ı yan yana koyduğunda degrade açılışı gerçek bir iptalden ayırıyor.
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated);
@@ -733,8 +743,20 @@ export default function SettingsScreen() {
    */
   const handleCampusSimMenu = () => {
     const active = campusSimulatedPoint();
+    // 🔴 Kullanıcının KENDİ domain'i — feed/me query cache'inden, basılma
+    // anında. Domain'siz simülasyon artık AÇILAMIYOR ("noDomain"): eski
+    // "diskteki herhangi bir sınır" yolu, akışta başka üniversitenin
+    // haritasına bakılmışsa kullanıcıyı YANLIŞ kampüse sabitliyordu (Bilgi'li
+    // kullanıcı Acıbadem'de "kampüsteyim" oldu).
+    const myDomain =
+      queryClient.getQueryData<FeedMeDto>(feedKeys.me)?.universityDomain ??
+      null;
+    // Eski bug'dan kalma kayıt diskte duruyor olabilir: açık ama BAŞKA kampüs.
+    // Menü bunu kendisi görüp tek dokunuşla onarım sunuyor (aşağıdaki buton).
+    const wrongCampus = !!active && !!myDomain && active.domain !== myDomain;
     const status = active
-      ? `AÇIK · ${active.domain}\n${active.latitude.toFixed(5)}, ${active.longitude.toFixed(5)}`
+      ? `AÇIK · ${active.domain}\n${active.latitude.toFixed(5)}, ${active.longitude.toFixed(5)}` +
+        (wrongCampus ? `\n\n⚠️ senin kampüsün değil (${myDomain})` : "")
       : "KAPALI — gerçek GPS kullanılıyor";
 
     const enter = async () => {
@@ -744,7 +766,11 @@ export default function SettingsScreen() {
 
     const turnOn = () => {
       // Metin ve sebep çözümü araç modülünde (gerekçe describeSimulateResult).
-      const { title, message } = describeSimulateResult(simulateCampusLocation());
+      // Yanlış-kampüs onarımı da buradan geçiyor: simulateCampusLocation
+      // kaydın üstüne yazıyor, ayrıca "kapat" gerekmiyor.
+      const { title, message } = describeSimulateResult(
+        simulateCampusLocation(myDomain),
+      );
       Alert.alert(title, message);
     };
 
@@ -756,6 +782,9 @@ export default function SettingsScreen() {
             onPress: () => clearSimulatedCampusLocation(),
           }
         : { text: "Kampüste say", onPress: turnOn },
+      ...(wrongCampus
+        ? [{ text: "Kendi kampüsüne taşı", onPress: turnOn }]
+        : []),
       { text: "Kampüse girdim (presence)", onPress: () => { void enter(); } },
       { text: "Kapat", style: "cancel" },
     ]);
