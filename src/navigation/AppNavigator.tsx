@@ -13,6 +13,7 @@ import {
   setActiveConversationGetter,
   subscribeTokenRefresh,
   subscribeForegroundMessages,
+  subscribeCampusEntryToast,
   subscribeBackgroundOpen,
   clearDeliveredNotifications,
 } from '@/features/notifications/pushService';
@@ -1582,6 +1583,9 @@ export default function AppNavigator() {
       subscribeTokenRefresh(),
       // Foreground FCM push — expo-notifications'a devret ki tray + badge güncellensin
       subscribeForegroundMessages(),
+      // Önplanda kampüs push'u in-app toast olur (OS banner'ı bilerek kapalı;
+      // bu abonelik olmadan kullanıcı önplanda push'u HİÇ görmüyordu).
+      subscribeCampusEntryToast(),
       // Background'dan foreground'a tap
       subscribeBackgroundOpen(routeIfMounted),
     ];

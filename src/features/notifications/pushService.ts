@@ -191,6 +191,122 @@ export function subscribeForegroundMessages(): () => void {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ÖNPLAN KAMPÜS PUSH'U → IN-APP TOAST
+//
+// Önplanda OS banner'ı BİLEREK kapalı (setNotificationHandler →
+// `shouldShowBanner:false`; yerini in-app toaster alıyor) ama
+// `CampusMomentsNearby` için toast'ı gösteren kimse YOKTU — kullanıcı
+// önplandayken "kampüse girdin, moment at" push'unu hiç görmüyordu
+// (tepsiye sessizce düşüyordu). Bu üç parça o deliği kapatıyor; filtre,
+// dedupe ve dokunuş hedefi saf fonksiyon ki testte çalıştırılabilsinler.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Önplan toast'ına dönüşecek push mu — ve neyle.
+ *
+ * Metin SUNUCUNUN (yukarıdaki subscribeForegroundMessages sözleşmesi):
+ * istemci metin ÜRETMEZ, boş metinli push gösterilmez. Gövde yoksa başlık
+ * mesaj olur (InfoToast `message` zorunlu, `title` değil).
+ */
+export function campusEntryToastPayload(content: {
+  title?: string | null;
+  body?: string | null;
+  data?: Record<string, any>;
+}): { title?: string; message: string } | null {
+  if (content.data?.type !== 'CampusMomentsNearby') return null;
+  const title = content.title?.trim() ?? '';
+  const body = content.body?.trim() ?? '';
+  if (!title && !body) return null;
+  if (!body) return { message: title };
+  return title ? { title, message: body } : { message: body };
+}
+
+/**
+ * Android'de aynı push İKİ yoldan düşebiliyor: FCM `onMessage` bildirimi
+ * expo-notifications'a devrediyor (tray + badge) ve received listener hem
+ * orijinali hem devredileni görebiliyor. Pencere o yüzden var; anahtar
+ * routeFromNotification'ın dedupe anahtarıyla aynı mantık (kampüs push'u
+ * relatedEntityId taşımıyor, domain + timestamp ayırt ediyor).
+ */
+const CAMPUS_TOAST_DEDUPE_MS = 5_000;
+let lastCampusToastKey: string | null = null;
+let lastCampusToastAt = 0;
+
+export function campusToastDedupeKey(data: Record<string, any>): string {
+  return `${data?.type ?? ''}:${data?.campusDomain ?? ''}:${data?.timestamp ?? ''}`;
+}
+
+export function shouldShowCampusToast(key: string, now: number): boolean {
+  if (
+    key === lastCampusToastKey &&
+    now - lastCampusToastAt < CAMPUS_TOAST_DEDUPE_MS
+  ) {
+    return false;
+  }
+  lastCampusToastKey = key;
+  lastCampusToastAt = now;
+  return true;
+}
+
+/**
+ * Toast dokunuşunun hedefi — push tap'inin gittiği yerin aynısı
+ * (AppNavigator > routeFromNotification > CampusMomentsNearby): akışın
+ * üstündeki TAM EKRAN HARİTA. Akış bayrağı kapalıysa `openFeed` false döner
+ * ve Bildirimler'e düşülür — olmayan ekrana kapı açılmaz, dokunuş ölmez.
+ */
+export function openCampusMomentsSurface(): void {
+  // 🔴 TEMBEL require, statik import DEĞİL: bu modül `authSlice`in grafiğinde
+  // (authSlice logout'ta push token'ı söküyor) ve oradan NEREDEYSE HER ekrana
+  // taşınıyor. toaster → react-native-notifier → gesture-handler/reanimated,
+  // navigationRef → createNavigationContainerRef: ikisi de statik gelince
+  // SettingsScreen ve RegisterProgressBar test süitleri AÇILAMADI bile.
+  // feedEntry de aynı sebepten tembel (uiBus → reanimated).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { openFeed } = require('@/features/feed/feedEntry') as {
+    openFeed: (page: 'feed' | 'mine', opts?: { expandMap?: boolean }) => boolean;
+  };
+  if (!openFeed('feed', { expandMap: true })) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { navigationRef } = require('@/shared/services/navigationRef') as {
+      navigationRef: { navigate: (route: never) => void };
+    };
+    navigationRef.navigate('Notifications' as never);
+  }
+}
+
+/**
+ * Önplanda gelen kampüs push'unu in-app toast olarak göster.
+ * AppNavigator'ın push lifecycle effect'i abone ediyor (unsubs dizisi).
+ */
+export function subscribeCampusEntryToast(): () => void {
+  const sub = Notifications.addNotificationReceivedListener((notification) => {
+    const content = notification?.request?.content;
+    if (!content) return;
+    const payload = campusEntryToastPayload({
+      title: content.title,
+      body: content.body,
+      data: (content.data ?? {}) as Record<string, any>,
+    });
+    if (!payload) return;
+    const key = campusToastDedupeKey(
+      (content.data ?? {}) as Record<string, any>,
+    );
+    if (!shouldShowCampusToast(key, Date.now())) return;
+    // Tembel require — gerekçe openCampusMomentsSurface'ta.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { showInfoToast } = require('@/shared/services/toaster') as {
+      showInfoToast: (p: {
+        title?: string;
+        message: string;
+        onPress?: () => void;
+      }) => void;
+    };
+    showInfoToast({ ...payload, onPress: openCampusMomentsSurface });
+  });
+  return () => sub.remove();
+}
+
 // Background'da (app arka planda ama process alive) push'a tap → app foreground'a gelir.
 // FCM tap handler — expo-notifications ayrıca kendi tap event'ini de emit eder ama
 // bu doğrudan FCM data payload'ını verir.
