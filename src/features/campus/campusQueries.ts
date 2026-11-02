@@ -167,8 +167,34 @@ export function filterLiveMoments(
 export function isMomentDecided(
   moment: CampusMomentDto | null | undefined,
   sessionDecidedIds?: ReadonlySet<string>,
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * KARAR KİŞİ ÖLÇEĞİNDE — aynı kişinin İKİNCİ anı da kapalı.
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⚠️🔴 SUNUCU BUNU ŞU AN VERMİYOR: `canLike` AN başına geliyor, yani aynı
+   * kişinin ikinci canlı anı `true` ile dönüyor (iki canlı anın nasıl
+   * oluştuğu `dedupeMomentsByUser`da; talep
+   * `backend_campus_moment_one_per_user_2026-10-31.md` §2.4). Kapı kurulmazsa
+   * free kullanıcı günün TEK beğenisini aynı kişiye ikinci kez gönderip
+   * yakabiliyor — gönderilen istek sunucuda geçerli, yani geri alınamaz.
+   *
+   * ⚠️ OTURUM ÖMÜRLÜ ve yalnız BU CİHAZIN kararını biliyor: önceki oturumda
+   * ya da Keşif'ten verilmiş karar burada görünmüyor. O dalın tek kaynağı
+   * `canLike` ve kişi ölçeğine çıkması sunucunun işi — bu yüzden §2.4 geldiği
+   * gün bu parametre silinebilir.
+   */
+  sessionDecidedUserIds?: ReadonlySet<string>,
 ): boolean {
   if (!moment) return false;
+  /**
+   * ⚠️ KİŞİ KAPISI `canLike`TAN ÖNCE: sunucu bu an için "beğenebilirsin"
+   * diyor (ve doğru söylüyor — o AN için karar verilmedi), ama kişi için
+   * verildi. Sıra ters olsaydı dal hiç çalışmazdı.
+   *
+   * ⚠️ BOŞ `userId` OKUNMUYOR: alanı taşımayan bir kayıtta `""` anahtarı
+   * kümeye düşerse aynı eksikliği taşıyan HER kart kilitlenirdi.
+   */
+  if (moment.userId && sessionDecidedUserIds?.has(moment.userId)) return true;
   /**
    * SUNUCU KONUŞTUYSA SON SÖZ ONUN — iki kaynağın sırası bu.
    *
@@ -235,6 +261,64 @@ export function dedupeMoments(items: CampusMomentDto[]): CampusMomentDto[] {
 }
 
 /**
+ * ══════════════════════════════════════════════════════════════════════════
+ * KİŞİ BAŞINA TEK CANLI AN — 24 SAATLİK ÖMÜR İLE GÜNLÜK KOTANIN ÇAKIŞMASI.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Cihazda görüldü (2026-10-31): aynı kullanıcı Dating'de 6 saat arayla İKİ an
+ * paylaşabildi ve ikisi de canlı. Kaçak değil, iki pencerenin aynı
+ * olmamasının sonucu: an 24 SAAT yaşıyor ama kota GÜNLÜK sıfırlanıyor
+ * (sözleşme §0). Sıfırlama iki paylaşımın arasına düştüğü anda ilki hâlâ
+ * canlı, ikincisi de hakkın içinde.
+ *
+ * ⚠️🔴 BU BİR YAMA, KAPI DEĞİL — asıl çözüm sunucuda (talep
+ * `backend_campus_moment_one_per_user_2026-10-31.md`). Burada yalnız GÖRÜNEN
+ * kart tekilleşiyor:
+ *   • SAYFALAMAYI DÜZELTMİYOR: eleme sayfa indikten sonra, yani 20'lik bir
+ *     sayfa ekranda 19 karta düşebiliyor (`hasMore` sunucunun bildiği sayıda).
+ *   • KOTAYI KORUMUYOR: sunucu hâlâ kişi başına İKİ karar kabul ediyor —
+ *     süzme `canLike`ı AN başına okuyor, kişi başına değil. Free kullanıcının
+ *     günlük tek beğenisini aynı kişiye harcamasını kapatan şey talebin §2.4'ü.
+ *
+ * ── Kazanan EN YENİ, ama ESKİNİN SIRASINDA ────────────────────────────────
+ * Yerinde değiştiriliyor (`out[at] = item`), sona eklenmiyor: kendi anım
+ * listenin başına SABİTLENİYOR (sözleşme §3) ve kazananı kuyruğa taşımak o
+ * sabitlemeyi bozardı. Sıra zaten `createdAt` DESC, yani normal yolda ilk
+ * görülen hep yenisi — bu dal sabitlenmiş satır ile cursor penceresinin
+ * ayrıştığı hâl için duruyor.
+ *
+ * ⚠️ `userId` YOKSA ELEME YOK: alanı taşımayan bir kayıt (eski yanıt, bozuk
+ * satır) hepsi "aynı kişi" sayılıp tek karta inerdi. Eksik alan kartı yok
+ * etmemeli — kimlikle eleyen `dedupeMoments` zaten ayrı bir süzgeç.
+ *
+ * ⚠️ TARİHLER ISO+Z olduğu için DİZE KARŞILAŞTIRMASI doğru sıralıyor (wire
+ * kuralı: `project_api_wire_format`). Bozuk/eksik tarih `""`e düşüyor, yani
+ * kazanamıyor — ilk görülen kalıyor.
+ */
+export function dedupeMomentsByUser(
+  items: CampusMomentDto[],
+): CampusMomentDto[] {
+  const indexByUser = new Map<string, number>();
+  const out: CampusMomentDto[] = [];
+  for (const item of items) {
+    const userId = item?.userId;
+    if (!userId) {
+      out.push(item);
+      continue;
+    }
+    const at = indexByUser.get(userId);
+    if (at === undefined) {
+      indexByUser.set(userId, out.length);
+      out.push(item);
+      continue;
+    }
+    const incoming = String(item?.createdAt ?? "");
+    const current = String(out[at]?.createdAt ?? "");
+    if (incoming > current) out[at] = item;
+  }
+  return out;
+}
+
+/**
  * An listesi — cursor sayfalama.
  *
  * ⚠️ MOD ANAHTARIN İÇİNDE: mod değişimi yepyeni bir sorgu doğuruyor, elle
@@ -271,7 +355,16 @@ export function useCampusMoments(
     select: (data) => ({
       pages: data.pages,
       pageParams: data.pageParams,
-      items: dedupeMoments(data.pages.flatMap((p) => p.items ?? [])),
+      /**
+       * ⚠️ İKİ SÜZGEÇ AYRI İŞ YAPIYOR, SIRA ÖNEMLİ: önce AYNI AN iki sayfada
+       * gelmişse (kendi anım + cursor yarışı) kimlikten eleniyor, sonra AYNI
+       * KİŞİNİN iki ayrı anından en yenisi seçiliyor. Ters sırada, sabitlenmiş
+       * satırın kopyası "ikinci bir an" gibi okunup tarih karşılaştırmasına
+       * girerdi.
+       */
+      items: dedupeMomentsByUser(
+        dedupeMoments(data.pages.flatMap((p) => p.items ?? [])),
+      ),
     }),
     enabled: options?.enabled !== false,
     staleTime: CAMPUS_STALE_MS,
