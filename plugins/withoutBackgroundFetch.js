@@ -3,10 +3,13 @@
 // NEDEN: `expo-task-manager`ın kendi config plugin'i onu KOŞULSUZ ekliyor
 // (node_modules/expo-task-manager/plugin/build/withTaskManager.js — dizide
 // yoksa push ediyor, hangi görev tipini kullandığımıza bakmıyor). Biz
-// TaskManager'ı YALNIZ geofencing için kullanıyoruz ve iOS'ta region
-// monitoring hiçbir arka plan modu İSTEMİYOR: bölge olayında işletim sistemi
-// uygulamayı konum çatısı üzerinden kendisi uyandırıyor. Background Fetch
+// TaskManager'ı YALNIZ geofencing için kullanıyoruz; Background Fetch
 // görevimiz yok, `expo-background-fetch` kurulu da değil.
+//
+// ⚠️ "location" modu bu plugin'in KONUSU DEĞİL ve artık BİLEREK AÇIK
+// (expo-location bayrağıyla geliyor): iOS'un kendisi region monitoring için
+// istemese de expo-location'ın `startGeofencingAsync`i o mod olmadan
+// fırlatıyor — gerekçe tests/shared/nativeConfig.test.ts başında.
 //
 // !!! BU YÜZDEN ÖNEMLİ: App Store yönergesi 2.5.4 — kullanılmayan bir arka
 // plan modu beyan etmek. Bu projede 1.0(36) tam bu maddeden reddedildi
