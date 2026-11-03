@@ -415,7 +415,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     if (pickingRef.current) return;
     pickingRef.current = true;
     try {
-      const taken = await captureAndCropPhoto();
+      // ÖN KAMERAYLA AÇILIYOR: kayıtta eklenen kare neredeyse daima kişinin
+      // kendi fotoğrafı. Kullanıcı yine çevirebiliyor; bu yalnız açılış
+      // kamerası (bkz. cameraBridge > `facing`). Varsayılan hâlâ arka —
+      // profil düzenlemede kıyafet/ortam karesi de giriyor, o yüzden kapı
+      // çağıranda, kamerada değil.
+      const taken = await captureAndCropPhoto({ facing: "front" });
       if (taken) appendPhotos([taken.uri]);
     } catch (error: any) {
       if (error?.code === "E_NO_CAMERA_PERMISSION") {

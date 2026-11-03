@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
+  type LayoutChangeEvent,
   Platform,
   StyleSheet,
   Text,
@@ -33,6 +33,7 @@ import { Crop, RotateCcw, X } from "@/shared/icons";
 
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import MediaChromeIconButton from "@/shared/components/MediaChromeIconButton";
+import SkeletonBox from "@/shared/components/SkeletonBox";
 import { colors, isLight, onMediaAt, scrimAt } from "@/shared/theme/colors";
 import { glassFallback, HAS_LIQUID_GLASS } from "@/shared/theme/glass";
 import { showInfoToast } from "@/shared/services/toaster";
@@ -932,24 +933,94 @@ function ChromeConfirmButton({
   onPress: () => void;
   busy: boolean;
 }) {
-  // Kırpma sürerken Host, aynı ölçüdeki düz bir pill + spinner ile DEĞİŞTİRİLİR:
-  // native SwiftUI butonunun üstüne RN spinner bindirmek katman sırasına bağlı
-  // kalırdı, ölçü aynı olduğu için alt bar zıplamıyor.
-  if (busy) {
-    return (
-      <View
-        style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.accentOrange, opacity: 0.7 }}
-      >
-        <ActivityIndicator size="small" color={colors.onMedia} />
-      </View>
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * BEKLEME GÖSTERGESİ = ETİKETİN ÜSTÜNDE İSKELET — SPINNER DEĞİL, BUTON DA
+   * DEĞİŞMİYOR.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Eski hâlde buton, aynı ölçüdeki DÜZ bir pill + `ActivityIndicator` ile
+   * komple DEĞİŞTİRİLİYORDU: cam kapsül bir kare için kayboluyor, yerine mat
+   * turuncu bir kutu geliyordu — "Kaydet"e basmanın bedeli butonun kendisinin
+   * bozulmasıydı. Artık buton olduğu gibi duruyor; yalnız ETİKET boşalıyor ve
+   * yerinde tam onun boyunda bir shimmer pill dönüyor.
+   *
+   * Kalıp Plus sayfasındaki `SelectedBadge` ile birebir aynı (PurchaseSections)
+   * ve aynı iki kuralı taşıyor:
+   *   • İskelet etiketin YERİNİ ALMIYOR, ÜSTÜNE biniyor (absolute) — metni
+   *     düzenden düşürmek iOS'ta kapsülün içeriğini kaydırırdı.
+   *   • Mürekkep `onMedia` ailesi: buton turuncu/cam bir MEDYA yüzeyi ve
+   *     `SkeletonBox`un varsayılan `surface`/`shimmer`ı modla döner — açık
+   *     modda turuncunun üstünde koyu bir kutuya dönerdi.
+   *
+   * ÖLÇÜ GİZLİ BİR `Text`TEN: iOS'ta etiket SwiftUI'ın içinde, `onLayout`u yok.
+   * Aynı tipografiyle (16/600) görünmez bir RN `Text` ölçülüyor; SwiftUI'ın
+   * metriğinden birkaç puan sapabilir ama bu bir iskelet — boyu önemli,
+   * pikseli değil. Ölçüm gelmeden iskelet çizilmiyor (ilk karede boy yok).
+   *
+   * ⚠️ BUTON `busy` sırasında CANLI kalıyor (SwiftUI tarafında `disabled` yok,
+   * eskiden Host komple sökülerek basılamaz hâle geliyordu). Mükerrer basışı
+   * `handleConfirm`/`handleApplyCrop`in ilk satırındaki `busy` kapısı yutuyor.
+   */
+  const [textBox, setTextBox] = useState<{ width: number; height: number } | null>(null);
+
+  // Aynı sayı tekrar gelirse state'e YAZMIYORUZ: her layout turu alt barı
+  // yeniden çizerdi (SelectedBadge'deki ölçüm kuralının aynısı).
+  const measureLabel = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setTextBox((prev) =>
+      prev && Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5
+        ? prev
+        : { width, height },
     );
-  }
+  }, []);
+
+  const showSkeleton = busy && textBox !== null;
+
+  // Ölçüm kaynağı — HER ZAMAN ağaçta ve görünmez. Yalnız `busy` iken ölçseydi
+  // iskelet ilk karede çizilemezdi.
+  // Tek satır: kap CTA_W kadar dar, sarılan uzun bir çeviri iki satırlık bir
+  // yükseklik ölçtürür ve iskelet etiketin iki katı boyunda çıkardı.
+  const ruler = (
+    <Text
+      onLayout={measureLabel}
+      pointerEvents="none"
+      numberOfLines={1}
+      style={{ position: "absolute", opacity: 0, fontSize: 16, fontWeight: "600" }}
+    >
+      {label}
+    </Text>
+  );
+
+  // Etiketin iskeleti — butonun tam ortasında, dokunuşa kapalı.
+  // ⚠️ `zIndex`: SwiftUI Host'un ÜSTÜNDE kalmak zorunda; altında kalırsa opak
+  // kapsülün arkasında görünmez olur ve bekleme hiç okunmaz.
+  const skeleton = showSkeleton ? (
+    <View
+      pointerEvents="none"
+      style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", zIndex: 1 }}
+    >
+      <SkeletonBox
+        width={Math.max(24, textBox!.width)}
+        height={Math.max(10, textBox!.height - 4)}
+        borderRadius={999}
+        color={onMediaAt(0.3)}
+        shimmerColor={onMediaAt(0.6)}
+      />
+    </View>
+  ) : null;
 
   if (Platform.OS === "ios") {
     return (
-      <Host style={{ width: CTA_W, height: CTA_H }}>
+      // ⚠️ `collapsable={false}`: yalnız düzen taşıyan bir kap native ağaçta
+      // doğmuyor ve iskeletin Host'un üstünde kalması bu kabın varlığına bağlı.
+      <View collapsable={false} style={{ width: CTA_W, height: CTA_H }}>
+        {ruler}
+        <Host style={{ width: CTA_W, height: CTA_H }}>
         <SwiftUIButton
-          label={label}
+          // ⚠️ BOŞ ETİKET: kapsül, cam ve ölçü `frame` ile sabit olduğu için
+          // buton olduğu gibi duruyor; değişen tek şey yazının yerini iskeletin
+          // alması.
+          label={showSkeleton ? "" : label}
           onPress={onPress}
           modifiers={[
             // glassProminent = dolgulu (tint'li) cam. iOS 26 altında sessizce
@@ -967,7 +1038,9 @@ function ChromeConfirmButton({
             }),
           ]}
         />
-      </Host>
+        </Host>
+        {skeleton}
+      </View>
     );
   }
 
@@ -977,9 +1050,13 @@ function ChromeConfirmButton({
       accessibilityRole="button"
       style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.accentOrange }}
     >
-      <Text style={{ color: colors.onMedia, fontSize: 16, fontWeight: "700" }}>
+      {ruler}
+      {/* Gizleme OPAKLIKLA — iOS'taki boş etiketin karşılığı: metni düzenden
+          düşürmek butonun içeriğini kaydırırdı. */}
+      <Text style={{ color: colors.onMedia, fontSize: 16, fontWeight: "700", opacity: showSkeleton ? 0 : 1 }}>
         {label}
       </Text>
+      {skeleton}
     </AnimatedPressable>
   );
 }
