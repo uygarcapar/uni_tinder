@@ -17,7 +17,7 @@ import {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
-import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
+import { FLAME_SWEEP_PATH } from "@/shared/components/icons/FlameGlyph";
 import {
   DEFAULT_APP_MODE,
   modeFireGradient,
@@ -141,7 +141,9 @@ export default function FireBurnCanvas({
    * kalıyor: ikon kaybolur ama kart çökmez.
    */
   const base = useMemo(
-    () => Skia.Path.MakeFromSVGString(FLAME_PATH) ?? Skia.Path.Make(),
+    // SWEEP: burn, sweep'le aynı eski silüeti deforme ediyor — FLAME_GLYPH
+    // metrikleri de o path'i tarif ediyor, ikon path'iyle karıştırma.
+    () => Skia.Path.MakeFromSVGString(FLAME_SWEEP_PATH) ?? Skia.Path.Make(),
     [],
   );
 

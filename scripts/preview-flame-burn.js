@@ -38,7 +38,9 @@ const BURN_SRC = path.join(
 );
 
 const glyphSrc = fs.readFileSync(GLYPH_SRC, "utf8");
-const FLAME_PATH = glyphSrc.match(/FLAME_PATH\s*=\s*\n?\s*"([^"]+)"/)[1];
+// Burn, cihazda FLAME_SWEEP_PATH'i deforme ediyor — ikon path'i (FLAME_PATH,
+// FA) DEĞİL. Önizleme aynı silüeti okumalı.
+const FLAME_PATH = glyphSrc.match(/FLAME_SWEEP_PATH\s*=\s*\n?\s*"([^"]+)"/)[1];
 // Metrikler de glyph dosyasından okunuyor (elle yazılsa bayatlardı).
 const FLAME_GLYPH = Object.fromEntries(
   [...glyphSrc.matchAll(/^\s{2}(\w+):\s*([\d.]+),/gm)].map(([, k, v]) => [

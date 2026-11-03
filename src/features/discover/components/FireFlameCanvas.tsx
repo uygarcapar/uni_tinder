@@ -17,7 +17,7 @@ import {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
+import { FLAME_SWEEP_PATH } from "@/shared/components/icons/FlameGlyph";
 import { gradients } from "@/shared/theme/colors";
 import {
   DEFAULT_APP_MODE,
@@ -118,7 +118,9 @@ function frameAt(wave: Wave, index: number, width: number): SkPath | null {
   // düşürürdü. Kutlamanın atlanması kabul — Fire akışı buna bağlı değil.
   try {
     const built = buildFlameWave(skiaApi, {
-      glyph: FLAME_PATH,
+      // SWEEP: ikon FA'ya geçti ama dalga ESKİ silüetle kalıyor (istek) —
+      // ayrıca delikli ikon path'i damgalanınca dillerde boşluk açardı.
+      glyph: FLAME_SWEEP_PATH,
       width,
       bandHeight: wave.bandHeight,
       tongueHeight: wave.tongueHeight,
