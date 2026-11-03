@@ -400,6 +400,10 @@ const en = {
         validation: {
           emailRequired: 'Please enter your new email address.',
           emailInvalid: 'Enter a valid email address.',
+          emailAscii:
+            "Email addresses can't contain Turkish characters (use i, g, u, s, o, c instead of ı, ğ, ü, ş, ö, ç).",
+          emailCharset:
+            'Email address contains an invalid character. Only English letters, digits and . _ - + are allowed.',
         },
       },
     },

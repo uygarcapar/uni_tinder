@@ -406,6 +406,10 @@ const tr = {
         validation: {
           emailRequired: 'Lütfen yeni e-posta adresini gir.',
           emailInvalid: 'Geçerli bir e-posta adresi gir.',
+          emailAscii:
+            'E-posta adresinde Türkçe karakter olamaz (ı, ğ, ü, ş, ö, ç yerine i, g, u, s, o, c kullan).',
+          emailCharset:
+            'E-posta adresinde geçersiz karakter var. Yalnızca İngilizce harf, rakam ve . _ - + kullanılabilir.',
         },
       },
     },

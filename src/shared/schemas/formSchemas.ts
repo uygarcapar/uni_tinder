@@ -26,8 +26,40 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Lütfen tüm alanları doldurun"),
 });
 
+/**
+ * E-posta karakter seti kontrolü — register'ın SON adımında backend'in
+ * (ASP.NET Identity kullanıcı adı kuralı) verdiği reddi 1. adıma çekiyor.
+ * send-verification ucu 'ı'lı adresi kabul edip kod bile gönderiyordu;
+ * kullanıcı 17 adımı doldurduktan sonra "ı olamaz" görüyordu.
+ *
+ * Identity'nin varsayılan AllowedUserNameCharacters kümesi harf/rakam/-._@+ —
+ * bu yüzden kontrol "ASCII mi"den DAHA SIKI: RFC'nin izin verdiği !#$%&'* gibi
+ * karakterler de backend'de patlıyor, burada da reddedilmeli. İki ayrı refine
+ * iki ayrı mesaj için: Türkçe harfe özel ipucu ("ı yerine i"), kalan her şeye
+ * genel "geçersiz karakter".
+ *
+ * Dikkat: shape regex'i ([^\s@]) unicode'u GEÇİRİR, karakter kontrolü ondan
+ * ayrı. 'İ'.toLowerCase() === 'i̇' (i + birleşen nokta, gözle görünmez)
+ * olduğu için normalize ŞEMADA yapılır ki bu tuzak da aynı kapıya takılsın.
+ */
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Normalize (lowercase) SONRASI değere bakar; o yüzden yalnız küçük harf.
+const hasOnlyAllowedEmailChars = (v: string) => /^[a-z0-9._@+-]*$/.test(v);
+const hasNoTurkishChars = (v: string) => !/[çğıöşüâîû]/.test(v);
+const EMAIL_TURKISH_MSG_TR =
+  "E-posta adresinde Türkçe karakter olamaz (ı, ğ, ü, ş, ö, ç yerine i, g, u, s, o, c kullan).";
+const EMAIL_CHARSET_MSG_TR =
+  "E-posta adresinde geçersiz karakter var. Yalnızca İngilizce harf, rakam ve . _ - + kullanılabilir.";
+
 export const emailSchema = z.object({
-  email: z.string().min(1, "Lütfen üniversite email adresinizi girin"),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, "Lütfen üniversite email adresinizi girin")
+    .regex(EMAIL_SHAPE_RE, "Geçerli bir e-posta adresi gir.")
+    .refine(hasNoTurkishChars, EMAIL_TURKISH_MSG_TR)
+    .refine(hasOnlyAllowedEmailChars, EMAIL_CHARSET_MSG_TR),
 });
 
 /**
@@ -130,10 +162,11 @@ export const changeEmailSchema = (t: Translate, currentEmail?: string) =>
       // bir üniversiteye ait olup olmadığına backend karar veriyor (UT-1019) ve
       // kayıt defteri orada. Burada tahmin yürütmek, listeye yeni üniversite
       // eklendiğinde istemciyi yanlış yere reddeden konuma sokardı.
-      .regex(
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        t("auth.email.change.validation.emailInvalid"),
-      )
+      .regex(EMAIL_SHAPE_RE, t("auth.email.change.validation.emailInvalid"))
+      // Register akışıyla aynı kapı: backend yeni adresi de aynı karakter
+      // kuralından geçiriyor, 'ı'lı adres kod doğrulamasından sonra patlıyordu.
+      .refine(hasNoTurkishChars, t("auth.email.change.validation.emailAscii"))
+      .refine(hasOnlyAllowedEmailChars, t("auth.email.change.validation.emailCharset"))
       .refine(
         (v) => !currentEmail || v !== currentEmail.trim().toLowerCase(),
         t("auth.email.errors.sameAsCurrent"),
