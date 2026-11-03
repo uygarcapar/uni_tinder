@@ -258,6 +258,7 @@ import PillFlow from "@/shared/components/PillFlow";
 import PinchZoomable from "@/shared/components/PinchZoomable";
 import {
   getAlcoholIcon,
+  getFriendshipIntentIcon,
   getPetIcon,
   getSmokingIcon,
 } from "@/shared/constants/filterEnumIcons";
@@ -2806,8 +2807,14 @@ export default function SwipeCard({
    * Sıra: sunucunun `friendshipIntentsDisplay`i → i18n yedeği → ham enumName.
    * Sunucu önce geliyor çünkü yeni bir niyet eklendiğinde uygulama sürümü
    * çıkmadan görünebilmeli (prompt kataloğunun aynı kuralı).
+   *
+   * enumName (`key`) etiketle BİRLİKTE taşınıyor: pil ikonu ona bakıyor
+   * (getFriendshipIntentIcon) ve etiket sunucudan geldiğinde dile bağlı
+   * olduğu için ikon eşlemesi metinden türetilemez.
    */
-  const friendshipIntentLabels = useMemo<string[]>(() => {
+  const friendshipIntentLabels = useMemo<
+    { key: string; label: string }[]
+  >(() => {
     const keys: string[] = Array.isArray((profile as any)?.friendshipIntents)
       ? (profile as any).friendshipIntents.filter(
           (v: any) => typeof v === "string",
@@ -2821,8 +2828,11 @@ export default function SwipeCard({
       : [];
     return keys.map((key, i) => {
       const fromServer = typeof display[i] === "string" ? display[i] : "";
-      if (fromServer) return fromServer;
-      return t(`discover.friendshipIntents.${key}`, { defaultValue: key });
+      if (fromServer) return { key, label: fromServer };
+      return {
+        key,
+        label: t(`discover.friendshipIntents.${key}`, { defaultValue: key }),
+      };
     });
   }, [
     (profile as any)?.friendshipIntents,
@@ -5181,7 +5191,15 @@ export default function SwipeCard({
 
                     Niyet ÇOKLU olduğu için tek büyük metin değil PİL AKIŞI —
                     tek değerli ilişki niyetinde 22pt tek satır doğruydu,
-                    burada üç-beş değer yan yana duruyor. */}
+                    burada üç-beş değer yan yana duruyor.
+
+                    PİLİN KENDİSİ yaşam tarzı pilleriyle BİREBİR AYNI (istek):
+                    aynı PillFlow(fillWidth), aynı dolgu (panelPillFill), aynı
+                    0.5 kenarlık, aynı px12/py8 + ikon 13 + metin 14/600. Önce
+                    kendi ölçüsü vardı (px14/py9, 15pt, ikonsuz, saydam zemin)
+                    ve kartta aynı panelin iki bölümü iki farklı pil dili
+                    konuşuyordu. İkonlar enumName'den geliyor — bkz.
+                    getFriendshipIntentIcon. */}
                 {friendshipIntentLabels.length > 0 && (
                   <CardSectionBox
                     glass={glassPanel}
@@ -5197,38 +5215,69 @@ export default function SwipeCard({
                         {t('profile.card.friendshipIntent')}
                       </Text>
                     </View>
-                    <View
-                      className="px-4"
-                      style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-                    >
-                      {friendshipIntentLabels.map((label) => (
-                        <View
-                          key={label}
-                          style={{
-                            paddingHorizontal: 14,
-                            paddingVertical: 9,
-                            borderRadius: 999,
-                            borderCurve: "continuous",
-                            // Mod rengiyle değil NÖTR yüzeyle: kart zaten
-                            // Friends modunda ve Spark yeşili aksiyonun rengi.
-                            // Niyet pilleri bir aksiyon değil bilgi.
-                            backgroundColor: theme.surfaceTranslucent,
-                            borderWidth: 0.5,
-                            borderColor: theme.hairline,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color: theme.text,
-                              fontSize: 15,
-                              fontWeight: "600",
-                            }}
-                          >
-                            {label}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
+                    {/* fillWidth: niyetlerin de anlam taşıyan bir sırası yok
+                        (kullanıcının seçtiği küme), satır doluluğu öncelikli —
+                        yaşam tarzı bölümündeki kararın aynısı.
+
+                        `px-4` SARMALAYICI YOK (vardı, kaldırıldı): yaşam tarzı
+                        PillFlow'u da çıplak duruyor, yani pil satırı başlığın
+                        değil kutunun kendi padding'inin hizasından başlıyor.
+                        Sarmalayıcı kalsaydı aynı kartın iki pil bölümü iki
+                        farklı sol kenardan başlayacaktı. */}
+                      <PillFlow
+                        gap={8}
+                        fillWidth
+                        items={friendshipIntentLabels.map(({ key, label }) => {
+                          const { sf, lucide, forceFallback } =
+                            getFriendshipIntentIcon(key);
+                          return {
+                            id: `${key}:${label}`,
+                            element: (
+                              <View
+                                className="self-start"
+                                style={{
+                                  borderRadius: 999,
+                                  borderCurve: "continuous",
+                                  overflow: "hidden",
+                                  // Mod rengiyle değil NÖTR yüzeyle: kart zaten
+                                  // Friends modunda ve Spark yeşili aksiyonun
+                                  // rengi. Niyet pilleri bir aksiyon değil bilgi.
+                                  // Token yaşam tarzı/ilgi alanı pilleriyle ORTAK
+                                  // (bkz. panelPillFill): cam yolunda üçü birden
+                                  // not diskinin opak zeminine düşüyor.
+                                  backgroundColor: panelPillFill(glassPills),
+                                  borderWidth: 0.5,
+                                  borderColor: theme.border,
+                                }}
+                              >
+                                <View
+                                  style={{
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 8,
+                                    gap: 8,
+                                  }}
+                                >
+                                  <SFIcon
+                                    name={sf}
+                                    fallback={lucide}
+                                    forceFallback={forceFallback}
+                                    size={13}
+                                    color={theme.text}
+                                  />
+                                  <Text
+                                    className="font-[600] text-[14px]"
+                                    style={{ color: theme.text }}
+                                  >
+                                    {label}
+                                  </Text>
+                                </View>
+                              </View>
+                            ),
+                          };
+                        })}
+                      />
                   </CardSectionBox>
                 )}
 

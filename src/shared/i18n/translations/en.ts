@@ -245,9 +245,9 @@ const en = {
         sectionTitle4: 'Content You Share',
         section4Content:
           'The photos you upload and the text you write remain yours. You grant us a limited permission to display them so we can run the service; that permission exists only for providing the service and ends when you delete the content or close your account. Photos may go through moderation to check they follow the rules.',
-        sectionTitle5: 'Premium and Purchases',
+        sectionTitle5: 'Plus+ and Purchases',
         section5Content:
-          'Premium subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
+          'Plus+ subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
           'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again.',
@@ -457,7 +457,7 @@ const en = {
 
         **Device and technical data.** Your device identifier (token) so we can send notifications, your platform and app version, your IP address, client information, and error and crash records.
 
-        **Subscription data.** Your premium subscription status and purchase history. Your card and payment details are processed by the App Store or Google Play; that information is not passed to us and is not stored by us.
+        **Subscription data.** Your Plus+ subscription status and purchase history. Your card and payment details are processed by the App Store or Google Play; that information is not passed to us and is not stored by us.
 
         **Safety and moderation data.** Reports you make or that are made about you, blocks, photo moderation results, your appeals, and suspension or account closure records.
 
@@ -507,7 +507,7 @@ const en = {
 
       sectionTitle6: 'Purposes of Processing',
       section6Content: `
-        Your personal data is processed to create your account and verify your student status, publish your profile, suggest suitable profiles and establish matches, let you message the people you match with, send notifications, manage premium subscriptions, keep the application secure and prevent misuse (fake profiles, harassment, fraud, inappropriate content), provide you with support, improve the application, and fulfil our legal obligations.
+        Your personal data is processed to create your account and verify your student status, publish your profile, suggest suitable profiles and establish matches, let you message the people you match with, send notifications, manage Plus+ subscriptions, keep the application secure and prevent misuse (fake profiles, harassment, fraud, inappropriate content), provide you with support, improve the application, and fulfil our legal obligations.
       `,
 
       sectionTitle7: 'Legal Bases',
@@ -525,7 +525,7 @@ const en = {
         - **Photo moderation:** the photos you upload are sent to an image processing service to detect inappropriate content.
         - **Face comparison (photo verification):** only if you choose to use this feature and have given the explicit consents in sections 4 and 5, the frames captured at that moment and your main photo are sent to an image processing service for comparison.
         - **Notification infrastructure:** notifications are delivered to your device through Google Firebase Cloud Messaging. For message notifications, the title and the first part of the message pass through this infrastructure; the content is not stored there.
-        - **Subscription management:** your premium subscription status is shared with a subscription verification service.
+        - **Subscription management:** your Plus+ subscription status is shared with a subscription verification service.
         - **Product analytics and error records:** the services we use to improve the application and fix crashes are hosted in the European Union region.
         - **E-mail delivery:** verification codes and informational e-mails are sent through our own e-mail server.
         - **Artificial intelligence services:** the answers you give to profile prompts are converted into a numerical representation so we can suggest people with similar interests; the notes you write on a profile are checked for content before they are sent. For these operations the relevant text is passed to the provider and processed solely to produce the result.
@@ -814,9 +814,9 @@ const en = {
       // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
       // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
       // süreyi Profil > Üyelik kartı anlatıyor.
-      premiumGiftTitle: 'Your premium gift is ready',
+      premiumGiftTitle: 'Your Plus+ gift is ready',
       premiumGiftMessage:
-        'Because you pre-registered, your premium gift is now active — every premium feature is yours.',
+        'Because you pre-registered, your Plus+ gift is now active — every Plus+ feature is yours.',
       premiumGiftCta: 'Nice',
     },
   },
@@ -941,7 +941,7 @@ const en = {
       title: 'Message allowance',
       message: 'You have {{remaining}} messages left.',
       exhausted: 'Message allowance used up',
-      exhaustedMessage: 'You have reached the message limit in this chat. Go Premium to message without limits.',
+      exhaustedMessage: 'You have reached the message limit in this chat. Get Plus+ to message without limits.',
     },
     defaultUserName: 'User',
     bubble: {
@@ -962,7 +962,7 @@ const en = {
     input: {
       placeholder: 'Message...',
       closed: 'This chat is closed',
-      quotaReached: 'Out of messages — go Premium',
+      quotaReached: 'Out of messages — get Plus+',
       send: 'Send',
       voice: 'Voice message',
     },
@@ -1206,11 +1206,11 @@ const en = {
       quotaExhaustedTitle: 'You are out of likes',
       // With no known countdown (missing field / sentinel) we promise nothing —
       // same split as the Fire copy above.
-      quotaExhaustedMessage: 'You can not send likes until your quota renews. Go Premium for unlimited likes.',
-      quotaExhaustedMessageWithTime: 'Your likes renew in {{time}}. Go Premium to like without waiting.',
+      quotaExhaustedMessage: 'You can not send likes until your quota renews. Get Plus+ for unlimited likes.',
+      quotaExhaustedMessageWithTime: 'Your likes renew in {{time}}. Get Plus+ to like without waiting.',
     },
     premium: {
-      badge: 'PREMIUM MEMBER',
+      badge: 'PLUS+ MEMBER',
       // Comparison table rows. Order — and which four surface in the upsell
       // card — live in `premiumBenefits.ts`; this is only the copy.
       // No numbers here: every quota comes from server config (see that file).
@@ -1224,7 +1224,7 @@ const en = {
         widerDistance: 'Wider distance range',
         missedMatchRecovery: 'More missed-match recoveries',
         discoveryPriority: 'Priority in discovery',
-        premiumBadge: 'Premium badge on your profile',
+        premiumBadge: 'Plus+ badge on your profile',
       },
       // Shown when the info icon on a paywall row is tapped. The row title is
       // short enough for the table; the "what is this" answer lives here.
@@ -1248,7 +1248,7 @@ const en = {
         discoveryPriority:
           'Your profile is placed higher in other people\'s decks. You get seen sooner, which means more likes coming in.',
         premiumBadge:
-          'The Plus flame appears on your card and profile. You can hide it from Settings — turning the badge off does not affect any of your premium features.',
+          'The Plus flame appears on your card and profile. You can hide it from Settings — turning the badge off does not affect any of your Plus+ features.',
       },
       // Rest of the list in the upsell card. The card body already opens the
       // paywall, so this line is not a separate tap target.
@@ -1323,11 +1323,11 @@ const en = {
         select: 'Select university',
       },
       premiumFilters: {
-        title: 'Premium Filters',
+        title: 'Plus+ Filters',
         description: 'Narrow down who you are looking for. Turn on a filter\'s switch and it will not relax even when candidates run out.',
         // Premium filters are not deleted when the subscription lapses, just not
         // applied — say so, otherwise it reads as "my filters are gone".
-        paused: 'Your Premium filters are paused. Your selections are kept but not applied to the deck — go Premium again and they pick up where they left off.',
+        paused: 'Your Plus+ filters are paused. Your selections are kept but not applied to the deck — get Plus+ again and they pick up where they left off.',
       },
       dealbreaker: {
         // One string, does NOT change with the switch state — see tr.ts.
@@ -1470,12 +1470,12 @@ const en = {
         // thing twice and weakened the CTA. "no Premium needed" stays in the
         // sentence — a bare "30 days free" left it unclear what exactly was
         // free (Premium, or this setting?).
-        inviteCta: 'Invite 3 friends and use this setting free for 30 days — no Premium needed',
-        premiumExpiryNote: 'This rule stops when your Premium ends — the universities on the list can see you again.',
+        inviteCta: 'Invite 3 friends and use this setting free for 30 days — no Plus+ needed',
+        premiumExpiryNote: 'This rule stops when your Plus+ ends — the universities on the list can see you again.',
         // For a user whose Premium HAS ended: the future-tense note would be
         // misleading, the rule is already inactive. The record is kept, so we
         // do not say it was deleted either.
-        premiumInactiveNote: 'This rule is not being applied right now because your Premium ended. Your setting is saved and comes back automatically when you renew.',
+        premiumInactiveNote: 'This rule is not being applied right now because your Plus+ ended. Your setting is saved and comes back automatically when you renew.',
       },
     },
     rewind: {
@@ -1547,7 +1547,7 @@ const en = {
       },
       swipeLimitReached: {
         title: "You're out of swipes for today",
-        action: 'See Premium',
+        action: 'See Plus+',
       },
       supportSubject: 'Discover issue ({{code}})',
     },
@@ -1720,7 +1720,7 @@ const en = {
       comingSoon: 'New rewards coming soon',
       disabled: 'Your invite code is unavailable right now.',
       visibilityActive: 'Visibility filter · {{days}} days left',
-      visibilityPaused: 'Resumes for {{days}} days when your Premium ends',
+      visibilityPaused: 'Resumes for {{days}} days when your Plus+ ends',
     },
     sheet: {
       title: 'Your invites',
@@ -2233,7 +2233,7 @@ const en = {
         showAge: 'Show my age',
         showLocation: 'Show my location',
         showOnlineStatus: "Show when I'm online",
-        showPremiumBadge: 'Show my premium badge',
+        showPremiumBadge: 'Show my Plus+ badge',
       },
     },
     subscription: {
@@ -2292,7 +2292,7 @@ const en = {
       // expand chevron in the same spot.)
       prep: 'Prep',
       grade: 'Year {{year}}',
-      premium: 'Premium',
+      premium: 'Plus+',
       knowMeAs: "This is how you'll know me:",
       friendshipIntent: 'Looking for friends to',
       myIntent: "What I'm looking for:",
@@ -2325,15 +2325,15 @@ const en = {
   purchase: {
     // Hub `SubscriptionChanged` toasts — admin actions only; store-driven
     // changes are already expected by the user.
-    revokedTitle: 'Your premium subscription has ended',
-    revokedMessage: 'Premium features are now off. If you did not expect this, please contact support.',
-    grantedTitle: 'Premium is now active',
-    grantedMessage: 'Your premium features are unlocked. Enjoy!',
+    revokedTitle: 'Your Plus+ subscription has ended',
+    revokedMessage: 'Plus+ features are now off. If you did not expect this, please contact support.',
+    grantedTitle: 'Plus+ is now active',
+    grantedMessage: 'Your Plus+ features are unlocked. Enjoy!',
     // Fired when the user's OWN purchase completes (as the paywall closes).
     // Separate from the admin copy above: the user did this themselves, so the
     // tone is a welcome rather than an announcement.
     purchasedTitle: 'Lit Plus is yours!',
-    purchasedMessage: 'Every premium feature is unlocked. Enjoy!',
+    purchasedMessage: 'Every Plus+ feature is unlocked. Enjoy!',
     // NOTE: the paywall feature list now lives under
     // `discover.premium.benefits` — one source shared with the upsell card.
     periods: {
