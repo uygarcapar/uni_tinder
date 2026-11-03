@@ -1980,9 +1980,9 @@ export default function DiscoverScreen() {
         rewindCovered.current = true;
         tryCommitRewind();
       },
-      { hold: true },
+      { hold: true, mode },
     );
-  }, [tryCommitRewind]);
+  }, [tryCommitRewind, mode]);
 
   // Ekran ağaçtan düşerse (sekme değişti, tema remount'u) örtme dinleyicileri
   // arkada kalmasın — sözleşme flameSweep'te.
@@ -2510,10 +2510,15 @@ export default function DiscoverScreen() {
       // Kart gönderildi ama ekranda: süzgeç onu kuyruktan ELEMESİN (bkz.
       // deckHoldRef).
       deckHoldRef.current = true;
-      matchCurtainUnsub.current = runMatchCurtain(() => {
-        matchCurtainUnsub.current = null;
-        advanceDeck();
-      });
+      matchCurtainUnsub.current = runMatchCurtain(
+        () => {
+          matchCurtainUnsub.current = null;
+          advanceDeck();
+        },
+        // Perde gelmezse kendi alevimiz örtüyor; o yedek de modun rengini
+        // taşısın (bkz. runMatchCurtain > coverOurselves).
+        { mode },
+      );
     } else {
       advanceDeck();
     }
@@ -2834,7 +2839,7 @@ export default function DiscoverScreen() {
           noteFlameUnsub.current = null;
           dropProfileFromDeck(userId);
         },
-        { hold: true },
+        { hold: true, mode },
       );
     } catch (e: any) {
       const code = e?.response?.data?.code ?? null;

@@ -408,7 +408,10 @@ describe('harita + şerit eşzamanlılığı', () => {
     expect(like).toContain('campus.like(moment)');
     // Kutlama kotaya BAĞLI: hak bitmişken alev oynamıyor.
     expect(like).toContain('exhausted: campus.decisionsExhausted');
-    expect(like).toContain('runFlameSweep(onCovered, { hold: true })');
+    expect(like).toContain('runFlameSweep(onCovered, {');
+    expect(like).toContain('hold: true');
+    // Dalganın rengi MODDAN: Arkadaş'ta Spark yeşili yanıyor (hareket aynı).
+    expect(like).toContain('mode: moment.mode ?? selectedMode');
   });
 
   it('üst chrome\'un kapısı ZAMANLAYICIYLA açılıyor, animasyon callback\'iyle DEĞİL', () => {

@@ -2277,7 +2277,12 @@ export default function FeedScreen() {
       },
       startSweep: (onCovered) => {
         momentSweepUnsub.current?.();
-        momentSweepUnsub.current = runFlameSweep(onCovered, { hold: true });
+        momentSweepUnsub.current = runFlameSweep(onCovered, {
+          hold: true,
+          // Anın kendi modu (kart da onunla çiziliyor, bkz. mode prop'u);
+          // yoksa şeritte seçili mod.
+          mode: moment.mode ?? selectedMode,
+        });
       },
       collapse: () => {
         setMomentCollapsing(true);
@@ -2289,7 +2294,7 @@ export default function FeedScreen() {
         }, EXPAND_MS);
       },
     });
-  }, [campus, openMoment]);
+  }, [campus, openMoment, selectedMode]);
 
   /**
    * ⚠️ PARK EDEN DALGAYI SÖKÜLÜRKEN DE SALIVER: ekran kapanırsa (sekme

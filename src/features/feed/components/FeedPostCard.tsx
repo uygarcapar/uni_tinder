@@ -27,7 +27,18 @@ import {
   BODY_LINE_HEIGHT,
 } from "../feedPostMetrics";
 import FeedPostBody from "./FeedPostBody";
+import PremiumBadge from "@/shared/components/PremiumBadge";
 import type { FeedPostDto, FeedTopic } from "../feedTypes";
+
+/**
+ * Yazar isminin puntosu. SAYI ARTIK TEK YERDE: yanındaki Plus+ wordmark'ının
+ * ölçüsü bundan türüyor (bkz. PremiumBadge > premiumBadgeFontSize), stile
+ * gömülü kalsa rozet sessizce ayrışırdı.
+ *
+ * 15 — "bi tık küçült" isteğiyle 16'dan indi; tarih satırı da onunla indi
+ * (gerekçeler kendi stillerinde).
+ */
+const AUTHOR_NAME_FONT = 15;
 
 /**
  * Akış gönderi kartı — sadece YAZI (fotoğraf yok, gönderi altında yorum yok).
@@ -352,7 +363,7 @@ function FeedPostCardBase({
               // dolgusu kadar daralmış bir kutunun içinde.
               marginLeft: 10,
               flexShrink: 1,
-              fontSize: 15,
+              fontSize: AUTHOR_NAME_FONT,
               fontWeight: "600",
               color: colors.text,
             }}
@@ -373,6 +384,21 @@ function FeedPostCardBase({
                     .join(", "),
             )}
           </Text>
+
+          {/* Plus+ wordmark'ı — Keşif kartının, şeridin ve Likes kartının isim
+              satırındakiyle AYNI işaret (bkz. PremiumBadge): ölçüsü ismin
+              puntosundan türüyor, rengi marka tonu, modla dönmüyor.
+
+              ANONİMDE YOK ve kapı bunu kendiliğinden kuruyor: sunucu anonim
+              gönderide `author`ı null yolluyor. Yine de `!post.isAnonymous`
+              AÇIKÇA yazılı — rozet kimliğe bağlı bir işaret, anonimliği
+              delecek tek alanın sessiz bir null'a emanet edilmesi istenmiyor.
+
+              Ayrı bir `flexShrink` gerekmiyor: rozetin kendisi 0 ile geliyor,
+              satırda daralan taraf isim. */}
+          {!post.isAnonymous && post.author?.isPremium && (
+            <PremiumBadge fontSize={AUTHOR_NAME_FONT} style={{ marginLeft: 6 }} />
+          )}
         </Pressable>
 
         {/* Tarih İSMİN HEMEN SAĞINDA (istek), satırın öbür ucunda değil.
