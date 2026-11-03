@@ -318,7 +318,7 @@ export default function FeedUniversitySheet({
                   }}
                 >
                   <SFIcon
-                    name="lock.fill"
+                    name="lock"
                     fallback={Lock}
                     size={16}
                     // Satırın yazısıyla AYNI gri: kilit bir uyarı değil, satırın

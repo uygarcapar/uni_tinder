@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, User } from "@/shared/icons";
+import { Clock, MoreHorizontal, User } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import HeartGlyph from "@/shared/components/HeartGlyph";
 import NoteGlyph from "@/shared/components/NoteGlyph";
@@ -64,9 +64,15 @@ export interface FeedPostCardProps {
   onMenu?: (post: FeedPostDto) => void;
   /** Gönderilerim'de yanıt sayısına dokunma → Yanıtlar sayfası. */
   onPressReplyCount?: (post: FeedPostDto) => void;
-  /** Durum rozeti metni (Gönderilerim) — sayfanın `postPresentation`ı çözüyor. */
+  /** Durum rozeti metni (Gönderilerim) — sayfanın `statusBadgeFor`u çözüyor. */
   statusLabel?: string | null;
   statusTone?: "neutral" | "warning" | "danger";
+  /**
+   * Dolu ise rozet metin yerine BU GLİF olarak çizilir (istek: süresi dolan
+   * gönderide yalnız kırmızı saat). `statusLabel` o zaman ekranda değil,
+   * ikonun erişilebilirlik etiketinde. Karar kartta değil `statusBadgeFor`da.
+   */
+  statusIcon?: "clock" | null;
   /**
    * BEĞENİLMİŞ kalbin dolgusu — seçili modun vurgusu (`modeAccent`).
    *
@@ -196,6 +202,7 @@ function FeedPostCardBase({
   onPressReplyCount,
   statusLabel,
   statusTone = "neutral",
+  statusIcon = null,
   likedAccent = colors.errorStrong,
 }: FeedPostCardProps) {
   const { t } = useTranslation();
@@ -396,11 +403,28 @@ function FeedPostCardBase({
             Tarih artık o işi yapmıyor. */}
         <View style={{ flex: 1 }} />
 
-        {/* Durum rozeti ("İnceleniyor", "Süresi doldu"…) — ÜÇ NOKTANIN SOLUNDA
-            (istek). Eskiden gövdenin altında kendi satırındaydı; gönderinin
-            durumu başlık satırının bilgisi, metnin arasına giren ayrı bir
-            şerit değil. Yalnız Gönderilerim'de dolu geliyor. */}
-        {statusLabel ? (
+        {/* Durum rozeti — ÜÇ NOKTANIN SOLUNDA. "Süresi doldu" YALNIZ kırmızı
+            saat ikonu (istek; "sağda metin" ve "dolgulu pill" denendi, ikisi
+            de GERİ ALINDI), etiketi erişilebilirliğe iniyor. Moderasyon
+            rozetleri ("İnceleniyor"…) metin. Eskiden gövdenin altında kendi
+            satırındaydı; gönderinin durumu başlık satırının bilgisi, metnin
+            arasına giren ayrı bir şerit değil. Yalnız Gönderilerim'de dolu
+            geliyor; hangi durumun ikon olduğu feedPolicy > statusBadgeFor'da. */}
+        {statusIcon ? (
+          <View
+            testID="feed-post-status-icon"
+            accessibilityLabel={statusLabel ?? undefined}
+            style={{ flexShrink: 0, marginLeft: 8 }}
+          >
+            <SFIcon
+              name="clock"
+              fallback={Clock}
+              size={14}
+              color={statusColor}
+              strokeWidth={2}
+            />
+          </View>
+        ) : statusLabel ? (
           <Text
             numberOfLines={1}
             style={{
@@ -416,7 +440,12 @@ function FeedPostCardBase({
         ) : null}
 
         {onMenu ? (
-          <Pressable onPress={handleMenu} hitSlop={10} style={{ marginLeft: 8 }}>
+          <Pressable
+            testID="feed-post-menu"
+            onPress={handleMenu}
+            hitSlop={10}
+            style={{ marginLeft: 8 }}
+          >
             <SFIcon
               name="ellipsis"
               fallback={MoreHorizontal}

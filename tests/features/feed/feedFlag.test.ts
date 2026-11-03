@@ -1,15 +1,17 @@
 /**
  * Akış bayrağı latch'i (UT-7301).
  *
- * Test edilen asıl şey: oturum değerinin DONDURULMUŞ kalması. Sekme tab bar'ın
- * ortasında (Beğeniler'den sonra) ve araya sekme eklemek/çıkarmak mevcut route
- * index'lerini kaydırıyor — bayrak oturum ortasında uygulanırsa kullanıcının
- * seçili sekmesi altından kayar. O yüzden `recordFeedFlag` diski güncelleyip
- * HER İKİ yönde de `false` dönüyor ve `feedEnabledForSession()` değişmiyor.
+ * Test edilen asıl şey: geçiş kuralının ASİMETRİSİ. EKLEME yönü canlı —
+ * `recordFeedFlag(…, true)` oturum değerini hemen açıp `true` dönüyor ve
+ * aboneleri haberdar ediyor (araya canlı eklemenin güvenliği için bkz.
+ * TabNavigator'daki Feed yorumu). ÇIKARMA yönü hâlâ dondurulmuş: canlı
+ * kaldırma kullanıcının üstünde durduğu sekmeyi altından çeker, o yüzden
+ * `recordFeedFlag(…, false)` diski güncelleyip `false` dönüyor ve
+ * `feedEnabledForSession()` oturum boyunca değişmiyor.
  *
  * İkinci kritik nokta UT-7315 ayrımı: o da 403 ama "özellik kapalı" DEMİYOR.
  * Status'a bakan bir kapı, profili yarım bir kullanıcı yüzünden sekmeyi herkese
- * kapatırdı — bu yüzden latch'e yalnız UT-7301 yazılır.
+ * kapatırdı — bu yüzden latch'e yalnız UT-7301 "off" yazar.
  */
 
 // Dev kancası (feedDevFlag) KAPALI: jest'te `__DEV__` true olduğu için kanca
@@ -34,6 +36,7 @@ import {
   recordFeedFlag,
   resetFeedFlagSession,
   shouldProbeFeedFlag,
+  subscribeFeedFlag,
 } from '@/features/feed/feedFlag';
 
 const USER = 'user-1';
@@ -99,12 +102,12 @@ describe('initFeedFlag + feedEnabledForSession — oturum kilidi', () => {
   });
 });
 
-describe('recordFeedFlag — geçiş kuralı (ortadaki sekme)', () => {
-  it('off → on: diske yazar ama ŞİMDİ uygulanmaz (false döner)', () => {
+describe('recordFeedFlag — geçiş kuralı (sekme sonda: ekleme canlı, çıkarma cold start)', () => {
+  it('off → on: diske yazar ve oturuma ANINDA uygulanır (true döner)', () => {
     initFeedFlag(USER); // unknown → oturum kapalı
-    expect(recordFeedFlag(USER, true)).toBe(false);
+    expect(recordFeedFlag(USER, true)).toBe(true);
     expect(readFeedFlag(USER)).toBe('on'); // disk güncel
-    expect(feedEnabledForSession()).toBe(false); // oturum DOKUNULMADI
+    expect(feedEnabledForSession()).toBe(true); // sekme sonda → canlı eklenebilir
   });
 
   it('on → off: diske yazar, oturum değeri DEĞİŞMEZ (sekme altından çekilmez)', () => {
@@ -117,7 +120,7 @@ describe('recordFeedFlag — geçiş kuralı (ortadaki sekme)', () => {
     expect(feedEnabledForSession()).toBe(true); // oturum boyunca açık kalır
   });
 
-  it('bir sonraki cold start\'ta yeni değer geçerli olur', () => {
+  it('kapanma bir sonraki cold start\'ta geçerli olur', () => {
     recordFeedFlag(USER, true);
     initFeedFlag(USER);
     recordFeedFlag(USER, false);
@@ -133,10 +136,71 @@ describe('recordFeedFlag — geçiş kuralı (ortadaki sekme)', () => {
     expect(readFeedFlag(USER)).toBe('unknown');
   });
 
-  it('init edilmiş oturumda userId geçilmezse sahibine yazar', () => {
+  it('init edilmiş oturumda userId geçilmezse sahibine yazar ve oturumu açar', () => {
     initFeedFlag(USER);
-    recordFeedFlag(undefined, true);
+    expect(recordFeedFlag(undefined, true)).toBe(true);
     expect(readFeedFlag(USER)).toBe('on');
+    expect(feedEnabledForSession()).toBe(true);
+  });
+
+  it('BAŞKA kullanıcının "on"u diske yazılır ama oturuma dokunmaz', () => {
+    initFeedFlag(USER);
+    expect(recordFeedFlag('user-2', true)).toBe(false);
+    expect(readFeedFlag('user-2')).toBe('on');
+    expect(feedEnabledForSession()).toBe(false);
+  });
+
+  it('init çağrılmadan gelen "on" oturumu açmaz (sahibi doğrulanamıyor)', () => {
+    expect(recordFeedFlag(USER, true)).toBe(false);
+    expect(feedEnabledForSession()).toBe(false);
+    // ...ama disk günceldir, init okuyunca açılır.
+    expect(initFeedFlag(USER)).toBe('on');
+    expect(feedEnabledForSession()).toBe(true);
+  });
+});
+
+describe('subscribeFeedFlag — TabNavigator\'ın canlı aboneliği', () => {
+  it('ekleme yönünde haber verir', () => {
+    initFeedFlag(USER);
+    const listener = jest.fn();
+    subscribeFeedFlag(listener);
+    recordFeedFlag(USER, true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('kapanma yönünde haber VERMEZ (oturum değişmiyor)', () => {
+    recordFeedFlag(USER, true);
+    initFeedFlag(USER);
+    const listener = jest.fn();
+    subscribeFeedFlag(listener);
+    recordFeedFlag(USER, false);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('zaten açıkken tekrarlanan "on" haber üretmez (gereksiz re-render yok)', () => {
+    recordFeedFlag(USER, true);
+    initFeedFlag(USER);
+    const listener = jest.fn();
+    subscribeFeedFlag(listener);
+    recordFeedFlag(USER, true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('abonelikten çıkma çalışır', () => {
+    initFeedFlag(USER);
+    const listener = jest.fn();
+    const unsubscribe = subscribeFeedFlag(listener);
+    unsubscribe();
+    recordFeedFlag(USER, true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('init de haber verir — TabNavigator latch okunmadan önce mount olabiliyor', () => {
+    recordFeedFlag(USER, true);
+    const listener = jest.fn();
+    subscribeFeedFlag(listener);
+    initFeedFlag(USER); // kapalı → açık
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
 

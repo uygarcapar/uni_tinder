@@ -20,6 +20,7 @@ import {
   composeGate,
   dedupeById,
   postPresentation,
+  statusBadgeFor,
   universityPickerGate,
   kindFilterGate,
 } from '@/features/feed/feedPolicy';
@@ -117,6 +118,61 @@ describe('postPresentation — altı durum + süre', () => {
         NOW,
       ),
     ).toBe('pending');
+  });
+});
+
+/**
+ * Durum rozeti — Gönderilerim kartının başlık satırı.
+ *
+ * ⚠️ REGRESYON: "expired" bir dönem null dönüyordu ("kalan-ömür satırında
+ * zaten yazıyor" gerekçesiyle) ama o satır karttan KALDIRILMIŞTI — süresi
+ * dolan gönderi hiçbir iz göstermeden akıştan kayboluyordu ve "Gönderilerim'de
+ * var, akışta yok" diye bug sanılıyordu. Buradaki beklentiler o boşluğu
+ * kilitliyor: rozet VAR, ton kırmızı, biçim YALNIZ İKON — kırmızı saat
+ * (istek; pill ve düz metin denendi, geri alındı). `labelKey` ikonun
+ * erişilebilirlik etiketi olarak yaşamaya devam ediyor.
+ */
+describe('statusBadgeFor', () => {
+  it('süresi dolmuş gönderi → kırmızı SAAT ikonu (metinsiz)', () => {
+    expect(
+      statusBadgeFor(post({ expiresAt: '2026-09-20T09:00:00Z' }), NOW),
+    ).toEqual({
+      labelKey: 'feed.mine.expired',
+      tone: 'danger',
+      icon: 'clock',
+    });
+  });
+
+  it('normal gönderi → rozet yok', () => {
+    expect(statusBadgeFor(post(), NOW)).toBeNull();
+  });
+
+  it('PendingReview → nötr "İnceleniyor", metin (ikonsuz)', () => {
+    expect(statusBadgeFor(post({ status: 'PendingReview' }), NOW)).toEqual({
+      labelKey: 'feed.mine.status.PendingReview',
+      tone: 'neutral',
+      icon: null,
+    });
+  });
+
+  it('SupportHold → nötr, HiddenByReports/Rejected/RemovedByAdmin → kırmızı', () => {
+    expect(statusBadgeFor(post({ status: 'SupportHold' }), NOW)).toEqual({
+      labelKey: 'feed.mine.status.SupportHold',
+      tone: 'neutral',
+      icon: null,
+    });
+    expect(statusBadgeFor(post({ status: 'HiddenByReports' }), NOW)).toEqual({
+      labelKey: 'feed.mine.status.HiddenByReports',
+      tone: 'danger',
+      icon: null,
+    });
+    for (const status of ['Rejected', 'RemovedByAdmin'] as const) {
+      expect(statusBadgeFor(post({ status }), NOW)).toEqual({
+        labelKey: 'feed.mine.status.Rejected',
+        tone: 'danger',
+        icon: null,
+      });
+    }
   });
 });
 
