@@ -1,8 +1,10 @@
 import * as Location from "expo-location";
 import { devLog } from "@/shared/utils/devLog";
 import {
+  distanceToCampusEdgeMeters,
   isConfidentlyInsideCampus,
   isInsideCampus,
+  isLikelyInsideCampus,
   readCachedBoundary,
 } from "./campusBoundary";
 import { simulatedCampusFix } from "./campusDevLocation";
@@ -66,6 +68,46 @@ const EMPTY: CampusPresence = {
   fix: null,
   permissionDenied: false,
 };
+
+/**
+ * TEŞHİS (geçici): "kampüsteyim ama atamıyorum" için tek satırlık karar dökümü.
+ * Hangi kuralın düşürdüğünü ayırır: izin / fix yok / poligon dışı / güven payı.
+ */
+function logPresenceDecision(
+  source: string,
+  presence: CampusPresence,
+  boundary: CampusBoundaryDto | null,
+  note?: string,
+): void {
+  const edge = presence.fix
+    ? distanceToCampusEdgeMeters(
+        presence.fix.latitude,
+        presence.fix.longitude,
+        boundary,
+      )
+    : null;
+  devLog(
+    `[campus] presence(${source})`,
+    JSON.stringify({
+      inside: presence.inside,
+      insideRaw: presence.insideRaw,
+      permissionDenied: presence.permissionDenied,
+      accuracyM: presence.fix?.accuracyMeters ?? null,
+      edgeM: edge === null ? null : Math.round(edge * 10) / 10,
+      lat: presence.fix?.latitude ?? null,
+      lon: presence.fix?.longitude ?? null,
+      capturedAt: presence.fix?.capturedAt ?? null,
+      boundary: boundary
+        ? {
+            domain: boundary.domain,
+            isApproximate: boundary.isApproximate,
+            hasPolygon: !!boundary.polygon,
+          }
+        : null,
+      note: note ?? null,
+    }),
+  );
+}
 
 let cachedFix: CampusFix | null = null;
 let cachedAt = 0;
@@ -195,7 +237,7 @@ export async function resolveCampusPresence(args?: {
    */
   const simulated = simulatedCampusFix();
   if (simulated) {
-    return {
+    const presence: CampusPresence = {
       inside: isConfidentlyInsideCampus(
         simulated.latitude,
         simulated.longitude,
@@ -210,17 +252,24 @@ export async function resolveCampusPresence(args?: {
       fix: simulated,
       permissionDenied: false,
     };
+    logPresenceDecision("simulated", presence, boundary);
+    return presence;
   }
 
   const perm = await Location.getForegroundPermissionsAsync().catch(() => null);
   if (perm && perm.status !== "granted") {
-    return { ...EMPTY, permissionDenied: true };
+    const presence = { ...EMPTY, permissionDenied: true };
+    logPresenceDecision("real", presence, boundary, `perm=${perm.status}`);
+    return presence;
   }
 
   const fix = await readCampusFix({ force: args?.force });
-  if (!fix) return EMPTY;
+  if (!fix) {
+    logPresenceDecision("real", EMPTY, boundary, "fix alınamadı (timeout/GPS)");
+    return EMPTY;
+  }
 
-  return {
+  const presence: CampusPresence = {
     inside: isConfidentlyInsideCampus(
       fix.latitude,
       fix.longitude,
@@ -231,6 +280,8 @@ export async function resolveCampusPresence(args?: {
     fix,
     permissionDenied: false,
   };
+  logPresenceDecision("real", presence, boundary);
+  return presence;
 }
 
 /**
@@ -253,9 +304,12 @@ export async function resolveCampusPresence(args?: {
  * hata yaparsa kullanıcı kampüs dışındayken bir ipucu kartı görür ve dokununca
  * gerçek kapı onu zaten durdurur.
  *
- * ⚠️ `isConfidentlyInsideCampus`ten geçiyor, ham poligon testinden DEĞİL: son
- * bilinen konum çoğu zaman düşük doğruluklu (hücre/Wi-Fi) ve belirsizlik payı
- * sınırı aşıyorsa cevap "hayır" olmak zorunda.
+ * ⚠️ `isLikelyInsideCampus`ten geçiyor, sıkı kuraldan DEĞİL: son bilinen konum
+ * çoğu zaman düşük doğruluklu (Wi-Fi ~40-65 m) ve sıkı kural (sınıra uzaklık
+ * >= accuracy) sınıra yakın GERÇEK kampüs kullanıcısını da düşürüyordu —
+ * canlıda yaşandı: accuracy 40 m, sınıra 25 m → kart hiç çıkmadı. İpucu yanlış
+ * tarafa hata yapacaksa gösterme yönünde yapmalı; tavan yalnız çöp okumayı
+ * (Tam Konum kapalı, ~2 km) eliyor.
  */
 export async function resolveCampusPresenceHint(args?: {
   domain?: string | null;
@@ -265,19 +319,36 @@ export async function resolveCampusPresenceHint(args?: {
     args?.boundary ??
     (args?.domain ? readCachedBoundary(args.domain) : null) ??
     null;
-  if (!boundary) return false;
+  if (!boundary) {
+    logPresenceDecision("hint", EMPTY, null, "sınır poligonu cache'te yok");
+    return false;
+  }
 
   // DEV simülasyonu burada da en önde — gerçek yolun aynısı.
   const simulated = simulatedCampusFix();
   const fix = simulated ?? freshFix(Date.now()) ?? (await lastKnownFix());
-  if (!fix) return false;
+  if (!fix) {
+    logPresenceDecision("hint", EMPTY, boundary, "son bilinen konum yok");
+    return false;
+  }
 
-  return isConfidentlyInsideCampus(
+  const inside = isLikelyInsideCampus(
     fix.latitude,
     fix.longitude,
     fix.accuracyMeters,
     boundary,
   );
+  logPresenceDecision(
+    "hint",
+    {
+      inside,
+      insideRaw: isInsideCampus(fix.latitude, fix.longitude, boundary),
+      fix,
+      permissionDenied: false,
+    },
+    boundary,
+  );
+  return inside;
 }
 
 /** İşletim sisteminin önbelleğindeki konum — izin yoksa/kayıt yoksa `null`. */

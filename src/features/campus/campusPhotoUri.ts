@@ -24,10 +24,43 @@ import type { CampusMomentDto } from "./campusTypes";
  */
 export function campusPhotoUri(moment: CampusMomentDto): string | null {
   if (moment.moderation?.status === "Rejected") return null;
-  const raw = moment.photoUrl;
+  return toDisplayableUri(moment.photoUrl);
+}
+
+/** İki çözücünün ORTAK gövdesi — yedek dalların tek kopyası. */
+function toDisplayableUri(raw: string | null | undefined): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const url = raw.trim();
   if (/^(https?:|file:|data:|asset:)/i.test(url)) return url;
   if (url.startsWith("/")) return `${API_BASE_URL}${url}`;
   return null;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ADIN SOLUNDAKİ AVATAR — PROFİLİN ANA FOTOĞRAFI.
+ * ══════════════════════════════════════════════════════════════════════════
+ * `mainPhotoUrl` (backend 2026-10-31) kampüs anının SAHİBİNİN profil ana
+ * fotoğrafı; anın fotoğrafından bağımsız ve kuralı sunucuda
+ * (`PhotoVisibility.VisibleMainUrl`): yalnız onaylı foto, ana foto onaylı
+ * değilse ilk onaylıya düşüyor, hiçbiri yoksa `null`.
+ *
+ * ⚠️🔴 ÜÇ DURUM, İKİSİ BİRBİRİNE BENZİYOR AMA AYNI DEĞİL:
+ *   • dize  → avatar o adresten,
+ *   • null  → kullanıcının GÖSTERİLEBİLİR fotoğrafı yok → avatar HİÇ
+ *             çizilmiyor. Anın fotoğrafına DÜŞÜLMÜYOR: sunucu o fotoğrafı
+ *             bilerek saklıyor (onaysız/düşmüş), istemci arka kapıdan geri
+ *             getirirse moderasyon kararını delerdi,
+ *   • undefined (alanı taşımayan ESKİ yanıt — disk/bellek cache) → anın
+ *             fotoğrafına düşülüyor; eski kartların avatarını kaybetmemek
+ *             için, `canLike`taki `=== false` kontrolüyle aynı gerekçe.
+ *
+ * ⚠️ ANIN MODERASYONU AVATARI BAĞLAMIYOR: reddedilmiş bir anın sahibinin
+ * profil fotoğrafı pekâlâ onaylı olabilir (kendi anım hâlâ listede ve neden
+ * görünmediğini söylüyor). İki alan ayrı yaşıyor.
+ */
+export function campusAvatarUri(moment: CampusMomentDto): string | null {
+  const main = moment.mainPhotoUrl;
+  if (main === undefined) return campusPhotoUri(moment);
+  return toDisplayableUri(main);
 }

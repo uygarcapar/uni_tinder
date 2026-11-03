@@ -1,4 +1,7 @@
-import { campusPhotoUri } from '@/features/campus/campusPhotoUri';
+import {
+  campusAvatarUri,
+  campusPhotoUri,
+} from '@/features/campus/campusPhotoUri';
 import type { CampusMomentDto } from '@/features/campus/campusTypes';
 
 /**
@@ -42,4 +45,54 @@ it('REDDEDİLMİŞ anda istek hiç kurulmuyor — S3 nesnesi silinmiş', () => {
   expect(
     campusPhotoUri(m({ moderation: { status: 'Rejected' } as any })),
   ).toBeNull();
+});
+
+/**
+ * ADIN SOLUNDAKİ AVATAR — `mainPhotoUrl` (backend 2026-10-31).
+ *
+ * ⚠️ ÜÇ DURUMUN AYRILMASI BU DOSYANIN ASIL İŞİ: `null` (sunucu fotoğrafı
+ * bilerek saklıyor) ile `undefined` (alanı taşımayan ESKİ cache) aynı şey
+ * değil. İkisi birleşirse ya moderasyon kararı deliniyor ya eski kartların
+ * avatarı kayboluyor.
+ */
+it('avatar ANIN fotoğrafından değil `mainPhotoUrl`den geliyor', () => {
+  expect(
+    campusAvatarUri(
+      m({
+        photoUrl: 'https://cdn.test/moment.jpg',
+        mainPhotoUrl: 'https://cdn.test/avatar.jpg',
+      }),
+    ),
+  ).toBe('https://cdn.test/avatar.jpg');
+});
+
+it('`null` → avatar YOK, anın fotoğrafına DÜŞÜLMÜYOR (moderasyon kararı)', () => {
+  expect(
+    campusAvatarUri(
+      m({ photoUrl: 'https://cdn.test/moment.jpg', mainPhotoUrl: null }),
+    ),
+  ).toBeNull();
+});
+
+it('alan YOKSA (eski yanıt) anın fotoğrafına düşülüyor', () => {
+  expect(campusAvatarUri(m({ photoUrl: 'https://cdn.test/moment.jpg' }))).toBe(
+    'https://cdn.test/moment.jpg',
+  );
+});
+
+it('avatar ANIN moderasyonuna bağlı DEĞİL — iki alan ayrı yaşıyor', () => {
+  expect(
+    campusAvatarUri(
+      m({
+        moderation: { status: 'Rejected' } as any,
+        mainPhotoUrl: 'https://cdn.test/avatar.jpg',
+      }),
+    ),
+  ).toBe('https://cdn.test/avatar.jpg');
+});
+
+it('göreli avatar yolu API tabanına bağlanıyor', () => {
+  expect(campusAvatarUri(m({ mainPhotoUrl: '/uploads/a.jpg' }))).toMatch(
+    /^https?:\/\/.+\/uploads\/a\.jpg$/,
+  );
 });

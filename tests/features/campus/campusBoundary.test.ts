@@ -22,6 +22,7 @@ import {
   isBoundaryStale,
   isConfidentlyInsideCampus,
   isInsideCampus,
+  isLikelyInsideCampus,
   normalizeCampusBoundary,
   readCachedBoundary,
   writeCachedBoundary,
@@ -249,6 +250,60 @@ describe('belirsizlik (accuracy)', () => {
     expect(
       isConfidentlyInsideCampus(CENTER.lat, CENTER.lon, null, boundary()),
     ).toBe(true);
+  });
+});
+
+/**
+ * İPUCU KURALI — `isLikelyInsideCampus`.
+ *
+ * Akış bandındaki kart işletim sisteminin SON BİLİNEN konumuyla karar veriyor
+ * ve o okuma neredeyse her zaman kaba (Wi-Fi ~40-65 m). Sıkı kural
+ * (`isConfidentlyInsideCampus`) burada uygulanınca sınıra 25 m mesafedeki
+ * GERÇEK kampüs kullanıcısı kartı hiç göremedi (canlıda yaşandı: accuracy
+ * 40 m > edge 25 m). İpucu yanlış tarafa hata yapacaksa GİZLEME yönünde değil
+ * GÖSTERME yönünde yapmalı — gerçek kapı ("+" ve paylaşım anı) taze GPS'le
+ * zaten duruyor.
+ */
+describe('isLikelyInsideCampus (ipucu kuralı)', () => {
+  // Batı kenarından ~25 m içeride bir nokta: 0.0003 derece boylam ≈ 25 m.
+  const NEAR_EDGE = { lat: CENTER.lat, lon: 29.0453 };
+
+  it('sınıra yakın + kaba okuma (accuracy > sınıra uzaklık) yine İÇERİDE', () => {
+    // Canlıdaki vaka: poligonun içinde, sınıra ~25 m, accuracy 40 m.
+    // Sıkı kural bunu düşürüyor; ipucu kuralı DÜŞÜRMEMELİ.
+    expect(
+      isConfidentlyInsideCampus(NEAR_EDGE.lat, NEAR_EDGE.lon, 40, boundary()),
+    ).toBe(false);
+    expect(
+      isLikelyInsideCampus(NEAR_EDGE.lat, NEAR_EDGE.lon, 40, boundary()),
+    ).toBe(true);
+  });
+
+  it('poligonun dışındaki nokta ipucu bile değil', () => {
+    expect(isLikelyInsideCampus(CENTER.lat, 29.06, 10, boundary())).toBe(false);
+  });
+
+  it('çöp okuma (tavan üstü accuracy) ipucu vermiyor — Tam Konum kapalı vakası', () => {
+    // iOS'ta Precise Location kapalıyken accuracy ~2 km gelir; "içeride
+    // görünüyor" demek bütün semte kart çizmek olurdu.
+    expect(
+      isLikelyInsideCampus(CENTER.lat, CENTER.lon, 2000, boundary()),
+    ).toBe(false);
+  });
+
+  it('accuracy bilinmiyorsa poligon cevabı yeterli', () => {
+    expect(
+      isLikelyInsideCampus(CENTER.lat, CENTER.lon, null, boundary()),
+    ).toBe(true);
+  });
+
+  it('isApproximate / poligonsuz sınırda her zaman false (ana kapıyla aynı)', () => {
+    expect(
+      isLikelyInsideCampus(CENTER.lat, CENTER.lon, 10, boundary({ isApproximate: true })),
+    ).toBe(false);
+    expect(
+      isLikelyInsideCampus(CENTER.lat, CENTER.lon, 10, boundary({ polygon: null })),
+    ).toBe(false);
   });
 });
 

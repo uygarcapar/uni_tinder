@@ -2871,9 +2871,11 @@ const tr = {
     expiresInMinutes: '{{count}} dk',
     expiresSoon: 'birazdan',
     // Paylaşım üstünden geçen süre — an 24 saat yaşadığı için gün dalı YOK.
-    postedAgoHours: '{{count}} saat önce',
-    postedAgoMinutes: '{{count}} dakika önce',
-    postedJustNow: 'az önce',
+    // ⚠️ KISA BİÇİM (istek: "3 saat önce" yerine "3s"): etiket adın yanında,
+    // avatarla birlikte dar bir satırda duruyor — uzun cümle adı kırptırıyordu.
+    postedAgoHours: '{{count}}s',
+    postedAgoMinutes: '{{count}}dk',
+    postedJustNow: 'şimdi',
     empty: {
       title: 'Bugün kampüste kimse paylaşmamış',
       bodyInside: 'İlk anı sen paylaş — 24 saat boyunca kampüsteki herkes görür.',

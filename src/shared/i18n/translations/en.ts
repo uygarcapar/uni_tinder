@@ -2747,9 +2747,11 @@ const en = {
     expiresInMinutes: '{{count}}m',
     expiresSoon: 'soon',
     // Time since posting — no "days" branch, a moment lives 24 hours.
-    postedAgoHours: '{{count}}h ago',
-    postedAgoMinutes: '{{count}}m ago',
-    postedJustNow: 'just now',
+    // ⚠️ Short form (request): the label sits next to the name and avatar in a
+    // narrow row — "3h ago" was eating the name's width.
+    postedAgoHours: '{{count}}h',
+    postedAgoMinutes: '{{count}}m',
+    postedJustNow: 'now',
     empty: {
       title: 'Nobody has posted on campus today',
       bodyInside: 'Be the first — everyone on campus sees it for 24 hours.',

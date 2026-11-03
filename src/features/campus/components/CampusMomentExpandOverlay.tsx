@@ -356,8 +356,23 @@ const ExpandedSurface = memo(function ExpandedSurface({
 
   const captionStyle = useAnimatedStyle(() => {
     const p = progress.value;
-    // Başlangıç: şeritteki kartın SOL ALTI (fotoğrafın hemen altı).
-    const startX = geometry.start.x;
+    /**
+     * Başlangıç: şeritteki kartın ORTA ALTI (fotoğrafın hemen altı).
+     *
+     * ⚠️🔴 SOL ALT DEĞİL (2026-10-31): şeritteki satır artık kutunun içinde
+     * ORTALANIYOR (CampusMomentFace > `justifyContent: "center"`). Sol kenar
+     * bırakılsaydı dokunulan anda uçuş kopyası satırı sola sıçratır, kapanışta
+     * da satır şeritteki yerine değil kartın soluna inerdi — bu yüzeyin en eski
+     * şikâyeti ("basınca kart oynuyor") tam bu tür bir ayrışmadan geliyordu.
+     *
+     * ⚠️ ÖLÇÜM KUTUYA KIRPILIYOR: `captionW` satırın SERBEST genişliği ve
+     * ölçüm büyük kartın maxWidth'inde alınmış olabiliyor; şeridin dar
+     * kutusunda satır zaten o kutuya sığacak kadar kırpılıyor.
+     */
+    const startX =
+      geometry.start.x +
+      Math.max(0, geometry.start.width - Math.min(captionW, geometry.start.width)) /
+        2;
     const startY = geometry.start.y + geometry.start.height;
     // Hedef: büyük kartın ORTA altı.
     const endX =
