@@ -1,0 +1,55 @@
+diff --git a/node_modules/expo-glass-effect/ios/GlassView.swift b/node_modules/expo-glass-effect/ios/GlassView.swift
+index 1130937..54e48d6 100644
+--- a/node_modules/expo-glass-effect/ios/GlassView.swift
++++ b/node_modules/expo-glass-effect/ios/GlassView.swift
+@@ -291,6 +291,50 @@ public final class GlassView: ExpoView {
+     }
+   }
+ 
++  // PATCH (lit): Fabric view recycling leaves a stale UIGlassEffect behind.
++  //
++  // This view is an ExpoFabricView, so React Native returns it to the component
++  // recycling pool instead of deallocating it. Nothing in this class resets the
++  // Swift ivars on reuse, so the next mount can start life with `isMounted`
++  // still true and a live `UIGlassEffect` still assigned to glassEffectView.
++  // When that happens the class's own recovery paths are both closed:
++  //
++  //   • layoutSubviews only tears down/reinstalls when `!isMounted`.
++  //   • applyGlassStyle is a no-op when the incoming style equals `glassStyle`.
++  //
++  // and assigning a new effect over the stale one silently does not render —
++  // the exact hazard the layoutSubviews comment documents (expo#43732).
++  // Symptom: glass paints on the first card, then never on recycled ones, and
++  // only a tab switch (window detach → didMoveToWindow → setNeedsLayout) fixes
++  // it. Screens that always mount fresh views (modals) are unaffected.
++  //
++  // Deliberately conservative: `glassStyle`/`glassEffect` are NOT cleared. If
++  // they were and Fabric did not re-send `glassEffectStyle` for the reused
++  // view, applyGlassStyle would never run and the box would end up with no
++  // effect at all. Killing the rendered effect and reopening the
++  // layoutSubviews gate is enough — that path re-applies `glassEffect` itself.
++  public override func prepareForRecycle() {
++    super.prepareForRecycle()
++    glassEffectView.effect = UIVisualEffect()
++    isMounted = false
++    // `glassStyle` KORUNUYOR ama efekt NESNESİ tazeleniyor.
++    //
++    // Cihaz logu, Fabric'in havuzdan dönen view'a `glassEffectStyle`i yeniden
++    // GÖNDERMEDİĞİNİ gösterdi. Dolayısıyla `glassStyle`ı nil'lersek
++    // `applyGlassStyle` bir daha hiç koşmaz ve kutu kalıcı olarak efektsiz
++    // kalır — o yüzden duruyor. Ama aynı `UIGlassEffect` ÖRNEĞİNİ iki farklı
++    // view hayatı boyunca taşımak da kütüphanenin uyardığı "stale effect"in ta
++    // kendisi, o yüzden nesneyi burada yeniden yaratıyoruz. Böylece her view
++    // hayatı taze bir efektle başlıyor ve prop'a hiç ihtiyaç kalmıyor.
++    if #available(iOS 26.0, tvOS 26.0, macOS 26.0, *) {
++      #if compiler(>=6.2)
++      if let style = glassStyle, let uiStyle = style.toUIGlassEffectStyle() {
++        glassEffect = UIGlassEffect(style: uiStyle)
++      }
++      #endif
++    }
++  }
++
+   public override func didMoveToWindow() {
+     super.didMoveToWindow()
+     if (self.window == nil) {

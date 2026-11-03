@@ -9,6 +9,8 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { CameraView, type CameraType } from "expo-camera";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -21,7 +23,6 @@ import type { SFSymbol } from "@/shared/components/SFIcon";
 import { RefreshCw, X, Zap } from "@/shared/icons";
 import { colors, isLight, onMediaAt } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
-import { frameWindow } from "@/shared/components/cropper/cropGeometry";
 import { forgetPhoto } from "@/shared/utils/photoStore";
 import {
   bindCamera,
@@ -47,13 +48,14 @@ import {
  * "Kaydet"i; kırpıcıdaki ✕ ise buraya GERİ döner (yeniden çek, bkz.
  * photoPicker.captureAndCropPhoto).
  *
- * ÖNİZLEME KIRPICININ PENCERESİNDE: kadraj `frameWindow` ile kırpma ekranıyla
- * birebir aynı 3:4 kutu. Bu kutuda görünen şeyin çekilen karenin TAMAMI olması
- * bir varsayım DEĞİL, aşağıda `pictureSize`/`ratio` ile dayatılan bir ayar —
- * expo-camera'nın varsayılanı 16:9 ve o hâliyle önizleme karenin ortasını
- * yakınlaştırıp gösteriyordu (gerekçe prop'un başında). Oran sabitlendiği için
- * çekimden kırpmaya geçişte kadraj kıpırdamıyor ve kırpıcı "hiçbir şey
- * atmadan" başlıyor.
+ * ÇEKİLEN KARE 3:4 — bu bir varsayım DEĞİL, aşağıda `pictureSize`/`ratio` ile
+ * dayatılan bir ayar; expo-camera'nın varsayılanı 16:9 ve o hâliyle kare
+ * kırpıcının penceresiyle ayrışıyordu (gerekçe prop'un başında). Oran
+ * sabitlendiği için kırpıcı "hiçbir şey atmadan" başlıyor.
+ *
+ * ÖNİZLEME PENCERESİ ise artık 3:4 DEĞİL, tepeden deklanşöre kadar uzanan
+ * ekran oranında bir kutu — 3:4 akış yanlarından kırpılarak dolduruluyor.
+ * Gerekçesi ve sonucu `layout`ta yazılı (görülen ⊆ çekilen).
  *
  * ⚠️ AYNALAMA SELFIE EKRANININ TERSİ: `mirror={facing === "front"}`. Ön
  * kamerada canlı görüntü sistem tarafından aynalı (kullanıcı kendini aynadaki
@@ -70,9 +72,6 @@ import {
  * donanımı da tutulmuyor.
  */
 
-const ASPECT_W = 3;
-const ASPECT_H = 4;
-
 /** Deklanşör çapı — iOS kamerasının dolu beyaz düğmesiyle aynı ölçek. */
 const SHUTTER = 72;
 const SHUTTER_RING = 3;
@@ -80,6 +79,19 @@ const SHUTTER_RING = 3;
 /** JPEG kalitesi: kırpıcı çıktıyı 900×1200'e indirip 0.85 ile yeniden
  *  kodluyor, buradaki tek iş ara dosyada nesil kaybı bırakmamak. */
 const QUALITY = 0.9;
+
+/**
+ * Önizleme kutusunun köşeleri.
+ *
+ * ÜST ekranın KENDİ köşe yarıçapına yakın (çentikli iPhone'larda ~55pt):
+ * kutu y=0'a yaslandığı için küçük bir yarıçap cihaz maskesinin altında kalıp
+ * hiç görünmezdi. Çentiksiz cihazlarda (düz köşeli ekran) 0 — orada yuvarlak
+ * bir üst kenar ekranın köşesiyle hizasız duruyor.
+ *
+ * ALT daha küçük: kutu orada ekran kenarına değil siyah zemine oturuyor.
+ */
+const RADIUS_TOP = 55;
+const RADIUS_BOTTOM = 28;
 
 type Session = {
   settle: (outcome: CameraOutcome) => void;
@@ -297,23 +309,45 @@ export default function CameraCaptureOverlay() {
     const headerH = insets.top + 56;
     // 16 (üst pad) + deklanşör + 16 (alt pad).
     const footerH = insets.bottom + 32 + SHUTTER;
-    const { winW, winH } = frameWindow({
-      screenW,
-      screenH,
-      headerH,
-      footerH,
-      aspectW: ASPECT_W,
-      aspectH: ASPECT_H,
-    });
+    /**
+     * ══════════════════════════════════════════════════════════════════════
+     * PENCERE TEPEDEN DEKLANŞÖRE KADAR — ARTIK 3:4 DEĞİL.
+     * ══════════════════════════════════════════════════════════════════════
+     * Kutu y=0'dan başlıyor ve altı deklanşörün hemen üstünde bitiyor; başlık
+     * düğmeleri onun ÜSTÜNE biniyor. Eski hâlde kutu ekranın ortasında, 3:4
+     * ve `frameWindow` ile kırpıcınınkiyle birebir aynıydı — `frameWindow`
+     * ortalı yerleşimi varsaydığı için (chrome'u İKİ kat sayıyor) burada
+     * kullanılmıyor.
+     *
+     * ⚠️🔴 WYSIWYG ARTIK TAM DEĞİL — ÖNİZLEME KAREDEN DAR.
+     * Kutunun oranı ekranınki (≈9:16), kamera ise hâlâ 3:4 üretiyor
+     * (`pictureSize="Photo"`, aşağıdaki gerekçe geçerli). iOS önizleme
+     * katmanı `resizeAspectFill` olduğu için 3:4 akış kutuyu doldururken
+     * YANLARINDAN kırpılıyor. Yani hata yönü GÜVENLİ TARAFTA: çekilen kare
+     * ekranda görülenin ÜSTÜNE bir şey ekliyor, görülen hiçbir şeyi
+     * kaybetmiyor.
+     *   • Kırpıcıya giden yolda (profil) bunun pratik bir sonucu yok —
+     *     kullanıcı kadrajı orada zaten seçiyor.
+     *   • Yerinde onay yolunda (kampüs anı) yüklenen kare, önizlemede
+     *     görülenden iki yanda biraz GENİŞ oluyor (`fitPhotoForUpload` 3:4'ün
+     *     tamamını alıyor).
+     * Kadrajın birebir olması gerekirse yapılacak şey kutuyu 3:4'e geri
+     * döndürmek, kamera oranını değiştirmek DEĞİL (gerekçe `pictureSize`in
+     * başında).
+     */
+    const winW = screenW;
+    const winH = Math.max(160, screenH - footerH - 12);
     return {
       headerH,
       winW,
       winH,
-      // Pencere ekranın tam ortasında — kırpıcıdaki winCX/winCY ile aynı.
-      left: (screenW - winW) / 2,
-      top: (screenH - winH) / 2,
+      left: 0,
+      top: 0,
     };
-  }, [insets.top, insets.bottom, screenW, screenH]);
+  }, [insets.top, insets.bottom, screenH, screenW]);
+
+  /** Çentikli ekran mı — üst yuvarlatmanın kapısı (bkz. RADIUS_TOP). */
+  const roundTop = insets.top >= 40;
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
@@ -417,6 +451,47 @@ export default function CameraCaptureOverlay() {
   }, [busy, facing, flash, lens, finish, t]);
 
   /**
+   * KAMERAYI ÇEVİR — başlıktaki düğme ve önizlemeye ÇİFT DOKUNUŞ aynı yere
+   * bağlı (sistem kamerasının öğrenilmiş jesti; kampüs anı ön kamerayla
+   * açıldığı için parmak zaten ekranın ortasında).
+   *
+   * ⚠️ Burada hazır bayrağını SIFIRLAMA: iOS `facing` değişiminde yalnız
+   * `updateDevice()` çağırıyor, `onCameraReady` BİR DAHA ATILMIYOR —
+   * sıfırlanan bayrak bir daha dolmuyor (bkz. readyRef).
+   */
+  const handleFlip = useCallback(() => {
+    if (busy) return;
+    // Çift dokunuşun TEK geri bildirimi bu: kamera çevrilirken önizleme bir an
+    // siyah kalıyor ve dokunuşun sayılıp sayılmadığı görüntüden okunmuyor.
+    Haptics.selectionAsync().catch(() => {});
+    setFacing((current) => (current === "back" ? "front" : "back"));
+  }, [busy]);
+
+  /**
+   * ÇİFT DOKUNUŞ = ÇEVİR. Tek dokunuşa HİÇBİR ŞEY bağlı değil, o yüzden
+   * bekleme/çakışma yok.
+   *
+   * Kare donmuşken kapalı: başlıktaki çevirme düğmesi de orada gizli (donmuş
+   * bir karede canlı akışın ayarı ölü düğme).
+   */
+  const flipTap = useMemo(
+    () =>
+      Gesture.Tap()
+        .enabled(!shot && !busy)
+        .numberOfTaps(2)
+        .maxDuration(260)
+        .maxDistance(24)
+        .onEnd((e) => {
+          "worklet";
+          // İki parmakla biten bir dokunuş çift dokunuş değil (kırpıcıdaki
+          // ikiziyle aynı savunma).
+          if (e.numberOfPointers > 1) return;
+          runOnJS(handleFlip)();
+        }),
+    [shot, busy, handleFlip],
+  );
+
+  /**
    * ATILAN KARENİN DOSYASINI SİL.
    *
    * ⚠️ TEMİZLİK BU EKRANIN İŞİ, ÇAĞIRANIN DEĞİL — ve yalnız YERİNDE ONAY
@@ -482,11 +557,8 @@ export default function CameraCaptureOverlay() {
 
   return (
     <View style={[StyleSheet.absoluteFill, { backgroundColor: "#000" }]}>
-      {/* Önizleme PENCERENİN İÇİNDE, tam ekran değil: kutu 3:4 ve kamera da
-          3:4 ürettiği için burada görünen şey çekilecek karenin tamamı.
-          Tam ekran bir önizleme, telefon ekranı 3:4'ten çok daha uzun olduğu
-          için kareyi iki yandan kırpıp gösterirdi — kullanıcı kadrajın
-          dışında kalan şeyi göremezdi. */}
+      {/* Önizleme kutusu: tepeden (y=0) deklanşörün hemen üstüne kadar, tam
+          genişlik, dört köşesi yuvarlak. Oran/kırpma sözleşmesi `layout`ta. */}
       <View
         style={{
           position: "absolute",
@@ -494,6 +566,13 @@ export default function CameraCaptureOverlay() {
           top: layout.top,
           width: layout.winW,
           height: layout.winH,
+          // Köşeler: üstte ekranın kendi yarıçapı, altta daha küçük
+          // (gerekçe RADIUS_TOP'un yanında).
+          borderTopLeftRadius: roundTop ? RADIUS_TOP : 0,
+          borderTopRightRadius: roundTop ? RADIUS_TOP : 0,
+          borderBottomLeftRadius: RADIUS_BOTTOM,
+          borderBottomRightRadius: RADIUS_BOTTOM,
+          borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor: "#000",
         }}
@@ -588,9 +667,11 @@ export default function CameraCaptureOverlay() {
         />
 
         {/* ÇEKİLEN KARE — pencerenin İÇİNDE, canlı akışın üstünde.
-            Kutu kameranın oranıyla (3:4) birebir aynı ve kare de o orandan
-            geliyor, yani `cover` tek piksel kırpmıyor: kullanıcı deklanşöre
-            basarken gördüğü kadrajı görüyor.
+            `cover` ŞART ve natif önizlemenin `resizeAspectFill`iyle aynı işi
+            yapıyor: 3:4 kare, ekran oranındaki kutuyu doldururken iki yandan
+            aynı şekilde kırpılıyor. Donmuş kare ile canlı akış bu sayede
+            birebir aynı kadrajda duruyor (başka bir `contentFit`, deklanşörde
+            bir zıplama olarak okunurdu).
             ⚠️ `transition` YOK: bu bir sahne değişimi değil, aynı görüntünün
             donmuş hâlinin yerine keskin hâlinin geçmesi — sönümlenerek gelen
             bir kopya iki görüntüyü üst üste bindirip titreme gibi okunuyor. */}
@@ -602,14 +683,20 @@ export default function CameraCaptureOverlay() {
             cachePolicy="memory"
           />
         ) : null}
+
+        {/* ÇİFT DOKUNUŞ KATMANI — pencerenin tamamı, EN ÜSTTE.
+            Başlık ve alt bar bu kutunun DIŞINDA ve ağaçta ondan SONRA
+            çiziliyor, yani ✕ / flaş / çevir / deklanşör dokunuşları buraya
+            düşmüyor. Jestin kendisi `flipTap`te. */}
+        <GestureDetector gesture={flipTap}>
+          <View style={StyleSheet.absoluteFill} />
+        </GestureDetector>
       </View>
 
-      <CornerTicks
-        left={layout.left}
-        top={layout.top}
-        width={layout.winW}
-        height={layout.winH}
-      />
+      {/* Kadrajın dört köşesindeki beyaz L tırnaklar KALDIRILDI: kutu artık
+          ekranın tepesine yaslı ve köşeleri yuvarlak — tırnaklar o yuvarlak
+          kenarın dışında, siyah zeminde asılı kalıyordu. Kadrajın sınırını
+          zaten kutunun kendisi çiziyor. */}
 
       {/* ------------------------------------------------------------ başlık */}
       <View
@@ -670,12 +757,8 @@ export default function CameraCaptureOverlay() {
               systemImage="arrow.triangle.2.circlepath.camera"
               fallbackIcon={RefreshCw}
               label={t("common.camera.flip")}
-              // ⚠️ Burada hazır bayrağını SIFIRLAMA: iOS `facing` değişiminde
-              // yalnız `updateDevice()` çağırıyor, `onCameraReady` BİR DAHA
-              // ATILMIYOR — sıfırlanan bayrak bir daha dolmuyor.
-              onPress={() =>
-                setFacing((current) => (current === "back" ? "front" : "back"))
-              }
+              // Önizlemeye çift dokunuşla AYNI yol (bkz. handleFlip).
+              onPress={handleFlip}
               disabled={busy}
             />
           )}
@@ -785,6 +868,15 @@ export default function CameraCaptureOverlay() {
             // ⚠️ `ready`YE BAĞLI DEĞİL (bkz. readyRef): hazırlık event'i iOS'ta
             // kamera çevrildikten sonra bir daha gelmiyor, simülatörde ise hiç
             // gelmiyor — düğme o yüzden basılamıyordu.
+            //
+            // ⚠️🔴 İÇİNDE GÖSTERGE YOK, DONUK HÂL DE YOK — BİLEREK.
+            // Geri bildirimi veren şey DONAN ÖNİZLEME: basıldığı an
+            // `pausePreview` akışı son karede donduruyor (gerekçe
+            // `handleCapture`da), yani "çekildi" gösterge dönerken değil
+            // GÖRÜNTÜDE okunuyor. Üstüne dönen bir gösterge koymak bitmiş bir
+            // işi sürüyormuş gibi gösteriyordu — şikâyet birebir buydu.
+            // `disabled` duruyor (mükerrer basış yutulmalı) ama bu artık
+            // görsel bir donukluğa çevrilmiyor.
             disabled={busy}
             accessibilityRole="button"
             accessibilityLabel={t("common.camera.capture")}
@@ -796,85 +888,28 @@ export default function CameraCaptureOverlay() {
               alignItems: "center",
               justifyContent: "center",
               // Cam YOK: deklanşör, kamera arayüzünün öğrenilmiş dolu beyaz
-              // düğmesi. Donuk hâl OPAKLIKLA DEĞİL dolgu alfasıyla veriliyor
-              // (ata zincirindeki opacity, chrome'daki cam butonları düşürüyor).
-              backgroundColor: busy ? onMediaAt(0.4) : colors.onMedia,
+              // düğmesi.
+              //
+              // ⚠️ YALNIZ ANDROID'DE SÖNÜYOR — orada önizleme donmuyor.
+              // `pausePreview` Android'de çekimi kırdığı için (gerekçe
+              // `handleCapture`da) akış basıldıktan sonra da akmaya devam
+              // ediyor; hiçbir işaret vermezsek basış yutulmuş gibi okunur.
+              // iOS'ta donan kare zaten işareti veriyor, orada sönük bir
+              // deklanşör gereksiz bir "bekleniyor" sinyali olurdu.
+              // Donukluk OPAKLIKLA DEĞİL dolgu alfasıyla (ata zincirindeki
+              // opacity, chrome'daki cam butonları düşürüyor).
+              backgroundColor:
+                busy && Platform.OS === "android"
+                  ? onMediaAt(0.4)
+                  : colors.onMedia,
               borderWidth: SHUTTER_RING,
-              borderColor: onMediaAt(busy ? 0.25 : 0.55),
+              borderColor: onMediaAt(
+                busy && Platform.OS === "android" ? 0.25 : 0.55,
+              ),
             }}
-          >
-            {busy ? (
-              <ActivityIndicator size="small" color={colors.onMediaInverse} />
-            ) : null}
-          </AnimatedPressable>
+          />
         )}
       </View>
-    </View>
-  );
-}
-
-/**
- * Kadrajın dört köşesindeki L tırnaklar — kırpma ekranındakilerin aynısı.
- *
- * Kutunun KENARLIĞI yerine tırnak: tam çerçeve, önizlemenin kenarına
- * oturduğunda fotoğrafın içindeymiş gibi okunuyordu.
- */
-function CornerTicks({
-  left,
-  top,
-  width,
-  height,
-}: {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}) {
-  const LEN = 22;
-  const THICK = 2;
-  const tick = onMediaAt(0.95);
-  const corners = [
-    { x: left, y: top, hx: 0, hy: 0, vx: 0, vy: 0 },
-    { x: left + width - LEN, y: top, hx: 0, hy: 0, vx: LEN - THICK, vy: 0 },
-    { x: left, y: top + height - LEN, hx: 0, hy: LEN - THICK, vx: 0, vy: 0 },
-    {
-      x: left + width - LEN,
-      y: top + height - LEN,
-      hx: 0,
-      hy: LEN - THICK,
-      vx: LEN - THICK,
-      vy: 0,
-    },
-  ];
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {corners.map((c, i) => (
-        <View
-          key={i}
-          style={{ position: "absolute", left: c.x, top: c.y, width: LEN, height: LEN }}
-        >
-          <View
-            style={{
-              position: "absolute",
-              left: c.hx,
-              top: c.hy,
-              width: LEN,
-              height: THICK,
-              backgroundColor: tick,
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              left: c.vx,
-              top: c.vy,
-              width: THICK,
-              height: LEN,
-              backgroundColor: tick,
-            }}
-          />
-        </View>
-      ))}
     </View>
   );
 }

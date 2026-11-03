@@ -356,6 +356,49 @@ describe('Gönderilerim varyantı', () => {
     expect(screen.queryByText(tr.feed.mine.status.PendingReview)).toBeNull();
     expect(screen.queryByText('3 yanıt')).toBeNull();
   });
+
+  /**
+   * Süresi dolmuş gönderinin rozeti YALNIZ kırmızı saat ikonu, üç noktanın
+   * SOLUNDA (istek; pill ve metin denendi, geri alındı). Metin HİÇ çizilmiyor
+   * — etiket ikonun erişilebilirlik adı. Sıra ağaçtan okunuyor: ikon menü
+   * düğümünden ÖNCE gelmeli.
+   */
+  it('expired rozeti METİNSİZ kırmızı saat ikonu, üç noktanın SOLUNDA', () => {
+    render(
+      <FeedPostCard
+        post={post({ expiresAt: '2026-09-20T09:00:00Z' })}
+        variant="mine"
+        statusLabel={tr.feed.mine.expired}
+        statusTone="danger"
+        statusIcon="clock"
+        onMenu={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(tr.feed.mine.expired)).toBeNull();
+    const icon = screen.getByTestId('feed-post-status-icon');
+    expect(icon.props.accessibilityLabel).toBe(tr.feed.mine.expired);
+
+    const flat = JSON.stringify(screen.toJSON());
+    const menuAt = flat.indexOf('feed-post-menu');
+    const iconAt = flat.indexOf('feed-post-status-icon');
+    expect(iconAt).toBeGreaterThan(-1);
+    expect(menuAt).toBeGreaterThan(iconAt);
+  });
+
+  it('ikonsuz rozet düz metin kalır', () => {
+    render(
+      <FeedPostCard
+        post={post({ status: 'PendingReview' })}
+        variant="mine"
+        statusLabel={tr.feed.mine.status.PendingReview}
+        statusTone="neutral"
+        onMenu={jest.fn()}
+      />,
+    );
+    const badge = screen.getByText(tr.feed.mine.status.PendingReview);
+    expect(badge.props.style.backgroundColor).toBeUndefined();
+    expect(screen.queryByTestId('feed-post-status-icon')).toBeNull();
+  });
 });
 
 /**

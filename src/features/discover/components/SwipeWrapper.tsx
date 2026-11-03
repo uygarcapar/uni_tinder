@@ -621,7 +621,9 @@ function SwipeWrapper({
         collapseUnderCover();
         onSwipe(direction, profile.userId);
       },
-      { hold: true },
+      // Kartın modu dalgaya da geçiyor: Arkadaş'ta Spark yeşili, Flört'te ateş.
+      // HAREKET aynı — değişen yalnız dolgu/kontur (bkz. runFlameSweep > mode).
+      { hold: true, mode },
     );
   };
   // Kart örtme anından ÖNCE ağaçtan düşerse (deste tazelendi, sekme değişti,

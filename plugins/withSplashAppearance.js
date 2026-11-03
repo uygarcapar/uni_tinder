@@ -10,16 +10,23 @@
 //
 // ÇÖZÜM: tercih NSUserDefaults'a aynalanıyor (themeMode.ts → RN `Settings`,
 // RCTSettingsManager standardUserDefaults'a yazıyor), burada da RN
-// BAŞLAMADAN pencereye `overrideUserInterfaceStyle` basıyoruz. expo-splash-screen
-// storyboard'ı RN root view'ının `loadingView`'ı olarak yeniden instantiate
-// ediyor (SplashScreenManager.swift) — yani o kopya pencerenin trait'ini miras
-// alıyor ve artık ilk frame'inden itibaren doğru temada çiziliyor.
+// BAŞLAMADAN pencereye `overrideUserInterfaceStyle` basıyoruz.
+//
+// ── SCENE YAŞAM DÖNGÜSÜ (SDK 57+ / iOS 27) ────────────────────────────────
+// Pencereyi artık AppDelegate KURMUYOR: `ExpoAppSceneDelegate` sceneConnect'te
+// `UIWindow(windowScene:)` yaratıp `provider.window = window` ile AppDelegate'e
+// AYNALIYOR ve ancak ondan sonra `startReactNative(in: window)` çağırıyor
+// (node_modules/expo/ios/AppDelegates/ExpoAppSceneDelegate.swift). Yani
+// didFinishLaunching'te `window` hep nil — override oraya yazılırsa ÖLÜ KOD
+// olur (SDK 57 geçişinde birebir yaşandı). Bu yüzden enjeksiyon artık `var
+// window` tanımının KENDİSİNE `didSet` olarak basılıyor: ayna yazıldığı anda,
+// RN root view (ve expo-splash-screen'in storyboard kopyası) pencereye
+// eklenmeden önce koşuyor.
 //
 // KAPSAM DIŞI: pre-main sistem launch ekranı. Onu SpringBoard, bizim hiçbir
 // kodumuz çalışmadan önce çiziyor; görünümünü değiştirmenin tek yolu Info.plist
 // UIUserInterfaceStyle'ı sabitlemek ki o da "Sistem" tercihini imkânsız
-// kılardı (override basılıyken gerçek sistem görünümü okunamıyor). Kalan
-// uyumsuzluk bu yüzden splash'in TAMAMI değil yalnız ilk ~200ms'si.
+// kılardı. Kalan uyumsuzluk bu yüzden splash'in TAMAMI değil yalnız ilk ~200ms'si.
 //
 // Android YOK: oradaki splash teması values/ + values-night/ styles.xml'den
 // geliyor ve gece modunu super.onCreate'den önce AppCompatDelegate ile
@@ -37,25 +44,29 @@ const DEFAULTS_KEY = "litThemeMode";
 const BEGIN = "// @generated begin lit-splash-appearance";
 const END = "// @generated end lit-splash-appearance";
 
-// Pencerenin yaratıldığı satır — enjeksiyon tam buradan SONRA olmak zorunda:
-// öncesinde `window` nil, sonrasında `factory.startReactNative(... in: window)`
-// çağrılıp storyboard kopyası ekleniyor.
-const ANCHOR = /^([ \t]*)window = UIWindow\(frame: UIScreen\.main\.bounds\)$/m;
+// Şablondaki pencere TANIMI — blok bu satırın YERİNE geçiyor.
+const ANCHOR = /^([ \t]*)var window: UIWindow\?$/m;
 
 function snippet(indent) {
   const lines = [
     `${BEGIN} - DO NOT EDIT (plugins/withSplashAppearance.js)`,
-    `// Splash temasını JS boot'tan ÖNCE bas: themeMode.ts tercihi`,
-    `// NSUserDefaults'a aynalıyor. "system" → .unspecified, yani override`,
-    `// basılmıyor ve pencere görünümü sistemden miras kalıyor.`,
+    `// Splash temasını JS boot'tan ÖNCE bas: themeMode.ts tercihi NSUserDefaults'a`,
+    `// aynalıyor. Pencereyi scene delegate kuruyor ve startReactNative'den ÖNCE`,
+    `// buraya aynalıyor — didSet tam o anda, RN içeriği eklenmeden koşuyor.`,
+    `// "system" → .unspecified: override basılmıyor, görünüm sistemden miras.`,
     `//`,
     `// ANAHTAR YOKSA .light: taze kurulumda ayna henüz yazılmamış oluyor ve`,
     `// themeMode.ts readPersisted() de seçim yapılmamış kullanıcıyı AÇIK`,
     `// kabul ediyor — iki varsayılan ayrışırsa ilk açılış yine flash eder.`,
-    `switch UserDefaults.standard.string(forKey: "${DEFAULTS_KEY}") {`,
-    `case "dark": window?.overrideUserInterfaceStyle = .dark`,
-    `case "system": window?.overrideUserInterfaceStyle = .unspecified`,
-    `default: window?.overrideUserInterfaceStyle = .light`,
+    `var window: UIWindow? {`,
+    `  didSet {`,
+    `    guard let window else { return }`,
+    `    switch UserDefaults.standard.string(forKey: "${DEFAULTS_KEY}") {`,
+    `    case "dark": window.overrideUserInterfaceStyle = .dark`,
+    `    case "system": window.overrideUserInterfaceStyle = .unspecified`,
+    `    default: window.overrideUserInterfaceStyle = .light`,
+    `    }`,
+    `  }`,
     `}`,
     END,
   ];
@@ -64,7 +75,8 @@ function snippet(indent) {
 
 /** AppDelegate.swift içeriğine override'ı ekler. Idempotent. */
 function applyToAppDelegate(contents) {
-  // Daha önce basılmışsa bloğu yerinde tazele (sabitler değişmiş olabilir).
+  // Önceki bloğu (eski didFinishLaunching-içi biçim DAHİL) sök; blok pencere
+  // tanımını yutmuşsa yerine sade tanımı koy ki aşağıdaki çapa yine bulunsun.
   if (contents.includes(BEGIN)) {
     const start = contents.indexOf(BEGIN);
     const lineStart = contents.lastIndexOf("\n", start) + 1;
@@ -75,21 +87,25 @@ function applyToAppDelegate(contents) {
         "AppDelegate'te lit-splash-appearance bloğu yarım kalmış — elle temizle",
       );
     }
-    return (
+    const endLineEnd = contents.indexOf("\n", endIdx);
+    const block = contents.slice(lineStart, endIdx);
+    const replacement = block.includes("var window")
+      ? `${indent}var window: UIWindow?\n`
+      : "";
+    contents =
       contents.slice(0, lineStart) +
-      snippet(indent) +
-      contents.slice(endIdx + END.length)
-    );
+      replacement +
+      contents.slice(endLineEnd + 1);
   }
 
   const m = contents.match(ANCHOR);
   if (!m) {
     throw new Error(
-      "AppDelegate'te `window = UIWindow(frame: UIScreen.main.bounds)` bulunamadı — " +
+      "AppDelegate'te `var window: UIWindow?` bulunamadı — " +
         "Expo şablonu değişmiş, withSplashAppearance'ın çapasını güncelle",
     );
   }
-  return contents.replace(ANCHOR, `${m[0]}\n${snippet(m[1])}`);
+  return contents.replace(ANCHOR, snippet(m[1]));
 }
 
 const withSplashAppearance = (config) =>

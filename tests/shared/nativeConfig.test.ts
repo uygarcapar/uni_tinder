@@ -26,10 +26,15 @@ const { readFileSync } = require('fs') as {
  * O yüzden burada KAYNAK ZİNCİRİ denetleniyor: app.json'daki beyan + söküm
  * plugin'inin varlığı + SIRASI. Üçü doğruysa derlenen plist de doğru.
  *
- * ⚠️ Region monitoring (geofencing) iOS'ta hiçbir arka plan modu İSTEMİYOR:
- * bölge olayında işletim sistemi uygulamayı konum çatısı üzerinden kendisi
- * uyandırıyor. Yani "geofence çalışmıyor" diye arka plan modu eklemek YANLIŞ
- * teşhis — bu test o refleksin önünde duruyor.
+ * ⚠️ "location" MODU HAKKINDA (2026-11-01'de değişti): iOS'un KENDİSİ region
+ * monitoring için arka plan modu istemiyor — ama expo-location istiyor:
+ * `startGeofencingAsync` native tarafta `hasBackgroundModeEnabled("location")`
+ * guard'ıyla fırlatıyor (LocationModule.swift). Yani mod olmadan Kademe A
+ * (kampüse girince uyanma) iOS'ta HİÇ çalışmıyor — cihaz logunda
+ * `LocationUpdatesUnavailable` olarak göründü. Mod artık BİLEREK açık:
+ * geofencing onu gerçekten KULLANIYOR ve izin metni özelliği adıyla anlatıyor,
+ * yani 2.5.4'ün yasakladığı "kullanılmayan beyan" değil. Buradaki testler
+ * modun TEK kaynaktan (expo-location plugin bayrağı) gelmesini çiviliyor.
  */
 
 const APP_JSON = JSON.parse(readFileSync('app.json', 'utf8')) as {
@@ -57,9 +62,10 @@ describe('iOS arka plan modları', () => {
     ]);
   });
 
-  it('"location" arka plan modu YOK', () => {
-    // Geofence için gerekmiyor (region monitoring) ve eklemek 2.5.4'ü yeniden
-    // açar. `isIosBackgroundLocationEnabled: false` da bunu koruyor.
+  it('"location" modu infoPlist\'e ELLE yazılmıyor — tek kaynak plugin bayrağı', () => {
+    // Modu expo-location plugin'i ekliyor (`isIosBackgroundLocationEnabled`).
+    // Burada da yazılırsa bayrak kapatıldığında beyan sessizce plist'te kalır
+    // ve 2.5.4 yeniden açılır.
     const modes = APP_JSON.expo.ios?.infoPlist?.UIBackgroundModes as string[];
     expect(modes).not.toContain('location');
   });
@@ -83,10 +89,10 @@ describe('iOS arka plan modları', () => {
 describe('expo-location plugin kapıları', () => {
   const cfg = pluginConfig('expo-location') ?? {};
 
-  it('iOS arka plan konumu KAPALI', () => {
-    // `true` yapmak UIBackgroundModes'a "location" ekliyor — gerekmiyor
-    // (region monitoring) ve 2.5.4 riski.
-    expect(cfg.isIosBackgroundLocationEnabled).toBe(false);
+  it('iOS arka plan konumu AÇIK — geofence bunsuz fırlatıyor', () => {
+    // expo-location `startGeofencingAsync` "location" modunu ŞART koşuyor
+    // (dosya başındaki gerekçe). Kapatmak Kademe A'yı iOS'ta sessizce öldürür.
+    expect(cfg.isIosBackgroundLocationEnabled).toBe(true);
   });
 
   it('Android arka plan konumu AÇIK', () => {

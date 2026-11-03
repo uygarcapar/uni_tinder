@@ -18,7 +18,7 @@ import { useCampusPhotoGlow } from "../campusPhotoGlow";
 import { devLog } from "@/shared/utils/devLog";
 import { colors, scrimAt } from "@/shared/theme/colors";
 import { CampusOutlinedBox, type CampusBoxMetrics } from "./CampusInfoBox";
-import { campusPhotoUri } from "../campusPhotoUri";
+import { campusAvatarUri, campusPhotoUri } from "../campusPhotoUri";
 import type { CampusMomentDto } from "../campusTypes";
 
 /**
@@ -112,8 +112,6 @@ import type { CampusMomentDto } from "../campusTypes";
  * Tema ile dönen bir gri açık modda o perdenin içinde kayboluyor.
  */
 const CAPTION_GAP = 8;
-/** Satırın fotoğrafın sol kenarından payı — "bir tık sağ" (istek). */
-const CAPTION_LEFT = 4;
 /**
  * ⚠️ 20 → 17 (istek: "kart küçükken olan text size'ı biraz düşür"). Satır
  * yüksekliği 26'da KALDI: `CAMPUS_FACE_CAPTION` ondan türüyor ve üç yer birden
@@ -125,6 +123,28 @@ const NAME_LINE = 26;
 /** Zaman etiketi — addan KÜÇÜK (istek) ve ondan bir boşluk sonra. */
 const TIME_FONT = 12;
 const CAPTION_TIME_GAP = 6;
+/**
+ * ADIN SOLUNDAKİ YUVARLAK AVATAR (istek: "alt tab bardaki gibi") — KULLANICININ
+ * PROFİLİNDEKİ ANA FOTOĞRAF.
+ *
+ * ⚠️ ÇAP SATIR YÜKSEKLİĞİNİN ALTINDA (20 < `NAME_LINE`): `CAMPUS_FACE_CAPTION`
+ * satır yüksekliğinden türüyor ve ÜÇ yer birden okuyor (şerit boyu, büyüyen
+ * kartın hedef karesi, dokunma hedefi). Avatar satırdan uzun olsaydı yüzün
+ * toplam boyu büyür, üçü de kayardı.
+ *
+ * ⚠️ KAYNAK `mainPhotoUrl` (backend 2026-10-31), ANIN fotoğrafı DEĞİL: ikisi
+ * ayrı alan ve ayrışabiliyor. Çözüm + eski yanıt dalı `campusAvatarUri`de;
+ * adres çözülemiyorsa avatar HİÇ çizilmiyor (boş gri daire satırda kırık bir
+ * avatar gibi okunurdu).
+ *
+ * ⚠️🔴 ZAMANINDA BURADA BİR YEDEK VARDI VE SİLİNDİ: alan yokken kendi anım
+ * `useOwnFeedAvatar` (getMyProfile) ile, başkasınınki anın fotoğrafıyla
+ * çiziliyordu. Sunucu kendi anımı da dolduruyor (talep §2.4), yani yol ölüydü.
+ * Geri gerekirse: kart başına profil ÇEKMEYİN — kampüsün profil ucu yok, ödünç
+ * uç ProfileCardDto'nun tamamını getiriyor ve şerit N istek demek.
+ */
+const AVATAR_SIZE = 20;
+const AVATAR_GAP = 6;
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -368,6 +388,7 @@ export const CampusMomentCaption = memo(function CampusMomentCaption({
   const ago = campusPostedAgoText(moment.createdAt, nowMs, t);
   const ink = onMedia ? colors.onMedia : colors.text;
   const inkMuted = onMedia ? colors.onMediaMuted : colors.textSecondary;
+  const avatarUri = useMemo(() => campusAvatarUri(moment), [moment]);
 
   return (
     <Animated.View
@@ -375,17 +396,49 @@ export const CampusMomentCaption = memo(function CampusMomentCaption({
       style={[
         {
           marginTop: CAPTION_GAP * scale,
-          // ⚠️ BİR TIK SAĞDA (istek): satır fotoğrafın sol kenarına yapışıkken
-          // kutudan dışarı taşmış gibi okunuyordu. Pay küçük — büyüseydi yazı
-          // kutuyla bağını koparırdı.
-          paddingLeft: CAPTION_LEFT * scale,
           flexDirection: "row",
           alignItems: "baseline",
+          /**
+           * ⚠️ SATIR KUTUNUN ORTASINDA (istek: "isim yaş ve avatar orta altında
+           * olsun, şu an solunda") — ESKİ HÂL sola hizalı + 4pt sol paydı.
+           *
+           * ⚠️ `textAlign: "center"` BU İŞİ YAPMIYOR: satır bir `row` ve adın
+           * kutusu `flexShrink: 1` ile içeriği kadar — metni kendi kutusunda
+           * ortalamak kutuyu kıpırdatmıyor. Ortalanması gereken AVATAR+AD+SÜRE
+           * ÜÇLÜSÜ, yani hizayı kabın kendisi kurmak zorunda.
+           *
+           * ⚠️ BÜYÜYEN KARTTA NO-OP: orada satır mutlak konumlu ve genişliği
+           * içeriği kadar (CampusMomentExpandOverlay) — ortalamayı o yüzeyde
+           * `captionStyle`ın translateX'i yapıyor, iki uçta da.
+           */
+          justifyContent: "center",
         },
         maxWidth,
         style,
       ]}
     >
+      {/* AVATAR — adın SOLUNDA, yuvarlak (istek: "bottom tabs'taki gibi").
+          ⚠️ `alignSelf: "center"`: satır TABAN hizalı (`baseline`) ve orada
+          yazı olmayan bir çocuk ALT KENARINDAN hizalanır — daire yazının
+          altına sarkardı. Kendi hizasını yazıdan ayırmak şart.
+          ⚠️ `flexShrink: 0`: dar kutuda kırpılması gereken AD, avatar değil —
+          ezilen bir daire oval görünürdü. */}
+      {avatarUri ? (
+        <Image
+          source={{ uri: avatarUri }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          style={{
+            flexShrink: 0,
+            alignSelf: "center",
+            width: AVATAR_SIZE * scale,
+            height: AVATAR_SIZE * scale,
+            borderRadius: (AVATAR_SIZE * scale) / 2,
+            marginRight: AVATAR_GAP * scale,
+            backgroundColor: scrimAt(0.18),
+          }}
+        />
+      ) : null}
       <Text
         numberOfLines={1}
         style={{
@@ -509,6 +562,28 @@ const CampusMomentFace = memo(function CampusMomentFace({
     // çizgi animasyonlu olduğu için bu da her karede yeniden.
     return { borderRadius: Math.max(0, r - (ring / cardScale + gap)) };
   });
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⚠️🔴 GÖLGE KABININ KÖŞESİ DE ANİMASYONLU — yoksa köşeden ZEMİN SIZIYOR.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Cihazda görülen hata: "fotoğrafın etrafında beyazlık oluyor, border gibi;
+   * büyürken bozuluyor." Beyazlık bir çerçeve değil, ALTTAKİ KAP.
+   *
+   * Kap `borderRadius: radius` ile STATİK çiziliyordu (hedef köşe), kartın
+   * kendi köşesi ise p ile açılıyor ve p=0'da `radiusStart` çok daha BÜYÜK
+   * (çağıran `şeridin köşesi / başlangıç ölçeği` veriyor, ≈2×). Büyük köşe =
+   * daha çok kesilen kart, yani kartın altındaki kap köşelerde bir pay olarak
+   * görünür kalıyordu. p ilerledikçe iki köşe birbirine yaklaştığı için pay
+   * incelip şekil değiştiriyor — "büyüyünce bozuluyor" birebir bu.
+   *
+   * ⚠️ `boxStyle` BURAYA VERİLEMEZ: o stil `borderWidth` de taşıyor ve kaba
+   * ikinci bir kenar çizerdi. Paylaşılan tek şey KÖŞE.
+   */
+  const shadowStyle = useAnimatedStyle(() => {
+    if (!progress || radiusStart === undefined) return {};
+    const p = progress.value;
+    return { borderRadius: radiusStart + (radius - radiusStart) * p };
+  });
 
   /**
    * ⚠️🔴 KULLANILAMAZ URL'İ DEV'DE DUYULUR YAP — `onError`in GÖRMEDİĞİ dal.
@@ -567,11 +642,25 @@ const CampusMomentFace = memo(function CampusMomentFace({
           ⚠️ UFAK (istek: "hafif gölge... ufak ama"): yarıçap kutunun
           ölçeğiyle büyüyor ama alfa sabit — mod rengini kartın ARKASINDAN
           sezdiren bir hâle, altına konmuş ikinci bir kart değil. */}
-      <View
-        style={{
+      <Animated.View
+        style={[
+          {
           borderRadius: radius,
           borderCurve: "continuous",
-          backgroundColor: colors.surface4,
+          /**
+           * ⚠️🔴 `surface4` DEĞİL NÖTR GRİ (istek: "beyazlık oluyor, gri
+           * olsun"). Yüzey tokenı tema ailesinden türüyor ve AÇIK palette
+           * #DDDDE2 — kâğıdın yanında fiilen BEYAZ. Bu kap kartın altında
+           * duruyor ve köşelerden bir pay olarak görünüyor; orada beyaz bir
+           * kenar okunuyordu.
+           *
+           * `textMuted` çerçevenin kendi grisi (#8E8E93, İKİ TEMADA DA aynı):
+           * görünen pay artık kıl çizginin devamı gibi okunuyor, kâğıt gibi
+           * değil. Opak olmak ZORUNDA — iOS gölgenin şeklini zeminden
+           * türetiyor (aşağıdaki nota bak), yarı saydam bir renk gölgeyi
+           * alfa kanalı taramasına zorlar.
+           */
+          backgroundColor: colors.textMuted,
           /**
            * ⚠️ ÖNCE FOTOĞRAFIN RENGİ, YOKSA MODUN: örnekleme asenkron ve
            * başarısız olabiliyor (bkz. `useCampusPhotoGlow`). Yedek, rengin
@@ -584,7 +673,10 @@ const CampusMomentFace = memo(function CampusMomentFace({
           // Android: renkli gölge yalnız API 28+ (`outlineSpotShadowColor`
           // RN'de `shadowColor`dan türüyor); altında sessizce gri çiziliyor.
           elevation: SHADOW_ELEVATION,
-        }}
+          },
+          // Köşe kartınkiyle AYNI karede açılıyor — gerekçe `shadowStyle`da.
+          shadowStyle,
+        ]}
       >
       <CampusOutlinedBox
       width={width}
@@ -718,7 +810,7 @@ const CampusMomentFace = memo(function CampusMomentFace({
           </View>
         ) : null}
       </CampusOutlinedBox>
-      </View>
+      </Animated.View>
 
         {/* AD + YAŞ — KUTUNUN DIŞINDA, hemen altında (istek).
             ⚠️ Büyüyen kart bunu ÇİZMİYOR (`caption={false}`): orada yazı

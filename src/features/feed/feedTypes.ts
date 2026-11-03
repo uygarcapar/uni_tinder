@@ -92,6 +92,20 @@ export interface FeedAuthorDto {
   mainPhotoUrl: string | null;
   /** Kullanıcı üniversitesini gizlediyse null. */
   universityDisplay: string | null;
+  /**
+   * İsmin yanına "plus+" wordmark'ı çizilsin mi (bkz. PremiumBadge) — Keşif
+   * kartındaki `PotentialMatch.isPremium` ile AYNI sözleşme.
+   *
+   * ⚠️ İSTEMCİDE TÜRETİLMEZ. Bu alan tier DEĞİL "rozet görünsün mü": kullanıcı
+   * Ayarlar'dan rozetini gizlediyse sunucu premium olsa bile `false` yolluyor
+   * (kart sözleşmesinin kuralı). Kendi gönderimde bile `usePremiumTier`a
+   * bakmak o gizleme tercihini çiğner.
+   *
+   * OPSİYONEL: alanı göndermeyen sunucu sürümünde `undefined` → rozet
+   * çizilmiyor, satır eski hâliyle duruyor. Uç tarafı için bkz.
+   * backend_feed_author_premium_2026-11-03.md.
+   */
+  isPremium?: boolean;
 }
 
 export interface FeedPostDto {

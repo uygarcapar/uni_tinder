@@ -11,25 +11,27 @@ import { devForceFeedEnabled } from "./feedDevFlag";
  * inceltmiş olduğu cold-boot istek seline eklenirdi (bkz. TabNavigator'daki
  * `lazy: true` yorumu ve AppNavigator'ın uyanma fırtınası notu).
  *
- * ── Çözüm: diskte latch, oturum boyunca DONDURULMUŞ ─────────────────────────
- * Değer MMKV'de (`app-prefs`, logout'u aşıyor), boot'ta bir kez okunup modül
- * seviyesinde kilitleniyor. `TabNavigator` onu bir `useState` initializer'ında
- * okuyor → sekme listesi render arasında ŞEKİL DEĞİŞTİRMİYOR.
+ * ── Çözüm: diskte latch, oturumda TEK YÖNLÜ canlı değer ─────────────────────
+ * Değer MMKV'de (`app-prefs`, logout'u aşıyor), boot'ta okunup modül
+ * seviyesinde tutuluyor. `TabNavigator` onu `useSyncExternalStore` ile
+ * (`subscribeFeedFlag`) okuyor; oturum içinde yalnız kapalı → açık yönünde
+ * değişebildiği için sekme listesi asla küçülmez.
  *
- * ── Geçiş kuralı: her iki yönde de cold start ──────────────────────────────
- * Akış sekmesi tab bar'ın ORTASINDA (Beğeniler'den sonra). Araya sekme eklemek
- * mevcut route index'lerini kaydırdığı için canlı ekleme kullanıcının seçili
- * sekmesini oynatabilir; canlı kaldırma ise üstünde durduğu sekmeyi altından
- * çeker. O yüzden `recordFeedFlag` HER İKİ yönde de `false` döner: disk güncel
- * tutulur, oturum değeri DOKUNULMAZ. Bayrak açıldığı gün kullanıcı bir kez
- * uygulamayı yeniden başlatmak zorunda — bilinçli kabul edilen maliyet.
- * (Sekme en sona alınsaydı ekleme yönü canlı yapılabilirdi; plan §4.1d.)
+ * ── Geçiş kuralı: ekleme CANLI, çıkarma cold start ─────────────────────────
+ * EKLEME yönü canlı: `recordFeedFlag(…, true)` oturum değerini hemen açar,
+ * `true` döner ve aboneleri (`subscribeFeedFlag` → TabNavigator) haberdar
+ * eder. Sekme ortada dursa da bu güvenli — TabRouter route listesi değişince
+ * odaklı sekmeyi İSMİYLE yeniden çözüyor, native tab bar da seçimi route
+ * KEY'iyle taşıyor (gerekçe TabNavigator'daki Feed yorumunda). ÇIKARMA yönü
+ * dondurulmuş kalır — canlı kaldırma kullanıcının üstünde durduğu sekmeyi
+ * altından çekebilir — yani `false` yazımı diski günceller, oturuma DOKUNMAZ
+ * ve bir sonraki cold start'ta yürürlüğe girer.
  *
  * ── Kapanma yönü probe GEREKTİRMİYOR ───────────────────────────────────────
  * Herhangi bir feed çağrısının UT-7301'i zaten söylüyor → `markFeedDisabled`.
- * Probe YALNIZ açılma yönü için var ve `runForegroundSync`'e biniyor; sekme
- * zaten görünürse `useFeedMe` `/me`'nin sahibi olduğu için probe hiç atılmaz →
- * kararlı durumda SIFIR ek istek.
+ * Probe YALNIZ açılma yönü için var (feedProbe.ts): boot'ta ve
+ * `runForegroundSync`'te deneniyor; sekme zaten görünürse `useFeedMe` `/me`'nin
+ * sahibi olduğu için probe hiç atılmaz → kararlı durumda SIFIR ek istek.
  */
 
 const KEY_PREFIX = "feedFlag:";
@@ -56,6 +58,32 @@ const keyFor = (userId: string) => `${KEY_PREFIX}${userId}`;
 let sessionEnabled: boolean | null = null;
 /** Latch'in sahibi olan kullanıcı — hesap değişiminde yeniden okunsun. */
 let sessionUserId: string | null = null;
+
+/**
+ * Oturum değerinin aboneleri — TabNavigator `useSyncExternalStore` ile buraya
+ * bağlı. Yalnız `feedEnabledForSession()`ın SONUCU değiştiğinde haber verilir;
+ * mid-session değişim tek yönlü (kapalı → açık) olduğu için abonenin sekme
+ * listesi asla küçülmez.
+ */
+const listeners = new Set<() => void>();
+
+function notifyIfChanged(before: boolean): void {
+  if (feedEnabledForSession() === before) return;
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // Bir abonenin patlaması diğerlerini (ve yazma yolunu) düşürmesin.
+    }
+  });
+}
+
+export function subscribeFeedFlag(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 /** Diskteki değeri okur; yazılmamışsa "unknown". Oturum değerine DOKUNMAZ. */
 export function readFeedFlag(userId?: string | null): FeedFlag {
@@ -91,12 +119,16 @@ function writeFeedFlag(userId: string, enabled: boolean): void {
  * taraf: çizip her uçtan 403 almak kullanıcıya bozuk bir özellik gösterir.
  */
 export function initFeedFlag(userId?: string | null): FeedFlag {
+  const before = feedEnabledForSession();
   const flag = readFeedFlag(userId);
   sessionUserId = userId ?? null;
   // 🔴 Dev kancası: yalnız __DEV__'de ve yalnız latch "açık değil" derken
   // sekmeyi zorla açar. Gerçek bir "on"u maskelemiyor (zaten true olurdu).
   // Silinecekse: feedDevFlag.ts + bu satır. Ayrıntı o dosyanın başlığında.
   sessionEnabled = flag === "on" || devForceFeedEnabled();
+  // TabNavigator bu init'ten ÖNCE mount olmuş olabilir (efekt sırası) —
+  // abonelik sayesinde donmuş bir "kapalı" snapshot'ında takılı kalmaz.
+  notifyIfChanged(before);
   return flag;
 }
 
@@ -114,10 +146,10 @@ export function feedEnabledForSession(): boolean {
 /**
  * Sunucudan taze cevap geldi → diske yaz.
  *
- * Dönüş: "bu değişim ŞİMDİ uygulanabilir mi". Ortada duran sekme için HER İKİ
- * yönde de `false` (yukarıdaki geçiş kuralı). İmza ve dönüş tipi bilinçli böyle
- * duruyor: sekme en sona taşınırsa burada tek satır değişip ekleme yönü canlı
- * hale gelebilsin, çağıranlar bozulmasın.
+ * Dönüş: "bu değişim ŞİMDİ uygulandı mı". EKLEME yönü canlı: oturum değeri
+ * hemen açılır, aboneler haberdar edilir, `true` döner. ÇIKARMA yönü (ve
+ * sahibi oturumla eşleşmeyen yazımlar) yalnız diski günceller, `false` döner
+ * — yukarıdaki geçiş kuralı.
  */
 export function recordFeedFlag(
   userId: string | null | undefined,
@@ -126,7 +158,15 @@ export function recordFeedFlag(
   const owner = userId ?? sessionUserId;
   if (!owner) return false;
   writeFeedFlag(owner, enabled);
-  return false;
+  if (!enabled) return false; // kapanma: bir sonraki cold start'ta
+  // Sahibi doğrulanamayan "on" oturuma uygulanmaz: init henüz koşmadıysa
+  // (sessionUserId null) ya da cevap başka hesaba aitse sekme açılmaz —
+  // disk günceldir, doğru oturum kendi init'inde okur.
+  if (owner !== sessionUserId) return false;
+  const before = feedEnabledForSession();
+  sessionEnabled = true;
+  notifyIfChanged(before);
+  return true;
 }
 
 /**

@@ -29,6 +29,11 @@ import {
   Wine,
   Languages,
   Globe,
+  PartyPopper,
+  House,
+  Ticket,
+  Dumbbell,
+  Users,
   type LucideIcon,
 } from "@/shared/icons";
 
@@ -186,6 +191,35 @@ const GLOBE_ICON: PillIconSpec = { sf: "globe", lucide: Globe };
 export const getLanguageIcon = (
   enumName: string | null | undefined,
 ): PillIconSpec => (enumName === "Other" ? GLOBE_ICON : LANGUAGES_ICON);
+
+// ─── Arkadaşlık niyeti (FriendshipIntentType) ───────────────────────────────
+// FİLTREDE DEĞİL kartta kullanılıyor (SwipeCard > arkadaşlık niyeti bölümü):
+// niyet pilleri yaşam tarzı pilleriyle aynı yapıya çekildi, o yüzden onlar gibi
+// ikon taşıyorlar. Eşleme burada duruyor ki enumName → ikon sözleşmesi tek
+// dosyada kalsın (dosyanın geri kalanıyla aynı kural: anahtar DAİMA enumName).
+//
+// Sigara/alkol desenin tersi — burada her değerin KENDİ sembolü var, çünkü
+// niyetler birbirinden gerçekten farklı şeyler ("ev arkadaşı" ile "spor"
+// ortak bir sembolde buluşmuyor).
+const FRIENDSHIP_INTENT_ICONS: Record<string, PillIconSpec> = {
+  FunHangout: { sf: "party.popper.fill", lucide: PartyPopper },
+  StudyBuddy: { sf: "book.fill", lucide: BookOpen },
+  Roommate: { sf: "house.fill", lucide: House },
+  Events: { sf: "ticket.fill", lucide: Ticket },
+  Sports: { sf: "figure.run", lucide: Dumbbell },
+};
+
+// Backend yeni bir niyet eklerse: iki kişi silueti — pil metni zaten ne
+// olduğunu söylüyor, ikon yalnız satırı komşularıyla aynı boyda tutuyor.
+const FRIENDSHIP_FALLBACK_ICON: PillIconSpec = {
+  sf: "person.2.fill",
+  lucide: Users,
+};
+
+export const getFriendshipIntentIcon = (
+  enumName: string | null | undefined,
+): PillIconSpec =>
+  (enumName && FRIENDSHIP_INTENT_ICONS[enumName]) || FRIENDSHIP_FALLBACK_ICON;
 
 // ─── Sınıf (ClassYearType) ──────────────────────────────────────────────────
 // Değer int (0 = hazırlık, 1..6 = sınıf); sınıf numarası pill metninde zaten

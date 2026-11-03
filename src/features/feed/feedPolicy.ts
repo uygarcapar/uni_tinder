@@ -65,6 +65,65 @@ export function postPresentation(
 }
 
 /**
+ * Gönderilerim kartındaki durum rozeti — `postPresentation` → etiket/ton/yer.
+ *
+ * ⚠️ `expired` ROZETSİZ KALAMAZ: bir dönem null dönülüyordu ("kalan-ömür
+ * satırında zaten yazıyor" gerekçesiyle) ama o satır karttan kaldırılmıştı —
+ * süresi dolan gönderi HİÇBİR iz göstermiyordu ve kullanıcı "Gönderilerim'de
+ * var, akışta yok" diye bug sanıyordu. Rozet YALNIZ kırmızı saat ikonu (istek;
+ * önce "üç noktanın sağında metin", sonra "dolgulu pill" denendi, ikisi de
+ * GERİ ALINDI). `labelKey` çizilmiyor ama atılamaz: ikonun erişilebilirlik
+ * etiketi. Moderasyon rozetleri metin kalıyor — onların bir cümleyle
+ * söyleyeceği şey var ("Şikayetler nedeniyle gizlendi"), sürenin yok.
+ *
+ * `tone` sözlüğü karttaki `statusTone` ile aynı: inceleme NÖTR (bekleme
+ * durumu, kullanıcının yapacağı bir şey yok), kaldırılan/gizlenen KIRMIZI
+ * (gerçek bir sorun var).
+ */
+export type StatusBadge = {
+  labelKey: string;
+  tone: "neutral" | "danger";
+  /** Dolu ise metin yerine bu glif çizilir; etiket erişilebilirliğe iner. */
+  icon: "clock" | null;
+};
+
+export function statusBadgeFor(
+  post: Pick<FeedPostDto, "status" | "expiresAt">,
+  now: number = Date.now(),
+): StatusBadge | null {
+  switch (postPresentation(post, now)) {
+    case "expired":
+      return { labelKey: "feed.mine.expired", tone: "danger", icon: "clock" };
+    case "pending":
+      return {
+        labelKey: "feed.mine.status.PendingReview",
+        tone: "neutral",
+        icon: null,
+      };
+    case "support":
+      return {
+        labelKey: "feed.mine.status.SupportHold",
+        tone: "neutral",
+        icon: null,
+      };
+    case "hidden":
+      return {
+        labelKey: "feed.mine.status.HiddenByReports",
+        tone: "danger",
+        icon: null,
+      };
+    case "removed":
+      return {
+        labelKey: "feed.mine.status.Rejected",
+        tone: "danger",
+        icon: null,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
  * FAB / composer kapısı.
  *
  * ⚠️ `me` yoksa `unknown` — kilit ÇİZİLMEZ. `usePremiumTier().resolved`

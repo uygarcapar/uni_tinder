@@ -161,15 +161,12 @@ import {
 import {
   feedEnabledForSession,
   initFeedFlag,
-  markFeedFlagProbed,
-  recordFeedFlag,
   resetFeedFlagSession,
-  shouldProbeFeedFlag,
 } from '@/features/feed/feedFlag';
+import { probeFeedFlagIfDue } from '@/features/feed/feedProbe';
 import { openFeed } from '@/features/feed/feedEntry';
 import { campusKeys } from '@/features/campus/campusKeys';
 import { feedKeys } from '@/features/feed/feedKeys';
-import feedService from '@/features/feed/feedService';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
 import type { RootStackParamList } from '@/shared/types/navigation';
 import { colors, isLight } from '../shared/theme/colors';
@@ -702,15 +699,21 @@ export default function AppNavigator() {
     }
   }, [isAuthenticated, user?.userId, user?.id]);
 
-  // Akış bayrağı latch'i (UT-7301). Diskten OKUR, ağa GİTMEZ — cold boot'a
-  // istek eklemiyor. Değer burada okunup oturum boyunca donduruluyor; sekme
-  // listesi `TabNavigator`'da bir `useState` initializer'ından besleniyor, yani
-  // bu efektin bir sonraki koşusu sekmeyi oynatmıyor (bkz. feedFlag.ts).
+  // Akış bayrağı latch'i (UT-7301). Önce disk okunur (initFeedFlag — senkron,
+  // ağsız), SONRA açılma yönü probe'u denenir: latch kapalıyken ve 6 saatlik
+  // pencere boşken tek bir /feed/me. Probe eskiden YALNIZ foreground sync'e
+  // bağlıydı — hiç arka plana atmadan kullanan biri bayrağın açıldığını asla
+  // öğrenemiyordu. Probe başarırsa recordFeedFlag oturumu da açıyor ve sekme
+  // restart beklemeden beliriyor (canlı eklemenin güvenliği: TabNavigator).
   // Logout'ta latch serbest bırakılıyor ki başka hesapla girişte yeniden okunsun.
   useEffect(() => {
     const uid = user?.userId || user?.id;
-    if (isAuthenticated && uid) initFeedFlag(String(uid));
-    else if (!isAuthenticated) resetFeedFlagSession();
+    if (isAuthenticated && uid) {
+      initFeedFlag(String(uid));
+      void probeFeedFlagIfDue();
+    } else if (!isAuthenticated) {
+      resetFeedFlagSession();
+    }
   }, [isAuthenticated, user?.userId, user?.id]);
 
   // RevenueCat init + subscription status when authenticated.
@@ -1954,28 +1957,14 @@ export default function AppNavigator() {
     // Arka plandayken verilmiş ödül/hediye (davet, ön kayıt Lit Plus): bir kez
     // uygulama içi haber.
     void checkPendingNotices();
-    // Akış bayrağı AÇILMA yönü probe'u. Kapanma yönü probe gerektirmiyor —
-    // herhangi bir feed çağrısının UT-7301'i latch'e zaten yazıyor
-    // (feedService > guard). Bu yüzden burada SADECE "kapalıyken açıldı mı"
-    // sorusu var ve 6 saatlik throttle arkasında.
-    //
-    // Sekme zaten görünüyorsa `shouldProbeFeedFlag()` false döner (useFeedMe
-    // /me'nin sahibi) → kararlı durumda SIFIR ek istek. Burası token tazeliği
-    // kapısından SONRA çalışan blok, yani aşağıdaki uyanma fırtınası
-    // yorumunun anlattığı istek selinin içine girmiyor.
-    //
-    // Sonucu ŞİMDİ uygulanmıyor: recordFeedFlag diski güncelliyor, sekme bir
-    // sonraki cold start'ta beliriyor (ortadaki sekme → route index kaydırma).
-    if (shouldProbeFeedFlag()) {
-      markFeedFlagProbed();
-      queryClient
-        .fetchQuery({ queryKey: feedKeys.me, queryFn: () => feedService.getMe() })
-        .then(() => recordFeedFlag(null, true))
-        .catch(() => {
-          // UT-7301 ise markFeedDisabled zaten yazdı; diğer hatalar (ağ, 401)
-          // bayrak hakkında bilgi taşımıyor → latch'e dokunulmaz.
-        });
-    }
+    // Akış bayrağı AÇILMA yönü probe'u (boot'taki init efektiyle aynı giriş).
+    // Kapanma yönü probe gerektirmiyor — herhangi bir feed çağrısının UT-7301'i
+    // latch'e zaten yazıyor (feedService > guard). Sekme zaten görünüyorsa
+    // probe içi `shouldProbeFeedFlag()` false döner (useFeedMe /me'nin sahibi)
+    // → kararlı durumda SIFIR ek istek. Burası token tazeliği kapısından SONRA
+    // çalışan blok, yani aşağıdaki uyanma fırtınası yorumunun anlattığı istek
+    // selinin içine girmiyor. Pencere yakma ve 403 kod ayrımı feedProbe.ts'te.
+    void probeFeedFlagIfDue();
   }, [dispatch]);
 
   useEffect(() => {

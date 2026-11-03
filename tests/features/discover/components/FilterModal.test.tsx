@@ -284,7 +284,7 @@ describe('FilterModal — premium filtreler', () => {
   it('grup başlığını ve sekiz filtreyi render eder', () => {
     renderModal(baseFilters);
 
-    expect(screen.getByText('Premium Filtreler')).toBeTruthy();
+    expect(screen.getByText('Plus+ Filtreler')).toBeTruthy();
     // "Kullanım Amacı" listede YOK: alan üründen çıktı.
     [
       'Boy', 'Sınıf', 'Burç', 'Sigara', 'Alkol', 'Evcil Hayvan',
@@ -655,14 +655,14 @@ describe('FilterModal — premium filtreler', () => {
     expect(onSave.mock.calls[0][0].preferredUniversityDomains).toEqual([]);
   });
 
-  it('premium bölümlerin tamamını "Premium Filtreler" başlığından SONRA çizer', () => {
+  it('premium bölümlerin tamamını "Plus+ Filtreler" başlığından SONRA çizer', () => {
     // Başlık "buradan aşağısı premium" diyor; üstünde premium bir bölüm
     // kalırsa söz ile ekran çelişir.
     renderModal(baseFilters);
 
     const order = screen.root.findAll(() => true);
     const at = (text: string) => order.indexOf(screen.getByText(text));
-    const header = at('Premium Filtreler');
+    const header = at('Plus+ Filtreler');
 
     ['Şehir', 'Üniversite', 'Boy'].forEach((title) =>
       expect(at(title)).toBeGreaterThan(header),
@@ -803,7 +803,7 @@ describe('FilterModal — premium filtreler', () => {
     expect(screen.getByText('175 – 190 cm')).toBeTruthy();
     expect(
       screen.getByText(
-        'Premium filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Premium\'a dönersen kaldığı yerden devam eder.',
+        'Plus+ filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Plus+\'a dönersen kaldığı yerden devam eder.',
       ),
     ).toBeTruthy();
   });

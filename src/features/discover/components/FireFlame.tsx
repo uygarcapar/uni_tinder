@@ -29,6 +29,7 @@ import {
  * çıkan hata (Skia path'i kurulamadı) — kutlama atlanır, ekran gitmez.
  */
 import FlameCanvas from "@/features/discover/components/FireFlameCanvas";
+import { isAppMode, type AppMode } from "@/features/discover/modeTheme";
 
 /**
  * Kart değişimini bekleten taraf (bkz. flameSweep) "flameSweepCover" olayını
@@ -63,9 +64,14 @@ const RELEASE_TEARDOWN_MS = FLAME_WAVE_MS + 400;
  * mount edip sonra söker. Boşta hiçbir animasyon/frame callback dönmüyor.
  */
 export default function FireFlame() {
-  // `hold` ÇALIŞMAYLA BİRLİKTE tek state'te: ayrı tutulsa canvas bir render
-  // boyunca yeni key ile ama eski/bayat `hold` değeriyle mount olabilirdi.
-  const [run, setRun] = useState<{ id: number; hold: boolean } | null>(null);
+  // `hold` ve `mode` ÇALIŞMAYLA BİRLİKTE tek state'te: ayrı tutulsalar canvas
+  // bir render boyunca yeni key ile ama eski/bayat değerlerle mount olabilirdi
+  // (Arkadaş'ta verilen kararın alevi bir kare Flört kırmızısı yanardı).
+  const [run, setRun] = useState<{
+    id: number;
+    hold: boolean;
+    mode?: AppMode;
+  } | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
@@ -73,13 +79,18 @@ export default function FireFlame() {
     let fallback: ReturnType<typeof setTimeout> | undefined;
     /** Bu koşu salıvermeyi bekliyor mu — sökme sayacı o zamana erteli. */
     let holding = false;
-    const unsub = uiBus.on("flameSweep", (payload?: { hold?: boolean }) => {
+    const unsub = uiBus.on(
+      "flameSweep",
+      (payload?: { hold?: boolean; mode?: AppMode }) => {
       const hold = !!payload?.hold;
+      // Bilinmeyen/eksik mod canvas'ın kendi varsayılanına (Dating) düşsün —
+      // `isAppMode` kapısı, uiBus tipsiz olduğu için.
+      const mode = isAppMode(payload?.mode) ? payload.mode : undefined;
       holding = hold;
       // Üst üste kutlamalarda YENİ key veriliyor: canvas remount olur, dalga
       // baştan başlar. Aynı key kalsaydı ikinci alev, birincinin ekranı terk
       // etme fazının ortasında görünürdü.
-      setRun({ id: seq.current++, hold });
+      setRun({ id: seq.current++, hold, mode });
       if (timer) clearTimeout(timer);
       if (fallback) clearTimeout(fallback);
       // Pay bilerek geniş: sayaç OLAY anında başlıyor, animasyon ise canvas
@@ -102,7 +113,8 @@ export default function FireFlame() {
         () => uiBus.emit("flameSweepCover"),
         COVER_FALLBACK_MS,
       );
-    });
+      },
+    );
     // Canvas kendi (doğru zamanlı) olayını yayınladıysa yedeği sök — yoksa
     // aynı kutlamada ikinci kez tetiklerdi.
     const unsubCover = uiBus.on("flameSweepCover", () => {
@@ -132,7 +144,7 @@ export default function FireFlame() {
 
   return (
     <LazyChunkBoundary resetKey={run.id}>
-      <FlameCanvas key={run.id} hold={run.hold} />
+      <FlameCanvas key={run.id} hold={run.hold} mode={run.mode} />
     </LazyChunkBoundary>
   );
 }

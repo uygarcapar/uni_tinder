@@ -1,47 +1,22 @@
-diff --git a/node_modules/expo-camera/ios/Common/ExpoCameraUtils.swift b/node_modules/expo-camera/ios/Common/ExpoCameraUtils.swift
-index 9687b15..97156c6 100644
---- a/node_modules/expo-camera/ios/Common/ExpoCameraUtils.swift
-+++ b/node_modules/expo-camera/ios/Common/ExpoCameraUtils.swift
-@@ -171,7 +171,19 @@ struct ExpoCameraUtils {
-     guard image.imageOrientation != .up else {
-       return image
-     }
--    let renderer = UIGraphicsImageRenderer(size: image.size)
-+    // PATCH (lit): format VERİLMEZSE `UIGraphicsImageRendererFormat.default()`
-+    // devreye giriyor ve onun `scale`ı EKRANIN ölçeği (iPhone'da 3.0). `size`
-+    // nokta cinsinden, yani bitmap her kenarda 3 kat, PİKSELDE 9 KAT doğuyor:
-+    //   • 12MP kare (3024×4032) → 9072×12096 ≈ 439 MB tek allocation
-+    //   • 48MP kare (6048×8064) → 18144×24192 ≈ 1.76 GB → jetsam, uygulama
-+    //     JS'e hiçbir hata vermeden ölüyor (deklanşörde loader dönerken).
-+    // Üstelik dönen UIImage 3 kat BÜYÜTÜLMÜŞ oluyor; kaydedilen JPEG ve onu
-+    // tekrar açan kırpıcı da aynı şişmeyi devralıyor.
-+    // Kaynak ölçeğiyle render = birebir piksel, kayıpsız.
-+    let format = UIGraphicsImageRendererFormat.default()
-+    format.scale = image.scale
-+    format.opaque = true
-+    let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-     return renderer.image { _ in
-       image.draw(in: CGRect(origin: .zero, size: image.size))
-     }
 diff --git a/node_modules/expo-camera/ios/Current/CameraPhotoCapture.swift b/node_modules/expo-camera/ios/Current/CameraPhotoCapture.swift
-index d7e8485..4f3d2f3 100644
+index fc9a9bb..e2c879e 100644
 --- a/node_modules/expo-camera/ios/Current/CameraPhotoCapture.swift
 +++ b/node_modules/expo-camera/ios/Current/CameraPhotoCapture.swift
-@@ -83,7 +83,12 @@ class CameraPhotoCapture: NSObject, AVCapturePhotoCaptureDelegate {
+@@ -90,7 +90,12 @@ class CameraPhotoCapture: NSObject, AVCapturePhotoCaptureDelegate {
        }
  
        if #available(iOS 16.0, *) {
 -        photoSettings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
 +        // PATCH (lit): `photoOutput.maxPhotoDimensions` = aktif formatın EN
 +        // BÜYÜĞÜ, yani `Photo` presetinde 48MP sensörlü iPhone'larda
-+        // 8064×6048. O kare aşağıdaki işleme hattından (decode → crop →
-+        // normalizeOrientation → jpegData) geçerken bellek tavanını aşıyor.
-+        // 12MP'e sığdırıyoruz; çıktı zaten kırpıcıda ölçeklenerek yükleniyor.
++        // 8064×6048. O kare işleme hattından (decode → crop → jpegData)
++        // geçerken bellek tavanını aşıyor. 12MP'e sığdırıyoruz; çıktı zaten
++        // kırpıcıda ölçeklenerek yükleniyor.
 +        photoSettings.maxPhotoDimensions = Self.cappedPhotoDimensions(for: photoOutput)
        }
  
        if !photoSettings.availablePreviewPhotoPixelFormatTypes.isEmpty,
-@@ -251,6 +256,34 @@ class CameraPhotoCapture: NSObject, AVCapturePhotoCaptureDelegate {
+@@ -278,6 +283,34 @@ class CameraPhotoCapture: NSObject, AVCapturePhotoCaptureDelegate {
      return response
    }
  

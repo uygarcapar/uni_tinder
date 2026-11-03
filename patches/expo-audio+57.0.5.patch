@@ -1,8 +1,8 @@
 diff --git a/node_modules/expo-audio/ios/AudioModule.swift b/node_modules/expo-audio/ios/AudioModule.swift
-index 12d7de0..a28f135 100644
+index d265606..3450dac 100644
 --- a/node_modules/expo-audio/ios/AudioModule.swift
 +++ b/node_modules/expo-audio/ios/AudioModule.swift
-@@ -818,6 +818,24 @@ public class AudioModule: Module {
+@@ -819,6 +819,24 @@ public class AudioModule: Module {
      } else {
        try session.setCategory(category, options: sessionOptions)
      }

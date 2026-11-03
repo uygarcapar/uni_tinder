@@ -114,7 +114,26 @@ export interface CampusMomentDto {
   displayName: string;
   /** `null` = kullanıcı yaşını gizlemiş (kart yaşı hiç yazmıyor). */
   age: number | null;
+  /** ⚠️ ANIN fotoğrafı — profil avatarı DEĞİL (bkz. `mainPhotoUrl`). */
   photoUrl: string;
+  /**
+   * PROFİLDEKİ ANA FOTOĞRAF — adın solundaki yuvarlak avatar
+   * (backend 2026-10-31, `backend_campus_moment_avatar_2026-10-31.md`).
+   *
+   * ⚠️ `photoUrl`DEN BAĞIMSIZ ve ikisi ayrışabiliyor: biri null iken diğeri
+   * dolu olabilir. Kural sunucuda tek kaynaktan (`PhotoVisibility.VisibleMainUrl`,
+   * akıştaki `author.mainPhotoUrl` ile birebir): yalnız ONAYLI foto, ana foto
+   * onaylı değilse ilk onaylıya düşüyor, hiçbiri yoksa `null`.
+   *
+   * ⚠️ `null` = AVATAR ÇİZİLMİYOR. Yer tutucu bir adres gelmiyor (talep §2.1);
+   * boş gri bir daire satırda kırık bir avatar gibi okunurdu.
+   *
+   * ⚠️ İSTEMCİDE OPSİYONEL — `canLike` ile AYNI GEREKÇE: alanı taşımayan ESKİ
+   * yanıtlar diskte/bellekte olabiliyor. `undefined` (alan YOK) ile `null`
+   * (alan var, foto yok) AYRI işleniyor: ilkinde anın fotoğrafına düşülüyor,
+   * ikincisinde avatar hiç çizilmiyor — ayrımın tamamı `campusAvatarUri`de.
+   */
+  mainPhotoUrl?: string | null;
   createdAt: string;
   /**
    * `createdAt + 24 saat`. ⚠️ Bitiş kararı `status` benzeri bir alandan DEĞİL

@@ -222,6 +222,9 @@ CampusMomentDto {
 }
 ```
 
+> **Ek talep (2026-10-31):** DTO'ya `mainPhotoUrl` (profilin ANA fotoğrafı,
+> `photoUrl`den ayrı) — `backend_campus_moment_avatar_2026-10-31.md`.
+
 - **Filtre yok, tek ayrım mod.** `mode=Friends` isteği yalnız Friends profilinden atılmış
   anları döndürsün. Parametre verilmezse mevcut sözleşmedeki gibi Dating sayılsın.
 - **Dönmeyecekler:** süresi dolmuş · moderasyonda düşmüş (başkasınınki) · kullanıcının

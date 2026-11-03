@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import { useTranslation } from 'react-i18next';
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
@@ -7,7 +7,10 @@ import LikesScreen from "@/features/discover/screens/LikesScreen";
 import ProfileScreen from "@/features/profile/screens/ProfileScreen";
 import MessagesScreen from "@/features/chat/screens/MessagesScreen";
 import FeedScreen from "@/features/feed/screens/FeedScreen";
-import { feedEnabledForSession } from "@/features/feed/feedFlag";
+import {
+  feedEnabledForSession,
+  subscribeFeedFlag,
+} from "@/features/feed/feedFlag";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { selectUnreadForMode } from "@/features/chat/chatSlice";
 import { useAppMode } from "@/features/discover/useAppMode";
@@ -147,12 +150,16 @@ export default function TabNavigator() {
     (s) => (s as any).swipe.whoLikedMeCount as number,
   );
 
-  // Akış bayrağı (UT-7301). `useState` initializer'ı — selector ya da query
-  // DEĞİL: sekme listesi render arasında ŞEKİL DEĞİŞTİRMEMELİ. Akış sekmesi
-  // ortada durduğu için canlı eklenip çıkarılması mevcut route index'lerini
-  // kaydırır; değer bu yüzden oturum boyunca donduruluyor ve bayrak değişimi
-  // bir sonraki cold start'ta yürürlüğe giriyor (bkz. features/feed/feedFlag.ts).
-  const [feedEnabled] = useState(() => feedEnabledForSession());
+  // Akış bayrağı (UT-7301). Canlı EKLEME güvenli — router odaklı sekmeyi
+  // isimle, native taraf key'le çözdüğü için araya giren route seçimi
+  // oynatamaz (gerekçe aşağıda, Feed ekranının yorumunda). Oturum değeri
+  // yalnız kapalı → açık yönünde değişir (kapanma cold start'ta uygulanır,
+  // bkz. features/feed/feedFlag.ts geçiş kuralı) — yani liste asla küçülmez,
+  // kullanıcının üstünde durduğu sekme altından çekilmez.
+  const feedEnabled = useSyncExternalStore(
+    subscribeFeedFlag,
+    feedEnabledForSession,
+  );
 
   const messagesBadge =
     unreadTotal > 0 ? (unreadTotal > 99 ? "99+" : String(unreadTotal)) : undefined;
@@ -238,9 +245,14 @@ export default function TabNavigator() {
         }}
       />
       {/* Lit Akışı. Bayrak kapalıyken sekme HİÇ render edilmiyor — çizilip her
-          uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. Rozet YOK:
-          bekleyen yanıtlar Beğeniler rozetinde sayılıyor (sözleşme §10.1),
-          aynı kümeyi iki sekmede göstermek sayıyı iki kez okuturdu. */}
+          uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. ORTADA
+          durması canlı eklemeye ENGEL DEĞİL: TabRouter route listesi değişince
+          odaklı sekmeyi İSMİYLE yeniden çözüyor (getStateForRouteNamesChange)
+          ve native taraf seçimi pozisyonla değil route KEY'iyle taşıyor
+          (NativeBottomTabView > selectedScreenKey) — araya eklenen sekme
+          kullanıcının seçili sekmesini oynatamaz. Rozet YOK: bekleyen yanıtlar
+          Beğeniler rozetinde sayılıyor (sözleşme §10.1), aynı kümeyi iki
+          sekmede göstermek sayıyı iki kez okuturdu. */}
       {feedEnabled ? (
         <Tab.Screen
           name="Feed"

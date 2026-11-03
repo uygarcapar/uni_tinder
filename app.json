@@ -92,6 +92,7 @@
         "expo-build-properties",
         {
           "ios": {
+            "enableSceneSupport": true,
             "extraPods": [
               {
                 "name": "GoogleUtilities",
@@ -142,12 +143,13 @@
           "locationAlwaysPermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
           "locationAlwaysAndWhenInUsePermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
           "motionUsagePermission": "Lit uses motion data to orient the camera correctly while you take a photo and to improve location accuracy.",
-          "isIosBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": false
         }
       ],
       "./plugins/withoutBackgroundFetch",
+      "./plugins/withMinPodDeploymentTarget",
       "expo-task-manager",
       [
         "@sentry/react-native",

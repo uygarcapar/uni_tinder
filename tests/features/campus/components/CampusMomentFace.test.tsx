@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react-native';
 import CampusMomentFace, {
   CAMPUS_FACE_CAPTION,
+  CampusMomentCaption,
 } from '@/features/campus/components/CampusMomentFace';
 import { campusBoxMetrics } from '@/features/campus/components/CampusInfoBox';
 import type { CampusMomentDto } from '@/features/campus/campusTypes';
@@ -146,12 +147,80 @@ it('fotoğraf kutusu verilen BOYDA kalıyor — yazı onu kısaltmıyor', () => 
 
 
 /**
- * GEÇEN SÜRE — ADIN SAĞINDA, YAZI OLARAK (istek: "x saat önce").
+ * ADIN SOLUNDAKİ AVATAR (istek: "bottom tabs'taki gibi yuvarlak").
+ *
+ * ⚠️🔴 ÇİVİLENEN ŞEY KAYNAK: avatar `mainPhotoUrl`den (profilin ana fotoğrafı)
+ * geliyor, ANIN fotoğrafından DEĞİL. Bir tur `photoUrl` kullanıldı ve yanlıştı
+ * — büyük fotoğrafın küçük bir kopyasını çiziyordu.
+ *
+ * ⚠️ BOY `NAME_LINE`IN ALTINDA kalmalı: `CAMPUS_FACE_CAPTION` satır
+ * yüksekliğinden türüyor ve üç yer okuyor (yukarıdaki teste bak).
+ */
+describe('adın solundaki avatar', () => {
+  const faceOf = (over: Partial<CampusMomentDto>) =>
+    render(
+      <CampusMomentFace
+        moment={moment(over)}
+        width={167}
+        height={222}
+        {...campusBoxMetrics(222)}
+        nowMs={Date.now()}
+      />,
+    ).toJSON();
+
+  const avatarStyle = (tree: any) =>
+    styleOf(tree, (s) => s.borderRadius === 10 && s.width === 20);
+
+  it('kaynak `mainPhotoUrl` — ANIN fotoğrafı DEĞİL', () => {
+    const tree: any = faceOf({
+      photoUrl: 'https://cdn.test/moment.jpg',
+      mainPhotoUrl: 'https://cdn.test/avatar.jpg',
+    });
+    expect(JSON.stringify(tree)).toContain('https://cdn.test/avatar.jpg');
+    expect(avatarStyle(tree)).not.toBeNull();
+  });
+
+  it('yuvarlak (yarıçap = çapın yarısı) ve satırdan KISA', () => {
+    const s = avatarStyle(faceOf({ mainPhotoUrl: 'https://cdn.test/a.jpg' }));
+    expect(s.borderRadius).toBe(s.width / 2);
+    expect(s.height).toBeLessThan(26);
+  });
+
+  it('`mainPhotoUrl: null` → avatar HİÇ çizilmiyor, yer tutucu yok', () => {
+    expect(avatarStyle(faceOf({ mainPhotoUrl: null }))).toBeNull();
+  });
+
+  /**
+   * ⚠️ ÇARPAN SATIRIN KENDİSİNDEN okunuyor, yüzden DEĞİL: yüzdeki satır her
+   * zaman 1'de (yukarıdaki "çarpan AD SATIRINI büyütmüyor" testi). Büyüyen
+   * kartın satırı `CampusMomentCaption`ı AYRI mount ediyor ve çarpanı orada
+   * veriyor — avatar da o satırın parçası, kartla aynı oranda büyümeli.
+   */
+  it('çarpanla birlikte büyüyor — büyüyen kartın satırında', () => {
+    const big = styleOf(
+      render(
+        <CampusMomentCaption
+          moment={moment({ mainPhotoUrl: 'https://cdn.test/a.jpg' })}
+          nowMs={Date.now()}
+          scale={2}
+        />,
+      ).toJSON(),
+      (s) => s.width === 40 && s.borderRadius === 20,
+    );
+    expect(big).not.toBeNull();
+  });
+});
+
+/**
+ * GEÇEN SÜRE — ADIN SAĞINDA, YAZI OLARAK.
  *
  * ⚠️ DÖRDÜNCÜ TUR: süre fotoğrafın dibinde saat ("14:32") → köşede halka →
  * kartın kenarını saran renkli şerit → KALAN süre yazısı ("18 sa") → şimdi
- * GEÇEN süre ("3 saat önce"). Son iki hâl aynı bilgiyi iki yönden söylüyor;
- * fark okunuşta: biri sayaç, öteki zaman damgası (akış/sohbet diliyle aynı).
+ * GEÇEN süre. Son iki hâl aynı bilgiyi iki yönden söylüyor; fark okunuşta:
+ * biri sayaç, öteki zaman damgası (akış/sohbet diliyle aynı).
+ *
+ * ⚠️ BİÇİM KISA (istek): "3 saat önce" değil `3s` (EN: `3h`). Satır artık
+ * avatar + ad + süreyi dar bir kutuda taşıyor; uzun cümle adı kırptırıyordu.
  *
  * ⚠️ RENKLİ ŞERİT GERİ GELMEMELİ (istek: "sadece fotoğraf olsun"): fotoğrafın
  * üstünde SVG bir çizim kalmadı.
@@ -172,7 +241,7 @@ describe('geçen süre etiketi', () => {
     const tree = faceWith({
       createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
     });
-    const label = tree.getByText(/önce/);
+    const label = tree.getByText('3s');
     const name = tree.getByText(/ada/);
     const sizeOf = (n: any) => {
       const st = Array.isArray(n.props.style) ? n.props.style.flat(9) : [n.props.style];
@@ -181,12 +250,14 @@ describe('geçen süre etiketi', () => {
     expect(sizeOf(label)).toBeLessThan(sizeOf(name));
   });
 
-  it('bir dakikanın altında "az önce" — negatif/sıfır süre yazmıyor', () => {
-    expect(faceWith({ createdAt: new Date().toISOString() }).getByText(/az önce/)).toBeTruthy();
+  it('bir dakikanın altında "şimdi" — negatif/sıfır süre yazmıyor', () => {
+    expect(faceWith({ createdAt: new Date().toISOString() }).getByText('şimdi')).toBeTruthy();
   });
 
   it('çözülemeyen tarihte etiket HİÇ çizilmiyor', () => {
-    expect(faceWith({ createdAt: 'bozuk' }).queryByText(/önce/)).toBeNull();
+    const tree = faceWith({ createdAt: 'bozuk' });
+    // Kısa biçimin TÜM dalları: "şimdi", "41dk", "3s".
+    expect(tree.queryByText(/^(şimdi|\d+(dk|s))$/)).toBeNull();
   });
 
   /**

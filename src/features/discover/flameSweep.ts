@@ -1,4 +1,5 @@
 import uiBus from "@/shared/services/uiBus";
+import type { AppMode } from "./modeTheme";
 
 /**
  * Ekranı kaplayan alev kutlaması + desteyi ÖRTÜNÜN ALTINDA ilerletme.
@@ -93,7 +94,10 @@ import uiBus from "@/shared/services/uiBus";
 const MATCH_WAIT_MS = 1500;
 const CURTAIN_WAIT_MS = 5000;
 
-export function runMatchCurtain(onCovered: () => void): () => void {
+export function runMatchCurtain(
+  onCovered: () => void,
+  opts?: { mode?: AppMode },
+): () => void {
   let done = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** Yedek yolda kurulan KENDİ süpürmemizin aboneliği. */
@@ -130,7 +134,9 @@ export function runMatchCurtain(onCovered: () => void): () => void {
         sweepUnsub = null;
         onCovered();
       },
-      { hold: true },
+      // Yedek yolda da MODUN rengi: perde gelmediği için ekranı kaplayan şey
+      // bizim alevimiz ve Arkadaş modunda kırmızı yanmamalı.
+      { hold: true, mode: opts?.mode },
     );
   };
   unsubs.push(uiBus.on("matchCurtainCover", finish));
@@ -151,9 +157,21 @@ export function runMatchCurtain(onCovered: () => void): () => void {
   };
 }
 
+/**
+ * ── DALGANIN RENGİ MODDAN GELİYOR (istek, 2026-11-03) ──────────────────────
+ *
+ * Kutlamanın HAREKETİ her modda birebir aynı (süre, titreşim, yalpa, park);
+ * değişen tek şey dolgu gradyanı ve konturu — Flört'ün ateşi ↔ Arkadaş'ın
+ * Spark yeşili (bkz. modeTheme > modeFireGradient · modeFlameOutline).
+ *
+ * `mode` çağıranın ELİNDE, canvas'ta değil: süpürme global bir dinleyiciden
+ * (FireFlame) mount ediliyor ve orası hangi ekranda, hangi modda bir karar
+ * verildiğini bilmiyor. VERİLMEZSE Dating'e düşüyor — eski davranış, yani
+ * geçirmeyi unutan bir çağıran kırmızı alev görür, renksiz değil.
+ */
 export function runFlameSweep(
   onCovered: () => void,
-  opts?: { hold?: boolean },
+  opts?: { hold?: boolean; mode?: AppMode },
 ): () => void {
   const hold = !!opts?.hold;
   let done = false;
@@ -163,7 +181,7 @@ export function runFlameSweep(
     unsub();
     onCovered();
   });
-  uiBus.emit("flameSweep", { hold });
+  uiBus.emit("flameSweep", { hold, mode: opts?.mode });
   return () => {
     done = true;
     unsub();

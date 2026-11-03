@@ -157,7 +157,7 @@ import {
   anonymousGate,
   composeGate,
   kindFilterGate,
-  postPresentation,
+  statusBadgeFor,
   universityPickerGate,
 } from "../feedPolicy";
 import {
@@ -2277,7 +2277,12 @@ export default function FeedScreen() {
       },
       startSweep: (onCovered) => {
         momentSweepUnsub.current?.();
-        momentSweepUnsub.current = runFlameSweep(onCovered, { hold: true });
+        momentSweepUnsub.current = runFlameSweep(onCovered, {
+          hold: true,
+          // Anın kendi modu (kart da onunla çiziliyor, bkz. mode prop'u);
+          // yoksa şeritte seçili mod.
+          mode: moment.mode ?? selectedMode,
+        });
       },
       collapse: () => {
         setMomentCollapsing(true);
@@ -2289,7 +2294,7 @@ export default function FeedScreen() {
         }, EXPAND_MS);
       },
     });
-  }, [campus, openMoment]);
+  }, [campus, openMoment, selectedMode]);
 
   /**
    * ⚠️ PARK EDEN DALGAYI SÖKÜLÜRKEN DE SALIVER: ekran kapanırsa (sekme
@@ -2485,7 +2490,11 @@ export default function FeedScreen() {
         // yanıt kapsülü yok (bkz. FeedSkeletonList).
         skeletonVariant={isMine ? "mine" : "feed"}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          // Rozet yalnız Gönderilerim'de — akışta sunucu zaten sadece
+          // Published/süresi dolmamış döndürüyor, hesaplamak boşa iş.
+          const statusBadge = isMine ? statusBadgeFor(item) : null;
+          return (
           <FeedPostCard
             post={item}
             variant={isMine ? "mine" : "feed"}
@@ -2500,12 +2509,17 @@ export default function FeedScreen() {
             onPressAuthor={isMine ? undefined : handlePressAuthor}
             onMenu={handlePostMenu}
             // `onPressReplyCount` KALDIRILDI: Yanıtlar sayfası yok artık.
-            statusLabel={isMine ? statusLabelFor(item, t) : null}
-            statusTone={isMine ? statusToneFor(item) : "neutral"}
+            // Rozet (etiket/ton/yer) tek kayıttan: feedPolicy > statusBadgeFor.
+            statusLabel={
+              isMine && statusBadge ? t(statusBadge.labelKey) : null
+            }
+            statusTone={statusBadge?.tone ?? "neutral"}
+            statusIcon={statusBadge?.icon ?? null}
             // Beğenilmiş kalp de modun tonunda (gerekçe prop'un yanında).
             likedAccent={accent}
           />
-        )}
+          );
+        }}
         // Büyük başlık HER sayfada; filtre satırı YALNIZ akış sayfasında ve
         // ikisi de LİSTENİN İÇİNDE: pager'ın dışına alınsaydı filtre
         // Gönderilerim/Yanıtlar sayfalarında da durur ve onlarla ilgisi olmayan
@@ -3169,8 +3183,16 @@ export default function FeedScreen() {
         // ⚠️ BEĞENİLEN AN ŞERİTTE KALIYOR → aynı karta ikinci kez
         // dokunulabiliyor: tik çizilmiyor ve kart sağdaki cam sütunu
         // ayrılmadan açılıyor (uzun gerekçe overlay'in `decided` prop'unda).
-        // Kaynak sıralı: sunucunun `canLike`ı, yoksa oturum kümesi.
-        decided={isMomentDecided(openMoment, campus.decidedMomentIds)}
+        // Kaynak sıralı: karar verilen KİŞİ, sunucunun `canLike`ı, oturum
+        // kümesi. Kişi kümesi aynı kişinin İKİNCİ canlı anını da kapatıyor —
+        // sunucu `canLike`ı an başına veriyor ve o an için "beğenebilirsin"
+        // diyor; kapı olmasa günün tek hakkı aynı kişiye giderdi (gerekçe
+        // `isMomentDecided`ın üçüncü parametresinde).
+        decided={isMomentDecided(
+          openMoment,
+          campus.decidedMomentIds,
+          campus.decidedUserIds,
+        )}
         collapsing={momentCollapsing}
         onLike={handleMomentLike}
         onClose={() => setMomentTarget(null)}
@@ -3459,43 +3481,7 @@ export default function FeedScreen() {
   );
 }
 
-/** Gönderilerim durum rozeti metni — `postPresentation` → i18n anahtarı. */
-function statusLabelFor(
-  post: FeedPostDto,
-  t: (k: string) => string,
-): string | null {
-  switch (postPresentation(post)) {
-    case "pending":
-      return t("feed.mine.status.PendingReview");
-    case "support":
-      return t("feed.mine.status.SupportHold");
-    case "hidden":
-      return t("feed.mine.status.HiddenByReports");
-    case "removed":
-      return t("feed.mine.status.Rejected");
-    case "expired":
-      // "Süresi doldu" kalan-ömür satırında zaten yazıyor; rozet tekrar etmesin.
-      return null;
-    default:
-      return null;
-  }
-}
-
-function statusToneFor(post: FeedPostDto): "neutral" | "warning" | "danger" {
-  switch (postPresentation(post)) {
-    // İNCELEME NÖTR (istek), "warning" DEĞİL: rozet başlık satırına taşınınca
-    // turuncu bir "İnceleniyor" tarihin ve üç noktanın yanında bir uyarı —
-    // hatta bir hata — gibi okunuyordu. Oysa inceleme bir bekleme durumu,
-    // kullanıcının yapması gereken bir şey yok. Nötr ton grinin kendisi
-    // (bkz. FeedPostCard > statusColor).
-    case "pending":
-      return "neutral";
-    // Kaldırılan/gizlenen gönderi KIRMIZI kalıyor: orada gerçekten bir sorun
-    // var ve kullanıcının bilmesi gerekiyor.
-    case "removed":
-    case "hidden":
-      return "danger";
-    default:
-      return "neutral";
-  }
-}
+// `statusLabelFor`/`statusToneFor` feedPolicy > `statusBadgeFor`a TAŞINDI
+// (etiket + ton + yer tek kayıtta): "expired" burada null dönüyordu ("kalan-ömür
+// satırında zaten yazıyor" gerekçesiyle) ama o satır karttan çoktan kaldırılmıştı
+// — süresi dolan gönderi hiçbir iz göstermiyordu. Eşleme artık saf ve testli.

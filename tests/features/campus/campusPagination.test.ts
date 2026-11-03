@@ -12,6 +12,7 @@
 
 import {
   dedupeMoments,
+  dedupeMomentsByUser,
   filterLiveMoments,
   isMomentDecided,
   mergeKeptMoments,
@@ -61,6 +62,61 @@ describe('dedupeMoments', () => {
       moment({ id: '2' }),
     ]);
     expect(out.map((m) => m.id)).toEqual(['9', '1', '2']);
+  });
+});
+
+/**
+ * KİŞİ BAŞINA TEK CANLI AN — 24 saatlik ömür ile GÜNLÜK kotanın çakışması.
+ *
+ * Cihazda görüldü (2026-10-31): aynı kullanıcı Dating'de 6 saat arayla iki an
+ * paylaşabildi, ikisi de canlı. Gün sınırı aralarından geçtiyse bu sözleşmenin
+ * izin verdiği bir hâl — talep ve asıl kapı
+ * `backend_campus_moment_one_per_user_2026-10-31.md`de.
+ */
+describe('dedupeMomentsByUser', () => {
+  it('aynı kullanıcının iki canlı anından EN YENİSİ kalıyor', () => {
+    const out = dedupeMomentsByUser([
+      moment({ id: '2', userId: 'u1', createdAt: '2026-10-21T11:00:00Z' }),
+      moment({ id: '1', userId: 'u1', createdAt: '2026-10-21T05:00:00Z' }),
+      moment({ id: '3', userId: 'u2', createdAt: '2026-10-21T10:00:00Z' }),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['2', '3']);
+  });
+
+  it('ESKİ önce gelirse bile yeni olan kazanıyor — ama ESKİNİN SIRASINDA', () => {
+    // Kendi anım listenin başına SABİTLENİYOR (sözleşme §3); kazanan kartı
+    // listenin sonuna taşımak o sabitlemeyi bozardı.
+    const out = dedupeMomentsByUser([
+      moment({ id: '1', userId: 'u1', createdAt: '2026-10-21T05:00:00Z' }),
+      moment({ id: '9', userId: 'u2', createdAt: '2026-10-21T06:00:00Z' }),
+      moment({ id: '2', userId: 'u1', createdAt: '2026-10-21T11:00:00Z' }),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['2', '9']);
+  });
+
+  it('userId YOKSA eleme yapılmıyor — eksik alan kartı yok etmemeli', () => {
+    const out = dedupeMomentsByUser([
+      moment({ id: '1', userId: '' }),
+      moment({ id: '2', userId: '' }),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['1', '2']);
+  });
+
+  it('bozuk/eksik createdAt kazananı değiştirmiyor — ilk görülen kalıyor', () => {
+    const out = dedupeMomentsByUser([
+      moment({ id: '1', userId: 'u1', createdAt: '2026-10-21T05:00:00Z' }),
+      moment({ id: '2', userId: 'u1', createdAt: undefined as never }),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['1']);
+  });
+
+  it('tekrar uygulanabilir (idempotent) — iki yerde çağrılıyor', () => {
+    const items = [
+      moment({ id: '2', userId: 'u1', createdAt: '2026-10-21T11:00:00Z' }),
+      moment({ id: '1', userId: 'u1', createdAt: '2026-10-21T05:00:00Z' }),
+    ];
+    const once = dedupeMomentsByUser(items);
+    expect(dedupeMomentsByUser(once)).toEqual(once);
   });
 });
 
@@ -163,5 +219,31 @@ describe('isMomentDecided', () => {
   it('an yoksa karar da yok', () => {
     expect(isMomentDecided(null)).toBe(false);
     expect(isMomentDecided(undefined, new Set(['a']))).toBe(false);
+  });
+
+  /**
+   * KARAR KİŞİ ÖLÇEĞİNDE — aynı kişinin İKİNCİ anında da tik çizilmesin.
+   *
+   * Gerekçe `backend_campus_moment_one_per_user_2026-10-31.md` §1: aynı kişinin
+   * iki canlı anı olabiliyor ve sunucu `canLike`ı AN başına veriyor, yani
+   * ikinci an `true` geliyor — free kullanıcı günün tek hakkını aynı kişiye
+   * harcayabiliyor.
+   */
+  it('aynı KİŞİNİN başka bir anı da karar verilmiş sayılıyor', () => {
+    const second = moment({ id: 'b', userId: 'u1', canLike: true });
+    expect(isMomentDecided(second, new Set(['a']))).toBe(false);
+    expect(isMomentDecided(second, new Set(['a']), new Set(['u1']))).toBe(true);
+  });
+
+  it('başka kişinin anı etkilenmiyor', () => {
+    const other = moment({ id: 'c', userId: 'u2', canLike: true });
+    expect(isMomentDecided(other, new Set(), new Set(['u1']))).toBe(false);
+  });
+
+  it('userId YOKSA kişi kümesi okunmuyor — boş anahtar herkesi kilitlerdi', () => {
+    const broken = moment({ id: 'd', userId: '', canLike: true });
+    expect(isMomentDecided(broken, new Set(), new Set([''] as string[]))).toBe(
+      false,
+    );
   });
 });

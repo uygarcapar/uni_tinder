@@ -251,9 +251,9 @@ const tr = {
         sectionTitle4: 'Paylaştığın İçerik',
         section4Content:
           'Yüklediğin fotoğraflar ve yazdığın metinler sana aittir. Bu içerikleri uygulamada gösterebilmemiz için bize sınırlı bir kullanım izni vermiş olursun; bu izin yalnızca hizmeti sunmak içindir ve içeriği sildiğinde ya da hesabını kapattığında sona erer. Fotoğraflar kurallara uygunluk açısından moderasyondan geçebilir.',
-        sectionTitle5: 'Premium ve Satın Alımlar',
+        sectionTitle5: 'Plus+ ve Satın Alımlar',
         section5Content:
-          'Premium abonelikler App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
+          'Plus+ abonelikleri App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
           'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
@@ -406,6 +406,10 @@ const tr = {
         validation: {
           emailRequired: 'Lütfen yeni e-posta adresini gir.',
           emailInvalid: 'Geçerli bir e-posta adresi gir.',
+          emailAscii:
+            'E-posta adresinde Türkçe karakter olamaz (ı, ğ, ü, ş, ö, ç yerine i, g, u, s, o, c kullan).',
+          emailCharset:
+            'E-posta adresinde geçersiz karakter var. Yalnızca İngilizce harf, rakam ve . _ - + kullanılabilir.',
         },
       },
     },
@@ -458,7 +462,7 @@ const tr = {
 
         **Cihaz ve teknik veriler.** Bildirim gönderebilmek için cihaz kimliğiniz (token), platform ve uygulama sürümünüz, IP adresiniz, istemci bilgisi ile hata ve çökme kayıtları.
 
-        **Abonelik verileri.** Premium abonelik durumunuz ve satın alma geçmişiniz. Kart ve ödeme bilgileriniz App Store veya Google Play tarafından işlenir; bu bilgiler bize iletilmez ve tarafımızca saklanmaz.
+        **Abonelik verileri.** Plus+ abonelik durumunuz ve satın alma geçmişiniz. Kart ve ödeme bilgileriniz App Store veya Google Play tarafından işlenir; bu bilgiler bize iletilmez ve tarafımızca saklanmaz.
 
         **Güvenlik ve moderasyon verileri.** Yaptığınız veya hakkınızda yapılan bildirimler, engellemeler, fotoğraf moderasyonu sonuçları, itirazlarınız ile askıya alma veya hesap kapatma kayıtları.
 
@@ -508,7 +512,7 @@ const tr = {
 
       sectionTitle6: 'İşleme Amaçları',
       section6Content: `
-        Kişisel verileriniz; hesabınızın oluşturulması ve öğrenci doğrulamanızın yapılması, profilinizin yayımlanması, size uygun profillerin önerilmesi ve eşleşmelerin kurulması, eşleştiğiniz kişilerle mesajlaşabilmeniz, bildirim gönderilmesi, premium aboneliğin yönetilmesi, uygulamanın güvenliğinin sağlanması ve kötüye kullanımın (sahte profil, taciz, dolandırıcılık, uygunsuz içerik) önlenmesi, size destek verilmesi, uygulamanın geliştirilmesi ve hukuki yükümlülüklerimizin yerine getirilmesi amaçlarıyla işlenir.
+        Kişisel verileriniz; hesabınızın oluşturulması ve öğrenci doğrulamanızın yapılması, profilinizin yayımlanması, size uygun profillerin önerilmesi ve eşleşmelerin kurulması, eşleştiğiniz kişilerle mesajlaşabilmeniz, bildirim gönderilmesi, Plus+ aboneliğinin yönetilmesi, uygulamanın güvenliğinin sağlanması ve kötüye kullanımın (sahte profil, taciz, dolandırıcılık, uygunsuz içerik) önlenmesi, size destek verilmesi, uygulamanın geliştirilmesi ve hukuki yükümlülüklerimizin yerine getirilmesi amaçlarıyla işlenir.
       `,
 
       sectionTitle7: 'Hukuki Sebepler',
@@ -526,7 +530,7 @@ const tr = {
         - **Fotoğraf moderasyonu:** yüklediğiniz fotoğraflar, uygunsuz içerik tespiti için görüntü işleme servisine iletilir.
         - **Yüz karşılaştırma (fotoğraf doğrulama):** yalnızca bu özelliği kullanmayı seçerseniz ve 4. ile 5. bölümdeki açık rızalarınızı vermişseniz, o anda çekilen kareler ve ana fotoğrafınız karşılaştırma için görüntü işleme servisine iletilir.
         - **Bildirim altyapısı:** bildirimler Google Firebase Cloud Messaging üzerinden cihazınıza iletilir. Mesaj bildirimlerinde başlık ve mesajın ilk bölümü bu altyapı üzerinden geçer; içerik bu altyapıda saklanmaz.
-        - **Abonelik yönetimi:** premium abonelik durumunuz, abonelik doğrulama hizmetiyle paylaşılır.
+        - **Abonelik yönetimi:** Plus+ abonelik durumunuz, abonelik doğrulama hizmetiyle paylaşılır.
         - **Ürün analitiği ve hata kayıtları:** uygulamayı geliştirmek ve çökmeleri gidermek için kullandığımız servisler Avrupa Birliği bölgesinde barındırılır.
         - **E-posta gönderimi:** doğrulama kodları ve bilgilendirme e-postaları kendi e-posta sunucumuz üzerinden gönderilir.
         - **Yapay zekâ servisleri:** profil sorularına verdiğiniz cevaplar, benzer ilgi alanlarına sahip kişileri önerebilmek için sayısal temsile dönüştürülür; bir profile yazdığınız notlar, gönderilmeden önce içerik kontrolünden geçirilir. Bu işlemler için ilgili metin sağlayıcıya iletilir ve yalnızca sonucun üretilmesi amacıyla işlenir.
@@ -819,9 +823,9 @@ const tr = {
       // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
       // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
       // süreyi Profil > Üyelik kartı anlatıyor.
-      premiumGiftTitle: 'Premium hediyen hazır',
+      premiumGiftTitle: 'Plus+ hediyen hazır',
       premiumGiftMessage:
-        'Ön kayıt olduğun için premium hediyeni tanımladık — tüm premium özellikler artık senin.',
+        'Ön kayıt olduğun için Plus+ hediyeni tanımladık — tüm Plus+ özellikleri artık senin.',
       premiumGiftCta: 'Harika',
     },
   },
@@ -947,7 +951,7 @@ const tr = {
       title: 'Mesaj hakkı',
       message: '{{remaining}} mesaj hakkın var.',
       exhausted: 'Mesaj hakkın bitti',
-      exhaustedMessage: "Bu sohbette mesaj sınırına ulaştın. Premium'a geç, sınırsız mesajlaş.",
+      exhaustedMessage: "Bu sohbette mesaj sınırına ulaştın. Plus+'a geç, sınırsız mesajlaş.",
     },
     defaultUserName: 'Kullanıcı',
     bubble: {
@@ -968,7 +972,7 @@ const tr = {
     input: {
       placeholder: 'Mesaj...',
       closed: 'Bu sohbet kapatıldı',
-      quotaReached: "Mesaj hakkın bitti — Premium'a geç",
+      quotaReached: "Mesaj hakkın bitti — Plus+'a geç",
       send: 'Gönder',
       voice: 'Sesli mesaj',
     },
@@ -1215,11 +1219,11 @@ const tr = {
       quotaExhaustedTitle: 'Beğeni hakkın bitti',
       // Süre bilinmiyorsa (backend alanı yok / sentinel) geri sayım VAAT
       // EDİLMİYOR — Fire metinlerindeki ayrımın aynısı.
-      quotaExhaustedMessage: 'Hakların yenilenene kadar beğeni gönderemezsin. Premium ile sınırsız beğen.',
-      quotaExhaustedMessageWithTime: 'Hakların {{time}} sonra yenilenir. Premium ile beklemeden sınırsız beğen.',
+      quotaExhaustedMessage: 'Hakların yenilenene kadar beğeni gönderemezsin. Plus+ ile sınırsız beğen.',
+      quotaExhaustedMessageWithTime: 'Hakların {{time}} sonra yenilenir. Plus+ ile beklemeden sınırsız beğen.',
     },
     premium: {
-      badge: 'PREMIUM ÜYE',
+      badge: 'PLUS+ ÜYE',
       // Karşılaştırma tablosunun satırları. Sıra ve hangisinin upsell kartına
       // çıktığı `premiumBenefits.ts`te — buradaki sözlük yalnız metin.
       // Sayı YAZILMIYOR: kotalar sunucu config'inden geliyor (bkz. o dosya).
@@ -1233,7 +1237,7 @@ const tr = {
         widerDistance: 'Daha geniş mesafe aralığı',
         missedMatchRecovery: 'Daha fazla eşleşme kurtarma',
         discoveryPriority: 'Keşfette öncelik',
-        premiumBadge: 'Profilinde premium rozeti',
+        premiumBadge: 'Profilinde Plus+ rozeti',
       },
       // Paywall'da her satırın info ikonuna basınca açılan açıklama.
       // Başlık tabloya sığacak kadar kısa, "bu ne işe yarıyor" cevabı burada.
@@ -1257,7 +1261,7 @@ const tr = {
         discoveryPriority:
           'Profilin diğer kullanıcıların destesinde daha üst sıralarda gösterilir. Aynı kişilere daha erken görünür, daha çok beğeni alırsın.',
         premiumBadge:
-          'Kartında ve profilinde Plus alevi görünür. İstersen Ayarlar\'dan gizleyebilirsin — rozeti kapatmak premium haklarının hiçbirini etkilemez.',
+          'Kartında ve profilinde Plus alevi görünür. İstersen Ayarlar\'dan gizleyebilirsin — rozeti kapatmak Plus+ haklarının hiçbirini etkilemez.',
       },
       // Upsell kartında listenin devamı. Kartın gövdesi zaten paywall'ı açıyor,
       // bu satır ayrı bir dokunma hedefi değil.
@@ -1331,11 +1335,11 @@ const tr = {
         select: 'Üniversite seç',
       },
       premiumFilters: {
-        title: 'Premium Filtreler',
+        title: 'Plus+ Filtreler',
         description: 'Aradığın kişiyi daralt. Bir filtrenin anahtarını açarsan aday tükense bile o filtre gevşemez.',
         // Premium bitince filtreler silinmiyor, yalnız uygulanmıyor — şerit bunu
         // söylüyor ki kullanıcı "filtrelerim uçmuş" sanmasın.
-        paused: 'Premium filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Premium\'a dönersen kaldığı yerden devam eder.',
+        paused: 'Plus+ filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Plus+\'a dönersen kaldığı yerden devam eder.',
       },
       dealbreaker: {
         // TEK metin, anahtarın durumuna göre DEĞİŞMEZ: metin değişince kullanıcı
@@ -1484,12 +1488,12 @@ const tr = {
         // iki kez söyleyip CTA'yı zayıflatıyordu. "Premium gerekmeden" ibaresi
         // cümlede kalıyor — "30 gün ücretsiz" tek başına neyin ücretsiz
         // olduğunu belirsiz bırakıyordu (Premium mu, bu ayar mı?).
-        inviteCta: '3 arkadaşını davet et, bu ayarı Premium gerekmeden 30 gün ücretsiz kullan',
-        premiumExpiryNote: 'Premium\'un bittiğinde bu kural durur; listedeki üniversiteler seni yeniden görebilir.',
+        inviteCta: '3 arkadaşını davet et, bu ayarı Plus+ gerekmeden 30 gün ücretsiz kullan',
+        premiumExpiryNote: 'Plus+ üyeliğin bittiğinde bu kural durur; listedeki üniversiteler seni yeniden görebilir.',
         // Premium BİTMİŞ kullanıcı için: gelecek zamanlı uyarı burada yanıltıcı
         // olurdu, kural zaten uygulanmıyor. Kayıt duruyor, o yüzden "silindi"
         // de demiyoruz.
-        premiumInactiveNote: 'Premium\'un bittiği için bu kural şu an uygulanmıyor. Ayarın duruyor; Premium\'a döndüğünde kendiliğinden devreye girer.',
+        premiumInactiveNote: 'Plus+ üyeliğin bittiği için bu kural şu an uygulanmıyor. Ayarın duruyor; Plus+\'a döndüğünde kendiliğinden devreye girer.',
       },
     },
     rewind: {
@@ -1559,7 +1563,7 @@ const tr = {
       },
       swipeLimitReached: {
         title: 'Günlük swipe hakkın doldu',
-        action: "Premium'u incele",
+        action: "Plus+'ı incele",
       },
       supportSubject: 'Keşfet sorunu ({{code}})',
     },
@@ -1760,7 +1764,7 @@ const tr = {
       comingSoon: 'Yeni ödüller yakında',
       disabled: 'Davet kodun şu an kullanılamıyor.',
       visibilityActive: 'Görünürlük filtresi · {{days}} gün kaldı',
-      visibilityPaused: 'Premium bitince {{days}} gün devam edecek',
+      visibilityPaused: 'Plus+ bitince {{days}} gün devam edecek',
     },
     sheet: {
       title: 'Davetlerin',
@@ -2282,7 +2286,7 @@ const tr = {
         showAge: 'Yaşımı göster',
         showLocation: 'Konumumu göster',
         showOnlineStatus: 'Çevrimiçi olduğumu göster',
-        showPremiumBadge: 'Premium rozetimi göster',
+        showPremiumBadge: 'Plus+ rozetimi göster',
       },
     },
     subscription: {
@@ -2343,7 +2347,7 @@ const tr = {
       // (Ondan da önce orada bir expand oku vardı.)
       prep: 'Hazırlık',
       grade: '{{year}}. Sınıf',
-      premium: 'Premium',
+      premium: 'Plus+',
       knowMeAs: 'Beni bu şekilde tanırsın:',
       friendshipIntent: 'Ne için arkadaş arıyor',
       myIntent: 'Burada ne arıyorum:',
@@ -2387,15 +2391,15 @@ const tr = {
     // kaynaklı değişimi (satın alma, süre bitişi) kullanıcı zaten biliyor.
     // "Ne oldu" kadar "ne yapmalı"yı da söylüyorlar — gerekçesiz kapanan bir
     // premium, destek kanalına "hesabım hacklendi" olarak dönüyor.
-    revokedTitle: 'Premium aboneliğin sonlandırıldı',
-    revokedMessage: 'Premium özelliklerin kapatıldı. Beklemediğin bir durumsa destek ekibiyle iletişime geç.',
-    grantedTitle: 'Premium hesabına tanımlandı',
-    grantedMessage: 'Premium özelliklerin şu andan itibaren açık. İyi eğlenceler!',
+    revokedTitle: 'Plus+ aboneliğin sonlandırıldı',
+    revokedMessage: 'Plus+ özelliklerin kapatıldı. Beklemediğin bir durumsa destek ekibiyle iletişime geç.',
+    grantedTitle: 'Plus+ hesabına tanımlandı',
+    grantedMessage: 'Plus+ özelliklerin şu andan itibaren açık. İyi eğlenceler!',
     // Kullanıcının KENDİ satın alması bittiğinde (paywall kapanırken) düşen
     // toast. Yukarıdaki admin metinlerinden ayrı: burada "tanımlandı" değil
     // "hoş geldin" tonu var, çünkü eylemi kullanıcı yaptı.
     purchasedTitle: 'Lit Plus senin!',
-    purchasedMessage: 'Tüm premium özelliklerin açıldı. Keyfini çıkar!',
+    purchasedMessage: 'Tüm Plus+ özelliklerin açıldı. Keyfini çıkar!',
     // NOT: paywall'daki özellik listesi artık `discover.premium.benefits`
     // altında — upsell kartıyla tek kaynaktan besleniyor.
     periods: {
@@ -2867,9 +2871,11 @@ const tr = {
     expiresInMinutes: '{{count}} dk',
     expiresSoon: 'birazdan',
     // Paylaşım üstünden geçen süre — an 24 saat yaşadığı için gün dalı YOK.
-    postedAgoHours: '{{count}} saat önce',
-    postedAgoMinutes: '{{count}} dakika önce',
-    postedJustNow: 'az önce',
+    // ⚠️ KISA BİÇİM (istek: "3 saat önce" yerine "3s"): etiket adın yanında,
+    // avatarla birlikte dar bir satırda duruyor — uzun cümle adı kırptırıyordu.
+    postedAgoHours: '{{count}}s',
+    postedAgoMinutes: '{{count}}dk',
+    postedJustNow: 'şimdi',
     empty: {
       title: 'Bugün kampüste kimse paylaşmamış',
       bodyInside: 'İlk anı sen paylaş — 24 saat boyunca kampüsteki herkes görür.',

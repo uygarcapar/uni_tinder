@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, User } from "@/shared/icons";
+import { Clock, MoreHorizontal, User } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import HeartGlyph from "@/shared/components/HeartGlyph";
 import NoteGlyph from "@/shared/components/NoteGlyph";
@@ -27,7 +27,18 @@ import {
   BODY_LINE_HEIGHT,
 } from "../feedPostMetrics";
 import FeedPostBody from "./FeedPostBody";
+import PremiumBadge from "@/shared/components/PremiumBadge";
 import type { FeedPostDto, FeedTopic } from "../feedTypes";
+
+/**
+ * Yazar isminin puntosu. SAYI ARTIK TEK YERDE: yanındaki Plus+ wordmark'ının
+ * ölçüsü bundan türüyor (bkz. PremiumBadge > premiumBadgeFontSize), stile
+ * gömülü kalsa rozet sessizce ayrışırdı.
+ *
+ * 15 — "bi tık küçült" isteğiyle 16'dan indi; tarih satırı da onunla indi
+ * (gerekçeler kendi stillerinde).
+ */
+const AUTHOR_NAME_FONT = 15;
 
 /**
  * Akış gönderi kartı — sadece YAZI (fotoğraf yok, gönderi altında yorum yok).
@@ -64,9 +75,15 @@ export interface FeedPostCardProps {
   onMenu?: (post: FeedPostDto) => void;
   /** Gönderilerim'de yanıt sayısına dokunma → Yanıtlar sayfası. */
   onPressReplyCount?: (post: FeedPostDto) => void;
-  /** Durum rozeti metni (Gönderilerim) — sayfanın `postPresentation`ı çözüyor. */
+  /** Durum rozeti metni (Gönderilerim) — sayfanın `statusBadgeFor`u çözüyor. */
   statusLabel?: string | null;
   statusTone?: "neutral" | "warning" | "danger";
+  /**
+   * Dolu ise rozet metin yerine BU GLİF olarak çizilir (istek: süresi dolan
+   * gönderide yalnız kırmızı saat). `statusLabel` o zaman ekranda değil,
+   * ikonun erişilebilirlik etiketinde. Karar kartta değil `statusBadgeFor`da.
+   */
+  statusIcon?: "clock" | null;
   /**
    * BEĞENİLMİŞ kalbin dolgusu — seçili modun vurgusu (`modeAccent`).
    *
@@ -196,6 +213,7 @@ function FeedPostCardBase({
   onPressReplyCount,
   statusLabel,
   statusTone = "neutral",
+  statusIcon = null,
   likedAccent = colors.errorStrong,
 }: FeedPostCardProps) {
   const { t } = useTranslation();
@@ -345,7 +363,7 @@ function FeedPostCardBase({
               // dolgusu kadar daralmış bir kutunun içinde.
               marginLeft: 10,
               flexShrink: 1,
-              fontSize: 15,
+              fontSize: AUTHOR_NAME_FONT,
               fontWeight: "600",
               color: colors.text,
             }}
@@ -366,6 +384,21 @@ function FeedPostCardBase({
                     .join(", "),
             )}
           </Text>
+
+          {/* Plus+ wordmark'ı — Keşif kartının, şeridin ve Likes kartının isim
+              satırındakiyle AYNI işaret (bkz. PremiumBadge): ölçüsü ismin
+              puntosundan türüyor, rengi marka tonu, modla dönmüyor.
+
+              ANONİMDE YOK ve kapı bunu kendiliğinden kuruyor: sunucu anonim
+              gönderide `author`ı null yolluyor. Yine de `!post.isAnonymous`
+              AÇIKÇA yazılı — rozet kimliğe bağlı bir işaret, anonimliği
+              delecek tek alanın sessiz bir null'a emanet edilmesi istenmiyor.
+
+              Ayrı bir `flexShrink` gerekmiyor: rozetin kendisi 0 ile geliyor,
+              satırda daralan taraf isim. */}
+          {!post.isAnonymous && post.author?.isPremium && (
+            <PremiumBadge fontSize={AUTHOR_NAME_FONT} style={{ marginLeft: 6 }} />
+          )}
         </Pressable>
 
         {/* Tarih İSMİN HEMEN SAĞINDA (istek), satırın öbür ucunda değil.
@@ -396,11 +429,28 @@ function FeedPostCardBase({
             Tarih artık o işi yapmıyor. */}
         <View style={{ flex: 1 }} />
 
-        {/* Durum rozeti ("İnceleniyor", "Süresi doldu"…) — ÜÇ NOKTANIN SOLUNDA
-            (istek). Eskiden gövdenin altında kendi satırındaydı; gönderinin
-            durumu başlık satırının bilgisi, metnin arasına giren ayrı bir
-            şerit değil. Yalnız Gönderilerim'de dolu geliyor. */}
-        {statusLabel ? (
+        {/* Durum rozeti — ÜÇ NOKTANIN SOLUNDA. "Süresi doldu" YALNIZ kırmızı
+            saat ikonu (istek; "sağda metin" ve "dolgulu pill" denendi, ikisi
+            de GERİ ALINDI), etiketi erişilebilirliğe iniyor. Moderasyon
+            rozetleri ("İnceleniyor"…) metin. Eskiden gövdenin altında kendi
+            satırındaydı; gönderinin durumu başlık satırının bilgisi, metnin
+            arasına giren ayrı bir şerit değil. Yalnız Gönderilerim'de dolu
+            geliyor; hangi durumun ikon olduğu feedPolicy > statusBadgeFor'da. */}
+        {statusIcon ? (
+          <View
+            testID="feed-post-status-icon"
+            accessibilityLabel={statusLabel ?? undefined}
+            style={{ flexShrink: 0, marginLeft: 8 }}
+          >
+            <SFIcon
+              name="clock"
+              fallback={Clock}
+              size={14}
+              color={statusColor}
+              strokeWidth={2}
+            />
+          </View>
+        ) : statusLabel ? (
           <Text
             numberOfLines={1}
             style={{
@@ -416,7 +466,12 @@ function FeedPostCardBase({
         ) : null}
 
         {onMenu ? (
-          <Pressable onPress={handleMenu} hitSlop={10} style={{ marginLeft: 8 }}>
+          <Pressable
+            testID="feed-post-menu"
+            onPress={handleMenu}
+            hitSlop={10}
+            style={{ marginLeft: 8 }}
+          >
             <SFIcon
               name="ellipsis"
               fallback={MoreHorizontal}
