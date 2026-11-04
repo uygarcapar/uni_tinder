@@ -2623,6 +2623,11 @@ const en = {
         'This cannot be undone. You do not get the post back and any pending replies to it are dropped.',
     },
 
+    // Üç noktanın açtığı ara menü (FeedPostOptionsSheet) — bkz. tr.ts notu.
+    options: {
+      title: 'Post Options',
+    },
+
     empty: {
       title: 'The feed is empty for now',
       body: 'Be the first to post.',

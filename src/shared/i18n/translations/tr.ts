@@ -2719,6 +2719,13 @@ const tr = {
         'Bu geri alınamaz. Hakkın geri gelmez ve bu gönderiye gelmiş yanıtlar da düşer.',
     },
 
+    // Üç noktanın açtığı ara menü (FeedPostOptionsSheet). Satır etiketleri
+    // YENİ ANAHTAR ALMADI: şikayet `moderation.options.report`, silme
+    // `feed.mine.delete` — metin tek kaynakta kalsın.
+    options: {
+      title: 'Gönderi Seçenekleri',
+    },
+
     empty: {
       title: 'Akış şimdilik boş',
       body: 'İlk gönderiyi sen at.',
