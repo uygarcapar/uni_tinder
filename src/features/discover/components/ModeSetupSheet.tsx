@@ -67,7 +67,11 @@ export interface ModeSetupSheetProps {
   onSubmit: (payload: {
     intents: string[];
     prompts: ProfilePromptAnswer[];
-    /** YALNIZ Dating: "kiminle ilgileniyorsun" (en az 1 zorunlu, UT-2308). */
+    /**
+     * Dating'de "kiminle ilgileniyorsun" (en az 1 zorunlu, UT-2308).
+     * Arkadaş'ta havuz seçimi — yalnız `asksFriendsPool` açıkken gönderiliyor,
+     * kapalıyken alan HİÇ eklenmiyor.
+     */
     interestedIn?: string[];
   }) => void;
   /**

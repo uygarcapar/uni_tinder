@@ -320,11 +320,18 @@ export const registerAndComplete = createAsyncThunk(
       // istemci sözleşmesi); yeni kayıt her zaman açıkça gönderiyor.
       put("Mode", reg.mode);
 
-      // InterestedIn YALNIZ FLÖRT kaydında gidiyor: Arkadaş modunda o adım
-      // akışta yok (bkz. registrationFlow > DATING_ONLY_STEPS) ve sunucu
-      // InterestedInFlags'i varsayılan (üç kategori) bırakıyor. Boş dizi
-      // göndermek sunucuda "zorunlu alan boş" hatası üretirdi.
-      if (reg.mode !== "Friends") {
+      // InterestedIn Flört kaydında HER ZAMAN, Arkadaş kaydında YALNIZ havuz
+      // sorusu sorulduysa gidiyor.
+      //
+      // ⚠️ Koşul `reg.mode !== "Friends"` DEĞİL. Arkadaş'ta adım artık koşullu:
+      // Non-Binary kullanıcıda "arkadaş modunda kimleri görmek istersin"
+      // sorusu olarak akışta kalıyor (bkz. registrationFlow > stepsForMode).
+      // Koşulsuz düşürmek, o kullanıcının verdiği cevabın sunucuya hiç
+      // ulaşmaması demekti: soru sorulur, cevaplanır, sessizce kaybolur.
+      //
+      // Boş dizi göndermemek hâlâ şart — sunucu "zorunlu alan boş" hatası
+      // üretir; `forEach` zaten boş listede hiçbir alan eklemiyor.
+      if (reg.mode !== "Friends" || reg.asksFriendsPool === true) {
         profile.interestedIn.forEach((val: any) => put("InterestedIn", val));
       }
       profile.hobbies.forEach((val: any) => put("Hobbies", val));
