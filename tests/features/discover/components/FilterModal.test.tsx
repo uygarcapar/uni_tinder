@@ -706,7 +706,7 @@ describe('FilterModal — premium filtreler', () => {
       expect(at(title)).toBeGreaterThan(header),
     );
     // Ücretsiz alanlar başlığın ÜSTÜNDE kalmalı.
-    ['Maksimum Mesafe', 'İlgi Alanı'].forEach((title) =>
+    ['Maksimum Mesafe', trDict.discover.filters.interestedIn.title].forEach((title) =>
       expect(at(title)).toBeLessThan(header),
     );
   });

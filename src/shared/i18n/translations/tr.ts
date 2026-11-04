@@ -1143,6 +1143,16 @@ const tr = {
       interestedInTitle: 'Kiminle ilgileniyorsun?',
       interestedInDescription: 'Destende kimleri göreceğini belirler. Birden fazla seçebilirsin.',
       interestedInRequired: 'En az bir tane seç.',
+      // ── Arkadaş havuzu — YALNIZ Non-Binary kullanıcıya sorulur ──────────
+      // Arkadaş modunda eşleşme kuralı aynı cinsiyet ve değeri ikili
+      // kategorilerde SUNUCU türetip kilitliyor. Soru yalnız Non-Binary
+      // kullanıcıya gidiyor: "yalnız Non-Binary gör" kuralı kampüs
+      // ölçeğinde o kullanıcılara boş deste gösterirdi.
+      // Metin karşı taraf hakkında hiçbir şey ima ETMEMELİ (UT-23xx nötrlük
+      // kuralı) — yalnız kullanıcının kendi seçimini soruyor.
+      friendsPoolTitle: 'Arkadaş modunda kimleri görmek istersin?',
+      friendsPoolDescription: 'Birden fazla seçebilirsin.',
+      friendsPoolRequired: 'En az bir tane seç.',
       // Mod hataları (UT-23xx). Sunucu mesajı varsa O kullanılıyor;
       // bunlar yedek. 2305/2309 NÖTR — ifşa edici hale getirmeyin.
       errors: {
@@ -1318,7 +1328,10 @@ const tr = {
         description: 'Türkiye\'nin her yerinden profil görürsün.',
       },
       interestedIn: {
-        title: 'İlgi Alanı',
+        // "İlgi Alanı" DEĞİL: bu bölüm cinsiyet tercihini soruyor ama başlık
+        // hobi bölümü gibi okunuyordu (filtrede ayrıca gerçek bir "Hobiler"
+        // bölümü var). Kanonik dil mod kurulum sheet'inin sorusu.
+        title: 'Kiminle ilgileniyorsun',
         description: 'Kiminle eşleşmek istediğini seç.',
         men: 'Erkek',
         women: 'Kadın',

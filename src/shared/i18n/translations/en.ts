@@ -1131,6 +1131,15 @@ const en = {
       interestedInTitle: 'Who are you interested in?',
       interestedInDescription: 'This decides who shows up in your deck. Pick as many as you like.',
       interestedInRequired: 'Pick at least one.',
+      // ── Friends pool — asked ONLY of Non-Binary users ──────────────────
+      // In Friends the matching rule is same gender, and for binary
+      // categories the SERVER derives and locks the value. The question goes
+      // only to Non-Binary users: "see Non-Binary only" would leave them with
+      // an empty deck at campus scale.
+      // Copy must imply nothing about anyone else (UT-23xx neutrality rule).
+      friendsPoolTitle: 'Who do you want to see in Friends?',
+      friendsPoolDescription: 'You can pick more than one.',
+      friendsPoolRequired: 'Pick at least one.',
       // Mode errors (UT-23xx). The SERVER message wins when present; these
       // are the fallback. 2305/2309 are NEUTRAL — do not make them revealing.
       errors: {
@@ -1306,7 +1315,10 @@ const en = {
         description: "You'll see profiles from anywhere.",
       },
       interestedIn: {
-        title: 'Interested In',
+        // Not "Interested In" — it read like a hobbies section (the filter has
+        // a real "Hobbies" section too). Canonical wording is the mode setup
+        // sheet's question.
+        title: "Who you're interested in",
         description: 'Choose who you want to match with.',
         men: 'Men',
         women: 'Women',
