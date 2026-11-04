@@ -182,13 +182,29 @@ class ProfileService {
     payload: {
       intents: string[];
       prompts: { promptKey: string; answer: string }[];
-      /** YALNIZ Dating: kiminle ilgilendiği (en az 1 zorunlu, UT-2308). */
+      /**
+       * Dating'de kiminle ilgilendiği (en az 1 zorunlu, UT-2308).
+       *
+       * Friends'te anlamı FARKLI: orada eşleşme kuralı aynı cinsiyet ve
+       * değeri ikili kategorilerde SUNUCU türetip kilitliyor. Alan yalnız
+       * Non-Binary kullanıcının havuz seçimini taşıyor; diğer herkeste boş
+       * gelir ve gövdeye hiç girmez (bkz. backend_friends_same_gender).
+       */
       interestedIn?: string[];
     },
   ): Promise<{ dating?: boolean; friends?: boolean } | undefined> {
     const body: Record<string, any> =
       mode === "Friends"
-        ? { friendshipIntents: payload.intents }
+        ? {
+            friendshipIntents: payload.intents,
+            // Boş dizi ile alanın hiç olmaması sunucu için AYNI ŞEY DEĞİL:
+            // kilitli (ikili kategori) kullanıcıda boş dizi ölü yük, üstelik
+            // "kullanıcı hiçbirini seçmedi" gibi okunabilir. Yalnız dolu
+            // geldiğinde gönderiliyor.
+            ...(payload.interestedIn?.length
+              ? { interestedIn: payload.interestedIn }
+              : {}),
+          }
         : {
             // Dating açılışında İKİ alan birden gidiyor: `interestedIn` (en az
             // 1 ZORUNLU — sunucu UT-2308 ile reddediyor) ve `relationshipIntent`
