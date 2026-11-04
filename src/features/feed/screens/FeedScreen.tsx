@@ -136,6 +136,7 @@ import { usePremiumTier } from "@/features/profile/premiumTier";
 import FeedComposerSheet from "../components/FeedComposerSheet";
 import FeedQuotaSheet from "../components/FeedQuotaSheet";
 import FeedSupportSheet from "../components/FeedSupportSheet";
+import FeedPostOptionsSheet from "../components/FeedPostOptionsSheet";
 import FeedReportSheet from "../components/FeedReportSheet";
 import {
   FEED_DIRTY_EVENT,
@@ -940,8 +941,12 @@ export default function FeedScreen() {
   // gönderim mutasyonu ve hata makinesi birlikte düştü. Eşleşme kanalı artık
   // yazarın profil kartı (bkz. handlePressAuthor → PreviewModal).
 
-  // ── Kart menüsü: şikayet / sil ────────────────────────────────────────────
+  // ── Kart menüsü ───────────────────────────────────────────────────────────
+  // Üç nokta artık DOĞRUDAN şikayet/silme açmıyor: araya FeedPostOptionsSheet
+  // girdi (tarih + tek aksiyon satırı). Şikayet ve silmenin kendisi DEĞİŞMEDİ —
+  // menüdeki satırlar aşağıdaki iki handler'a düşüyor.
   const deletePost = useDeletePost();
+  const [menuPost, setMenuPost] = useState<FeedPostDto | null>(null);
   const [reportTarget, setReportTarget] = useState<{
     targetType: "Post" | "Reply";
     postId?: string | null;
@@ -961,33 +966,39 @@ export default function FeedScreen() {
     null,
   );
 
-  const handlePostMenu = useCallback(
+  const handlePostMenu = useCallback((post: FeedPostDto) => {
+    setMenuPost(post);
+  }, []);
+
+  const handleDeletePost = useCallback(
     (post: FeedPostDto) => {
-      if (post.isMine) {
-        Alert.alert(
-          t("feed.mine.deleteConfirmTitle"),
-          // İKİ sonuç da yazılı: hak geri gelmiyor VE bekleyen yanıtlar düşüyor.
-          // İkincisini söylememek kullanıcıyı yanıtlarından ediyordu.
-          t("feed.mine.deleteConfirmBody"),
-          [
-            { text: t("common.cancel"), style: "cancel" },
-            {
-              text: t("feed.mine.delete"),
-              style: "destructive",
-              onPress: () => deletePost.mutate({ postId: post.id }),
-            },
-          ],
-        );
-        return;
-      }
-      setReportTarget({
-        targetType: "Post",
-        postId: post.id,
-        isAnonymous: post.isAnonymous,
-      });
+      Alert.alert(
+        t("feed.mine.deleteConfirmTitle"),
+        // İKİ sonuç da yazılı: hak geri gelmiyor VE bekleyen yanıtlar düşüyor.
+        // İkincisini söylememek kullanıcıyı yanıtlarından ediyordu.
+        t("feed.mine.deleteConfirmBody"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("feed.mine.delete"),
+            style: "destructive",
+            onPress: () => deletePost.mutate({ postId: post.id }),
+          },
+        ],
+      );
     },
     [t, deletePost],
   );
+
+  const handleReportPost = useCallback((post: FeedPostDto) => {
+    setReportTarget({
+      targetType: "Post",
+      postId: post.id,
+      // Anonim hedefte şikayet sheet'i engelleme satırını ÇİZMEZ (kimlik yok)
+      // — bayrak menü araya girince de aynen taşınıyor.
+      isAnonymous: post.isAnonymous,
+    });
+  }, []);
 
   // ⚠️ `handleReplyMenu` SİLİNDİ: kartın üç nokta butonu kaldırıldı, yanıt
   // moderasyonu artık yanıtlayanın profilinden geçiyor (bkz. handleReplyPress →
@@ -3272,6 +3283,25 @@ export default function FeedScreen() {
       <FeedSupportSheet
         visible={supportVisible}
         onClose={() => setSupportVisible(false)}
+      />
+
+      {/* Üç noktanın ara menüsü — kapat-sonra-aç sırası DiscoverScreen'deki
+          ProfileOptionsSheet bağlamasıyla aynı kalıp: hedef önce yakalanıyor,
+          çünkü setMenuPost(null) sonrasında state okunamaz. */}
+      <FeedPostOptionsSheet
+        visible={!!menuPost}
+        post={menuPost}
+        onClose={() => setMenuPost(null)}
+        onReport={() => {
+          const target = menuPost;
+          setMenuPost(null);
+          if (target) handleReportPost(target);
+        }}
+        onDelete={() => {
+          const target = menuPost;
+          setMenuPost(null);
+          if (target) handleDeletePost(target);
+        }}
       />
 
       <FeedReportSheet
