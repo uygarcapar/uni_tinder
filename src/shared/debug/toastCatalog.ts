@@ -166,6 +166,22 @@ export const TOAST_CATALOG: ToastGroup[] = [
           }),
       },
       {
+        id: 'msg.crossMode',
+        label: 'Çapraz mod etiketi ([Arkadaş])',
+        from: 'AppNavigator · conv.mode ≠ seçili mod',
+        // `selfUserId` bilerek verilmiyor: readAppModeFor(undefined) Dating
+        // döner, etiket galeride DETERMİNİSTİK görünür. Tap, modu Friends'e
+        // çevirir (gerçek davranış) — galeriden basıldığında da.
+        run: () =>
+          showMessageToast({
+            senderName: NAME,
+            photoUrl: DEMO_PHOTO,
+            preview: 'Bugün kampüste miydin?',
+            conversationId: DEMO_CONVERSATION_ID,
+            mode: 'Friends',
+          }),
+      },
+      {
         id: 'msg.noName',
         label: 'İsimsiz gönderen (fallback)',
         from: 'AppNavigator · partnerDisplayName boş',

@@ -1062,6 +1062,10 @@ export default function AppNavigator() {
           // Push routing'iyle aynı: sohbetin canlılığı listeden geliyor,
           // "mesaj geldi → mutlaka aktif" varsayımıyla değil.
           isActive: conv.isActive ?? true,
+          // Çapraz-mod etiketi + tap'te mod devri kararı TOASTER'DA; boş/çöp
+          // mod orada eleniyor. Payload mode taşımıyor, yerel satırdan.
+          mode: conv.mode,
+          selfUserId,
         });
       }),
       realtimeService.on('MessageSent', (msg) => mounted && dispatch(messageSent(msg))),
@@ -1691,6 +1695,15 @@ export default function AppNavigator() {
         const conv = ((store.getState() as any).chat?.conversations ?? []).find(
           (c: any) => c.conversationId === relatedId,
         );
+        // MOD DEVRİ (Like dalındaki fıkranın aynısı) — tek farkla: mesaj
+        // push'unun payload'ında `mode` YOK, yerel `conv` satırından okunuyor.
+        // Satır yoksa (cold start / taze kurulum) devir atlanır ve navigate
+        // bugünkü gibi çalışır — geri dönüşte liste süzgeci sohbeti
+        // göstermeyebilir, kabul edilen sınır. Boş/çöp mod `isAppMode`de elenir.
+        const convMode = conv?.mode;
+        if (isAppMode(convMode)) {
+          writeAppMode(store.getState()?.auth?.user?.id, convMode);
+        }
         navigationRef.navigate('Chat', {
           conversationId: relatedId,
           partner: conv
