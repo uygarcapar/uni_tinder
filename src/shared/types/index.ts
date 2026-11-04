@@ -51,6 +51,20 @@ export interface RegistrationForm {
    * süzülüyor). Ayrıca ilerleme çubuğunun paydası da buradan okunuyor.
    */
   mode: string;
+  /**
+   * Arkadaş modunda "kimleri görmek istersin" havuz sorusu sorulacak mı —
+   * yani kullanıcının cinsiyeti YALNIZ Non-Binary kategorisinde mi.
+   *
+   * Türetme RegisterStepMode'da bir kez yapılıp buraya yazılıyor (bkz.
+   * `useAsksFriendsPool`); ilerleme çubuğu paydayı buradan okuyor. Çubuk
+   * kendisi türetseydi cinsiyet kataloğunu (React Query) kayıt akışının HER
+   * ekranına taşırdı.
+   *
+   * Her RegisterStepMode geçişinde yeniden yazılıyor ve
+   * `clearRegistrationForm` ile sıfırlanıyor — kullanıcı geri dönüp
+   * cinsiyetini değiştirirse bayat kalmıyor.
+   */
+  asksFriendsPool: boolean;
 }
 
 export interface AuthState {

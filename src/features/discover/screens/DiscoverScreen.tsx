@@ -55,6 +55,7 @@ import { openLitPlus } from "@/features/profile/litPlusEntry";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { Image as ExpoImage } from "expo-image";
 import FilterModal from "@/features/discover/components/FilterModal";
+import { shouldAskFriendsPool } from "@/features/discover/friendsPoolPrompt";
 import ProfileOptionsSheet from "@/features/discover/components/ProfileOptionsSheet";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
@@ -1495,6 +1496,21 @@ export default function DiscoverScreen() {
   const [openModes, setOpenModes] = useState<
     Partial<Record<AppMode, boolean>> | undefined
   >(undefined);
+  /**
+   * ARKADAŞ HAVUZ SORUSU — mevcut Non-Binary kullanıcılara ulaşan tek yol.
+   *
+   * `interestedIn` için profil düzenlemede hiçbir yüzey yok (alan filtreye
+   * taşındı) ve ModeSetupSheet yalnız mod KAPALIYKEN açılıyor. Yani zaten
+   * Friends'i açmış bir kullanıcıya soru başka hiçbir yerden sorulamıyordu.
+   *
+   * `friendsPoolProfile` sunucunun yanıtı; karar `shouldAskFriendsPool`ta
+   * (bayrak hiç gelmezse SORMUYOR — eski sunucu). `friendsPoolAsked` bu
+   * OTURUM işareti: kullanıcı sheet'i kapatıp modu kullanmaya devam
+   * edebilmeli. Kalıcı DEĞİL — soru cevaplanmadıkça bir sonraki açılışta
+   * tekrar soruluyor, çünkü cevapsız kalırsa deste kuralı eksik kalıyor.
+   */
+  const [friendsPoolProfile, setFriendsPoolProfile] = useState<any>(null);
+  const friendsPoolAsked = useRef(false);
 
   /**
    * AÇIK MOD UZLAŞTIRMASI — ekran, kullanıcının sahip OLMADIĞI modda açılmasın.
@@ -1526,6 +1542,8 @@ export default function DiscoverScreen() {
       try {
         const profile: any = await profileService.getMyProfile();
         if (!alive) return;
+        // Havuz sorusunun kaynağı da AYNI yanıt — ikinci bir tur atmıyoruz.
+        setFriendsPoolProfile(profile ?? null);
         const modes = profile?.modes;
         if (modes && typeof modes === "object") {
           const resolved = {
@@ -1558,6 +1576,36 @@ export default function DiscoverScreen() {
     setSetupError(null);
     setSetupMode(next);
   }, []);
+
+  /**
+   * Friends'e girildiğinde havuz sorusu açılıyor mu.
+   *
+   * Profil AÇIK olduğu için ModeSetupSheet'in kendi CTA yolu bu kullanıcıya
+   * hiç uğramıyor; sheet'i buradan açıyoruz. Karar `shouldAskFriendsPool`ta —
+   * bu effect yalnız tetikleyici.
+   *
+   * ⚠️ SUNUCU BAĞIMLILIĞI: gönderim `/modes/friends/open`a gidiyor ve profil
+   * zaten açık. O uç bugün bu durumda UT-2303 ("Bu profilin zaten açık")
+   * dönüyor — yani cevap kaydedilemez. Sözleşme bunu açıkça istiyor
+   * (backend_friends_same_gender_2026-11.md §3.5). O madde inmeden bu akış
+   * sheet'i açar ama kaydı tamamlayamaz; sheet hata metnini gösterip AÇIK
+   * kalır (girilen veri korunur) ve kullanıcı kapatıp moda devam edebilir.
+   */
+  useEffect(() => {
+    if (mode !== "Friends") return;
+    if (setupMode !== null) return;
+    if (!shouldAskFriendsPool(friendsPoolProfile, {
+      alreadyAsked: friendsPoolAsked.current,
+    }))
+      return;
+    friendsPoolAsked.current = true;
+    setSetupError(null);
+    setSetupMode("Friends");
+  }, [friendsPoolProfile, mode, setupMode]);
+
+  /** Havuz sorusu bu oturumda açıldı mı — sheet'in davranışını belirliyor. */
+  const friendsPoolSetup =
+    setupMode === "Friends" && friendsPoolAsked.current;
 
   const handleSubmitModeSetup = useCallback(
     async (payload: {
@@ -3407,6 +3455,10 @@ export default function DiscoverScreen() {
         // `setupMode` null olduğunda sheet görünmüyor, değer önemsiz.
         mode={setupMode ?? mode}
         onSubmit={handleSubmitModeSetup}
+        // Havuz sorusu YALNIZ sunucu kilidi açıkken çiziliyor. Profili ilk kez
+        // açan Non-Binary kullanıcı bu yoldan geçmiyor (profil henüz yok, kilit
+        // bilinmiyor) — orada soruyu kayıt adımı soruyor.
+        asksFriendsPool={friendsPoolSetup}
         submitting={setupSubmitting}
         errorText={setupError}
       />

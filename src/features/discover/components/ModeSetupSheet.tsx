@@ -70,6 +70,15 @@ export interface ModeSetupSheetProps {
     /** YALNIZ Dating: "kiminle ilgileniyorsun" (en az 1 zorunlu, UT-2308). */
     interestedIn?: string[];
   }) => void;
+  /**
+   * Arkadaş modunda "kimleri görmek istersin" havuz sorusu sorulsun mu.
+   *
+   * Karar BU BİLEŞENİN DEĞİL: sunucunun `friendsInterestedInLocked` bayrağından
+   * türetiliyor (bkz. friendsPoolPrompt). İkili kategorilerde değeri sunucu
+   * kendi cinsiyetinden yazıp kilitliyor, yalnız Non-Binary kullanıcıya
+   * soruluyor. Dating'de ETKİSİZ — orada bölüm her zaman çiziliyor.
+   */
+  asksFriendsPool?: boolean;
   submitting?: boolean;
   /** Doluyken sheet açık kalır ve girilen veri korunur. */
   errorText?: string | null;
@@ -80,11 +89,25 @@ export default function ModeSetupSheet({
   onClose,
   mode,
   onSubmit,
+  asksFriendsPool = false,
   submitting = false,
   errorText = null,
 }: ModeSetupSheetProps) {
   const { t } = useTranslation();
   const isFriends = mode === "Friends";
+  /**
+   * "Kiminle ilgileniyorsun" bölümü çizilsin mi.
+   *
+   * Dating'de HER ZAMAN (tercih kullanıcının). Arkadaş'ta YALNIZ havuz sorusu
+   * açıkken: orada eşleşme kuralı aynı cinsiyet ve ikili kategorilerde değeri
+   * sunucu türetip kilitliyor, Non-Binary kullanıcıda ise soru "arkadaş
+   * modunda kimleri görmek istersin" hâline geliyor.
+   *
+   * Tek bayrak: bölümün çizilmesi, zorunluluk kontrolü ve payload'a girmesi
+   * aynı koşuldan okunuyor — üçü ayrışırsa kullanıcı dolduramadığı bir alan
+   * yüzünden kilitli kalır ya da seçtiği değer sessizce düşer.
+   */
+  const showsInterestedIn = !isFriends || asksFriendsPool;
 
   // Niyet listesi MODA GÖRE: Arkadaş çoklu seçim, Flört tek seçim. İki hook
   // da çağrılıyor ama yalnız biri `enabled` — `staleTime: Infinity` olduğu
@@ -158,10 +181,18 @@ export default function ModeSetupSheet({
       return;
     }
 
-    // Dating'de tercih ZORUNLU (UT-2308). İstemcide durdurmak, sunucuya
-    // gidip hata metnini çevirmekten iyi: alan ekranda duruyor.
-    if (!isFriends && interestedIn.length === 0) {
-      setLocalError(t("discover.mode.interestedInRequired"));
+    // Bölüm çizildiyse seçim ZORUNLU. Dating'de kural sunucunun (UT-2308);
+    // Arkadaş'ta havuz boş kalırsa deste kuralı eksik kalır. İstemcide
+    // durdurmak, sunucuya gidip hata metnini çevirmekten iyi: alan ekranda
+    // duruyor.
+    if (showsInterestedIn && interestedIn.length === 0) {
+      setLocalError(
+        t(
+          isFriends
+            ? "discover.mode.friendsPoolRequired"
+            : "discover.mode.interestedInRequired",
+        ),
+      );
       return;
     }
 
@@ -192,11 +223,11 @@ export default function ModeSetupSheet({
     onSubmit({
       intents,
       prompts: clean,
-      // Arkadaş modunda alan HİÇ gönderilmiyor (sunucu yok sayıyor ama ölü
-      // yük göndermenin anlamı yok).
-      ...(isFriends ? {} : { interestedIn }),
+      // Bölüm çizilmediyse alan HİÇ gönderilmiyor: kilitli kullanıcıda değeri
+      // sunucu kendi türetiyor, ölü yük göndermenin anlamı yok.
+      ...(showsInterestedIn ? { interestedIn } : {}),
     });
-  }, [intents, interestedIn, isFriends, onSubmit, prompts, t]);
+  }, [intents, interestedIn, isFriends, onSubmit, prompts, showsInterestedIn, t]);
 
   const shownError = errorText ?? localError;
 
@@ -397,11 +428,20 @@ export default function ModeSetupSheet({
         )}
       </Section>
 
-      {/* ── Kiminle ilgileniyorsun — YALNIZ DATING ── */}
-      {!isFriends ? (
+      {/* ── Kiminle ilgileniyorsun — Dating'de her zaman, Arkadaş'ta yalnız
+             havuz sorusu açıkken (Non-Binary kullanıcı) ── */}
+      {showsInterestedIn ? (
         <Section
-          title={t("discover.mode.interestedInTitle")}
-          description={t("discover.mode.interestedInDescription")}
+          title={t(
+            isFriends
+              ? "discover.mode.friendsPoolTitle"
+              : "discover.mode.interestedInTitle",
+          )}
+          description={t(
+            isFriends
+              ? "discover.mode.friendsPoolDescription"
+              : "discover.mode.interestedInDescription",
+          )}
         >
           {INTERESTED_IN_KEYS.map((key) => {
             const selected = interestedIn.includes(key);

@@ -69,6 +69,17 @@ Artık saklansın.
    §5'teki geçiş davranışı geçerli.
 4. **Dating dalı değişmiyor.** Orada `interestedIn` kullanıcının seçimi ve
    en az bir tane zorunlu (UT-2308).
+5. **⚠️ ZATEN AÇIK profilde UT-2303 DÖNMEMELİ.** Mevcut Non-Binary
+   kullanıcılara havuz sorusu Friends'e girişte tek seferlik bir sheet ile
+   soruluyor ve o kullanıcıların profili zaten açık. Bu istek bugün
+   "Bu profilin zaten açık" (UT-2303) ile reddedilirdi — yani sorunun
+   cevabı hiçbir zaman kaydedilemezdi.
+
+   Gereken: Friends profili açıkken gelen `/modes/friends/open` isteği,
+   `interestedIn` taşıyorsa **havuz güncellemesi** olarak kabul edilsin
+   (niyet ve prompt alanları da gelirse mevcut değerleri ezmesin, ya da
+   istemciye ayrı bir güncelleme ucu verilsin — hangisi uygunsa).
+   Bu madde inmeden §5.3'teki geçiş akışı çalışmaz.
 
 ## 4. Talep C — alt cinsiyet → kategori eşlemesi sabitlensin
 
