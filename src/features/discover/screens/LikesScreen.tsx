@@ -21,6 +21,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { feedEnabledForSession } from "@/features/feed/feedFlag";
+// Kilidin TEK kuralı — akış yazar kartı da AYNI modülü okuyor (çatallanmasın).
+import { isUnlockedLike } from "@/features/discover/likeUnlock";
 // Anahtar fabrikası + singleton client: bu ekran React Query'yi başka hiçbir
 // yerde kullanmıyor, `useQueryClient` için Provider'a bağlanmaya gerek yok
 // (AppNavigator'ın invalidate'leriyle aynı kalıp).
@@ -32,7 +34,6 @@ import {
 // için ortak bir bileşene taşındı — gerekçe LikeCard.tsx'in başında.
 import {
   MemoLikeCard,
-  isUnlockedLike,
   CARD_EXIT_MS,
   CARD_HEIGHT,
   CARD_ROW_GAP,

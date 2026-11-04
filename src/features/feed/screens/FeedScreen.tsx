@@ -55,6 +55,7 @@ import { useFeedFlight } from "../feedCardFlight";
 import {
   authorIsMatched,
   authorLikedMe,
+  authorLikeVisible,
   feedCardActions,
   resolveCardMode,
 } from "../feedCardMode";
@@ -1036,17 +1037,12 @@ export default function FeedScreen() {
    * `userId` kapısı, eşleşme/kendi beğenim dışlamaları, OR'un gerekçesi)
    * `authorLikedMe`'nin içinde ve orada test altında, burada tekrar edilmiyor.
    *
-   * ── PREMIUM KAPISI (istek) ────────────────────────────────────────────────
-   * `isPremium &&`: free kullanıcıda kabul/reddet çifti HİÇ çizilmiyor, kart
-   * normal hâlinde (Fire/Spark + not) açılıyor. "Bu kişi beni beğenmiş"
-   * bilgisi Beğenenler ekranının satış argümanı; backend alanı tier'dan
-   * bağımsız döndürüyor (LikerProfile ile parite) ve kapıyı istemciye bıraktı.
-   *
-   * ⚠️ KAPI İSTEMCİDE OLMAK ZORUNDA, sunucuyu gatelemek YETMEZ: tespitin
-   * ikinci kolu yerel `whoLikedMeIds` kümesi ve o liste ucu premium gating'e
-   * tabi değil (`api.ts > WHO_LIKED_ME`: "kartlar ve totalProfiles free'de de
-   * TAM geliyor"). Sunucu bayrağı kısılsa bile Redux kolu free kullanıcıda
-   * kartı beğenilmiş hâle çevirmeye devam ederdi.
+   * ── TIER KAPISI (istek) ───────────────────────────────────────────────────
+   * Kuralın tamamı `authorLikeVisible`da (feedCardMode) ve orada test altında:
+   * free kullanıcıda kabul/reddet çifti çizilmiyor, kart normal hâlinde
+   * (Fire/Spark + not) açılıyor — AMA Fire/NOT ile gelmiş bir beğeni İSTİSNA,
+   * çünkü gönderen görünürlüğü zaten satın aldı ve Beğeniler ekranı o kişiyi
+   * free kullanıcıya blur'suz gösteriyor (`isUnlockedLike`, ORTAK kural).
    *
    * ⚠️ `premiumResolved` EKLENMİYOR ve bu bilinçli: `isPremium` resolved olana
    * kadar zaten `false`, yani kapıya bir şey katmıyor (bkz. premiumTier > tipin
@@ -1057,7 +1053,7 @@ export default function FeedScreen() {
    */
   const authorHasLikedMe = useMemo(
     () =>
-      isPremium &&
+      authorLikeVisible(authorProfile.data, isPremium) &&
       authorLikedMe(authorProfile.data, (userId) =>
         // Yerel küme SEÇİLİ MODUN likerlarını tutuyor (fetchWhoLikedMe >
         // loadAppMode, bkz. swipeSlice.ts:30-43'teki not). `cardMode`
@@ -1710,10 +1706,8 @@ export default function FeedScreen() {
     return codes.includes(FEED_CODES.DISABLED);
   }, [postsQuery.error, minePostsQuery.error, meQuery.error]);
 
-  // `surface` parametreli, çünkü aynı boş durum iki sayfada da çizilebiliyor
-  // ve panel YALNIZ akış sayfasına ait (bkz. FeedEmptyWrap > surface).
-  const disabledEmpty = (surface: boolean) => (
-    <FeedEmptyWrap surface={surface}>
+  const disabledEmpty = (
+    <FeedEmptyWrap>
       <EmptyState
         sf="clock"
         Icon={LayoutList}
@@ -2626,11 +2620,11 @@ export default function FeedScreen() {
          */
         empty={
           disabledError ? (
-            disabledEmpty(!isMine)
+            disabledEmpty
           ) : (
-            // Panel yalnız AKIŞ sayfasında (istek): Gönderilerim'de boş durum
-            // çıplak kalıyor, kardeş sekmelerle aynı görünüşte.
-            <FeedEmptyWrap surface={!isMine}>
+            // Boş durum İKİ sayfada da çıplak — akıştaki panel 2026-11-04'te
+            // kaldırıldı (bkz. FeedEmptyWrap'ın notu).
+            <FeedEmptyWrap>
               <EmptyState
                 /**
                  * BEĞENİLER'İN BOŞ DURUMUYLA AYNI ÖLÇÜ (istek).

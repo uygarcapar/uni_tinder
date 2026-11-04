@@ -1,4 +1,5 @@
 import { isAppMode, type AppMode } from "@/features/discover/modeTheme";
+import { isUnlockedLike } from "@/features/discover/likeUnlock";
 
 /**
  * Akış kartının HANGİ MODDA açılacağının kararı — saf fonksiyon.
@@ -172,14 +173,17 @@ export function authorIsMatched(profile: unknown): boolean {
  * ("Boolean(...)") sunucudan gelen "false" string'i de true sayılır. Katılığın
  * güvenli tarafı: bilinmiyorsa normal kart.
  *
- * ⚠️ PREMIUM KAPISI BURADA DEĞİL. Bu fonksiyon bir OLGU döndürüyor ("bekleyen
- * beğeni var mı"), İZİN değil. Tier kararı çağıranda (bkz. FeedScreen >
- * `authorHasLikedMe`) çünkü premium'un tek kaynağı bir hook
- * (`usePremiumTier`) ve saf fonksiyon ona bağlanamaz.
+ * ⚠️ TIER KAPISI BURADA DEĞİL. Bu fonksiyon bir OLGU döndürüyor ("bekleyen
+ * beğeni var mı"), İZİN değil. İzin `authorLikeVisible`da ve ikisi çağıranda
+ * VE'leniyor (bkz. FeedScreen > `authorHasLikedMe`) — tier'ı bir hook
+ * taşıyor (`usePremiumTier`) ve ayırmak testi de ikiye bölüyor.
  *
- * ⚠️ `likedMeAt` ve `isSuperLike` de bu uçta artık dolu geliyor ama BURADA
- * OKUNMUYOR: ikisi de "ne zaman / nasıl beğendi" bilgisi, bekleyenliği
- * değiştirmiyor. `isSuperLike` ileride kartta "Fire'la beğendi" ayrımını
+ * ⚠️ `likedMeAt` ve `isSuperLike` de bu uçta artık dolu geliyor ama BU
+ * FONKSİYONDA OKUNMUYOR: ikisi de "ne zaman / nasıl beğendi" bilgisi,
+ * bekleyenliği değiştirmiyor. `isSuperLike`ı GÖRÜNÜRLÜK tarafı okuyor
+ * (`authorLikeVisible` → `isUnlockedLike`); karıştırma — Fire bekleyenliği
+ * üretmiyor, yalnız var olanı free kullanıcıya açıyor. İleride kartta
+ * "Fire'la beğendi" ayrımını
  * mümkün kılar — bilinçli olarak kapsam dışı.
  */
 export function authorLikedMe(
@@ -199,6 +203,38 @@ export function authorLikedMe(
   if (typeof myLikeDate === "string" && myLikeDate !== "") return false;
   if (hasLikedMe === true) return true;
   return likedLocally(userId);
+}
+
+/**
+ * Bekleyen beğeni bu kullanıcıya GÖSTERİLİR Mİ — tier kapısı.
+ *
+ * `authorLikedMe` bir OLGU döndürüyor ("bekleyen karar var mı"), bu fonksiyon
+ * İZNİ. İkisi çağıranda VE'leniyor (bkz. FeedScreen > `authorHasLikedMe`).
+ *
+ * ── Neden varsayılan KAPALI ─────────────────────────────────────────────────
+ * "Bu kişi beni beğenmiş" Plus+'ın sattığı bilgi. Beğeniler ekranında free
+ * kullanıcı liker kartlarını blur'lu görüyor ve sunucu maskeleme YAPMIYOR —
+ * kimliği saklayan tek şey istemcideki katman. Akış kartında blur yok, ad ve
+ * fotoğraf zaten açık: kabul/reddet çizilseydi akışı gezen free kullanıcı
+ * paywall'ın arkasındaki bilgiyi yan kapıdan alırdı.
+ *
+ * ⚠️ Kapı İSTEMCİDE OLMAK ZORUNDA, sunucuyu gatelemek yetmez: backend alanı
+ * tier'dan bağımsız dönüyor (LikerProfile ile parite) ve tespitin ikinci kolu
+ * yerel `whoLikedMeIds` — o liste ucu da premium gating'e tabi değil.
+ *
+ * ── Neden Fire/NOT İSTİSNA ──────────────────────────────────────────────────
+ * Kuralın kendisi `isUnlockedLike`ta ve ORTAK (2026-11-04): gönderen, karşı
+ * taraf kendisini görebilsin diye ödedi. Beğeniler o kişiyi free kullanıcıya
+ * blur'suz ve yanıtlanabilir gösterirken akış aynı kişide kabul/reddet
+ * çizmezse, satın alınan görünürlük bir ekranda teslim edilip öbüründe geri
+ * alınmış olurdu — `isUnlockedLike`ın kendi doc'undaki "kuralı ÇATALLAMAYIN"
+ * uyarısının tarif ettiği sızıntının aynası. Bu uçta `isSuperLike` dolu
+ * geliyor, `note` henüz boş (api.ts > FEED_POST_AUTHOR_PROFILE); alan
+ * dolduğunda kural kendiliğinden kapsar.
+ */
+export function authorLikeVisible(profile: unknown, isPremium: boolean): boolean {
+  if (isPremium) return true;
+  return isUnlockedLike(profile);
 }
 
 /**

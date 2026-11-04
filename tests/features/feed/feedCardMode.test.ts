@@ -10,9 +10,51 @@ import {
   feedCardActions,
   authorIsMatched,
   authorLikedMe,
+  authorLikeVisible,
   resolveCardMode,
   normalizeModes,
 } from "@/features/feed/feedCardMode";
+
+/**
+ * Bekleyen beğeni free kullanıcıya GÖSTERİLİR Mİ — tier kapısı.
+ *
+ * "Bu kişi beni beğenmiş" Plus+'ın sattığı bilgi, o yüzden varsayılan kapalı.
+ * AMA Fire/NOT kuralın DIŞINDA: gönderen zaten karşı taraf kendisini görsün
+ * diye ödedi ve Beğeniler ekranı o kişiyi free kullanıcıya blur'suz,
+ * yanıtlanabilir gösteriyor (`isUnlockedLike`). Akış aynı kişide kabul/reddet
+ * çizmezse satın alınan görünürlük bir ekranda teslim edilip öbüründe geri
+ * alınmış olur — `isUnlockedLike`ın kendi doc'undaki "kuralı ÇATALLAMAYIN"
+ * uyarısının tarif ettiği sızıntının aynası.
+ */
+describe("authorLikeVisible", () => {
+  it("premium her hâlde görüyor", () => {
+    expect(authorLikeVisible({}, true)).toBe(true);
+    expect(authorLikeVisible(null, true)).toBe(true);
+  });
+
+  it("free kullanıcıda düz beğeni GİZLİ", () => {
+    expect(authorLikeVisible({ hasLikedMe: true }, false)).toBe(false);
+  });
+
+  it("free kullanıcıda Fire GÖRÜNÜR — Beğeniler'deki kuralın aynısı", () => {
+    expect(authorLikeVisible({ isSuperLike: true }, false)).toBe(true);
+  });
+
+  it("NOT da açıyor — bu uçta `note` bugün BOŞ geliyor ama kural hazır", () => {
+    // Sunucu alanı doldurursa (api.ts > FEED_POST_AUTHOR_PROFILE: "yeri hazır
+    // bırakıldı") ikinci bir değişiklik gerekmesin.
+    expect(authorLikeVisible({ note: "selam" }, false)).toBe(true);
+  });
+
+  it("kapı yalnız GÖRÜNÜRLÜK — bekleyenliği kendi başına üretmiyor", () => {
+    // `authorLikedMe` ile VE'leniyor (bkz. FeedScreen); Fire'lı ama eşleşmiş
+    // bir yazarda kapı açık olsa bile kart aksiyonsuz doğuyor.
+    expect(authorLikeVisible({ isSuperLike: true }, false)).toBe(true);
+    expect(
+      authorLikedMe({ userId: "u1", isSuperLike: true, isMatched: true }, () => false),
+    ).toBe(false);
+  });
+});
 
 describe("resolveCardMode", () => {
   it("seçili mod uygunsa ONU kullanıyor", () => {
