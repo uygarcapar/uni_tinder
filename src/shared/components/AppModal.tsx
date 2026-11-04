@@ -106,10 +106,36 @@ export const SHEET_PICKER_SNAP_POINTS = ["75%", "100%"];
 // İçerideki input'ların (bkz. useKeyboardAwareField) modal scroll view'ına
 // erişebilmesi için. scrollY zaten header animasyonu için tutuluyor; aynı
 // değer "şu an neredeyiz" bilgisi olarak scroll hesabında da kullanılıyor.
-export const AppModalScrollContext = createContext<{
+export type AppModalScrollHost = {
   scrollRef: React.MutableRefObject<any>;
   scrollY: { value: number };
-} | null>(null);
+};
+export const AppModalScrollContext = createContext<AppModalScrollHost | null>(
+  null,
+);
+
+/**
+ * Scroll hattını modal'ın DIŞINDA kurar.
+ *
+ * ⚠️ NEDEN GEREKLİ — sessiz tuzak: `AppModalScrollContext`in Provider'ı
+ * AppModal'ın İÇİNDE. Sheet'i render EDEN bileşen (ModeSetupSheet,
+ * NoteComposerModal, FeedComposerSheet) ağaçta provider'ın ÜSTÜNDE kalıyor,
+ * yani kendi gövdesinde `useKeyboardAwareField` çağırdığında `useContext` null
+ * dönüyor ve hook hiçbir şey yapmadan çıkıyor — klavye açılınca alan yerinde
+ * kalıyor, hata da yok. (EditProfileForm bu tuzağa düşmüyor çünkü o, modal'ın
+ * `children`'ı olarak render ediliyor, yani provider'ın altında.)
+ *
+ * Çağıran bu hook'u çağırıp aynı nesneyi hem modal'a hem hook'a veriyor:
+ *
+ *   const scrollHost = useAppModalScrollHost();
+ *   const { anchorRef, onFocus, onBlur } = useKeyboardAwareField(24, scrollHost);
+ *   <AppModal scrollHost={scrollHost} …>
+ */
+export function useAppModalScrollHost(): AppModalScrollHost {
+  const scrollRef = useRef<any>(null);
+  const scrollY = useSharedValue(0);
+  return useMemo(() => ({ scrollRef, scrollY }), [scrollY]);
+}
 
 /**
  * Sheet'in scroll olay hattı — gorhom'un varsayılan handler'larını sarar ve iki
@@ -326,6 +352,10 @@ type AppModalProps = {
   // gorhom keyboardBehavior. Varsayılan "extend" (bkz. AppBottomSheet);
   // input'unu klavyenin üstünde tutması gereken sheet'ler "interactive" verir.
   keyboardBehavior?: "extend" | "interactive" | "fillParent";
+  // Scroll hattı (scrollRef + scrollY) DIŞARIDA kurulduysa — gerekçe ve
+  // kullanım `useAppModalScrollHost`un başında. Verilmezse modal kendi hattını
+  // kurar (bugünkü çağıranların çoğu).
+  scrollHost?: AppModalScrollHost;
   // false ise içerik scroll edilmez; header background opacity sabit kalır.
   scrollable?: boolean;
   // Scrollable=true iken scroll'u disable etmek için.
@@ -394,6 +424,7 @@ export default function AppModal({
   dynamicSizing = false,
   maxDynamicContentSize,
   keyboardBehavior,
+  scrollHost,
   scrollable = true,
   scrollEnabled = true,
   enableContentPanningGesture,
@@ -423,8 +454,13 @@ export default function AppModal({
   // ── Scroll plumbing ──────────────────────────────────────────────────────
   // scrollY'yi useModalScrollEventsHandlers dolduruyor (bkz. yukarıdaki not) —
   // burada ayrı bir scroll handler YOK.
-  const scrollRef = useRef<any>(null);
-  const scrollY = useSharedValue(0);
+  //
+  // Hat dışarıdan verildiyse (bkz. `scrollHost`) modal kendi ref/shared
+  // value'sunu kullanmıyor; ikisi de yine kuruluyor ki hook sırası sabit kalsın.
+  const ownScrollRef = useRef<any>(null);
+  const ownScrollY = useSharedValue(0);
+  const scrollRef = scrollHost?.scrollRef ?? ownScrollRef;
+  const scrollY = (scrollHost?.scrollY ?? ownScrollY) as typeof ownScrollY;
 
   // Modal her açıldığında scroll'u sıfırla — stale title/blur state'i taşımasın.
   useEffect(() => {
@@ -826,7 +862,7 @@ export default function AppModal({
 
   const scrollContext = useMemo(
     () => ({ scrollRef, scrollY }),
-    [scrollY],
+    [scrollRef, scrollY],
   );
 
   return (

@@ -86,6 +86,8 @@ import {
   SWIPE_GUARD_MS,
 } from "@/features/discover/deckProgress";
 import { decideTopUp } from "@/features/discover/deckTopUp";
+import { DISCOVER_PERF_PROBE } from "@/features/discover/perfProbe";
+import PerfProbeOverlay from "@/features/discover/PerfProbeOverlay";
 import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
 import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
@@ -1544,34 +1546,13 @@ export default function DiscoverScreen() {
   }, []);
 
   /**
-   * Aksiyon REDDİ — Like/SuperLike/Note sunucuda kapıya takıldı.
+   * Aksiyon REDDİ (`swipeRejected`) — dinleyici AppNavigator'a TAŞINDI.
    *
-   * ⚠️ KART GERİ KONMUYOR. Deste iyimser ilerliyor, yani kart zaten düştü;
-   * buradaki iş yalnızca kullanıcıya haber vermek. Hedef gerçekten uygun değil
-   * (silinmiş/pasif, engel, modu kapalı, cinsiyet kuralı) — geri koymak aynı
-   * reddedilecek kişiyi tekrar göstermek olurdu.
-   *
-   * Mesaj NÖTR tutuluyor: UT-2305/2309 karşı tarafın modunu ya da cinsiyetini
-   * ifşa etmemeli (backend sözleşmesi bunu açıkça söylüyor). Kodun kendi i18n
-   * karşılığı zaten nötr; sunucu mesajı varsa o kullanılıyor.
+   * Buradaydı ve bu sekme `lazy: true`: Beğeniler/Akış/Kampüs'ten atılan
+   * aksiyon reddedildiğinde Keşif hiç mount olmamışsa toast çıkmıyordu. İki
+   * yerde birden dinlemek toast'ı ikizlerdi, o yüzden burada dinleyici YOK —
+   * gerekçenin tamamı AppNavigator'daki `swipeRejected` effect'inde.
    */
-  useEffect(
-    () =>
-      uiBus.on("swipeRejected", (payload: any) => {
-        const code = payload?.code as string | undefined;
-        showInfoToast({
-          message:
-            payload?.message ??
-            (code
-              ? t(`discover.mode.errors.${code}`, {
-                  defaultValue: t("common.somethingWentWrong"),
-                })
-              : t("common.somethingWentWrong")),
-          variant: "error",
-        });
-      }),
-    [t],
-  );
 
   const handleOpenModeSetup = useCallback((next: AppMode) => {
     setSetupError(null);
@@ -3115,11 +3096,14 @@ export default function DiscoverScreen() {
      * "açığa çıkma" riski bu tek karede yok: üstteki kart tam ekran opak ve o
      * pencerede sürüklenebilen bir şey de yok (çıkış jesti kaldırıldı).
      */
-    const painted = [
-      slotProfile,
-      deckSettled ? nextProfile : undefined,
-      topProfile,
-    ].filter((p): p is NonNullable<typeof p> => !!p);
+    // TEST 0 (geçici teşhis, bkz. discover/perfProbe.ts): bayrak açıkken yalnız
+    // üstteki kart çiziliyor — önizlemeyle aradaki "kaç kart" farkı kapanıyor.
+    // Geri alma ve kart geçişi bu bayrak açıkken bozuk; yalnız scroll ölçümü için.
+    const painted = (
+      DISCOVER_PERF_PROBE.soloCard
+        ? [topProfile]
+        : [slotProfile, deckSettled ? nextProfile : undefined, topProfile]
+    ).filter((p): p is NonNullable<typeof p> => !!p);
     return painted
       .map((profile) => {
         const isTopCard = profile.userId === topProfile?.userId;
@@ -3138,9 +3122,10 @@ export default function DiscoverScreen() {
             onLike={handleLikeButton}
             onFire={handleFireButton}
             willMatch={willMatchOnLike}
-            // `swipeQuotaExhausted` GEÇİLMİYOR: kartta onu okuyan tek dal
-            // sağa kaydırma jestiydi ve o jest kaldırıldı (bkz. SwipeWrapper).
-            // Kota kapısı artık yalnız beğen butonunda — handleLikeButton.
+            // Sağa kaydırmanın kota kapısı (jest geri geldi, bkz. SwipeWrapper
+            // > horizontalPan). Beğen butonununki ayrı duruyor —
+            // handleLikeButton — ve ikisi aynı toast + sheet'i açıyor.
+            swipeQuotaExhausted={swipeQuotaExhausted}
             fireQuotaExhausted={fireQuotaExhausted}
             entryX={cardEntryX}
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
@@ -3175,6 +3160,8 @@ export default function DiscoverScreen() {
 
   return (
     <GestureHandlerRootView testID="discover-screen" style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* GEÇİCİ teşhis overlay'i — bkz. perfProbe.ts > overlay. */}
+      {__DEV__ && DISCOVER_PERF_PROBE.overlay && <PerfProbeOverlay />}
       {/* ── KART: TAM EKRAN ──────────────────────────────────────────────────
           Kap ne üstten ne alttan pay bırakıyor. Kapak fotoğrafı durum
           çubuğunun ardından geçip ekranın tepesine, yüzen tab bar'ın ardından

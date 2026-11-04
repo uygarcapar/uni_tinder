@@ -10,6 +10,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import { swipeKeys } from "@/features/discover/swipeKeys";
+import { loadAppMode } from "@/features/discover/modePrefs";
 import { noteTargetPayload } from "@/features/discover/noteTarget";
 import uiBus from "@/shared/services/uiBus";
 import type { NoteTarget, SwipeStats } from "@/shared/types";
@@ -283,8 +284,10 @@ export function useSwipeStats() {
  * yazıyordu; `mode` eklenirken biri atlanınca TS onu "bilinmeyen alan" diye
  * reddetti. Tip tek kaynaktan gelince o sınıf hata imkânsız.
  *
- * `mode` opsiyonel: gönderilmezse sunucu Dating sayıyor (eski istemci
- * sözleşmesi) ve kart aksiyonları dışındaki çağıranlar modu bilmiyor olabilir.
+ * `mode` çağıran için opsiyonel ama UCA HER ZAMAN GİDİYOR: verilmezse mutasyon
+ * diskteki seçime düşüyor (bkz. useSwipeMutation). Alanın boş bırakılması
+ * sunucuda "Dating" demek (eski istemci sözleşmesi) ve bu sessiz varsayım
+ * gerçek bir hataydı — bkz. oradaki not.
  */
 type SwipeVariables = {
   direction: string;
@@ -307,14 +310,33 @@ type SwipeVariables = {
 
 export function useSwipeMutation() {
   const qc = useQueryClient();
+  /**
+   * ⚠️ MOD ATLANIRSA DİSKE DÜŞÜLÜYOR, sunucunun varsayılanına DEĞİL.
+   *
+   * Alan boş gidince sunucu swipe'ı Dating'e yazıyor (eski istemci sözleşmesi).
+   * Beğeniler ekranı tam da bunu yapıyordu: Friends'teki bir beğeniyi
+   * yanıtlamak Dating'e yazılmaya çalışılıyor, hedefin yalnız Friends profili
+   * açıksa sunucu UT-2305 ile reddediyordu — kart düşüyor, eşleşme hiç
+   * doğmuyor, kullanıcı nötr "ulaşılamıyor" mesajını görüyordu. Çağıranın
+   * unutması mümkün (LikerSwipeModal'ın prop'ları `any`, TS yakalamıyor), o
+   * yüzden son söz burada.
+   *
+   * Kaynak `useAppMode` DEĞİL `modePrefs`: tercihin tek kaynağı zaten disk ve
+   * bu modülün mod state'ine abone olması gereksiz bir bağ olurdu
+   * (`swipeSlice`teki aynı gerekçe). Çağıran AÇIKÇA mod verdiğinde o kazanıyor
+   * — akışta kartın modu ekranın modundan farklı olabiliyor (bkz. FeedScreen
+   * > `cardMode`).
+   */
+  const meId = useSelector((s: any) => s?.auth?.user?.id as string | undefined);
   return useMutation({
     // `mode` HER AKSİYONDA taşınıyor: sunucu swipe satırını o modun altına
     // yazıyor ve karşılıklı beğeni kontrolü AYNI modda yapılıyor (çapraz-mod
     // beğeni eşleşme üretmiyor).
     mutationFn: ({ direction, userId, mode, source, momentId }: SwipeVariables) => {
-      if (direction === "up") return swipeService.fireUser(userId, null, mode);
-      if (direction === "left") return swipeService.passUser(userId, null, mode);
-      return swipeService.likeUser(userId, null, mode, { source, momentId });
+      const sent = mode ?? loadAppMode(meId);
+      if (direction === "up") return swipeService.fireUser(userId, null, sent);
+      if (direction === "left") return swipeService.passUser(userId, null, sent);
+      return swipeService.likeUser(userId, null, sent, { source, momentId });
     },
     onMutate: ({ direction, source }: SwipeVariables) => {
       // ⚠️ KAMPÜS DALI: bu yüzeyin kararı Keşif ekonomisine yazılmıyor —

@@ -9,7 +9,12 @@ import {
   SHOP_CARD_HEIGHT,
   SHOP_CARD_WIDTH_3UP,
 } from "@/features/profile/components/ConsumableShopCard";
-import { colors, gradients, onMediaAt } from "@/shared/theme/colors";
+import { colors, onMediaAt } from "@/shared/theme/colors";
+import {
+  DEFAULT_APP_MODE,
+  modePlusCardGradient,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 /**
  * Mağaza şeridinin YALNIZ premium'da çizilen en sol kartı: "abonesin" rozeti.
@@ -21,8 +26,9 @@ import { colors, gradients, onMediaAt } from "@/shared/theme/colors";
  * "aboneliği yönet") kaldırıldı, o bilgiler plus sayfasında zaten var.
  * Karşılığı `!showMembershipCard` dalındaki upsell kartı, o duruyor.
  *
- * Kabuk ConsumableShopCard DEĞİL: zemini upsell kartının gradyanı
- * (`gradients.litPlusCard`) ve rozeti yok, yerine wordmark'ın kendisi duruyor.
+ * Kabuk ConsumableShopCard DEĞİL: zemini upsell kartının gradyan ailesinden
+ * geliyor (`modePlusCardGradient` — Dating'de litPlusCard kırmızısı, Friends'te
+ * friendsPlusCard yeşili) ve rozeti yok, yerine wordmark'ın kendisi duruyor.
  * Ölçüler yine de oradan geliyor (SHOP_CARD_*) — şeritte yan yana duran üç
  * kartın genişliği, köşesi ve boyu ayrı ayrı yazılırsa bir gün ayrışırlar.
  *
@@ -35,9 +41,15 @@ import { colors, gradients, onMediaAt } from "@/shared/theme/colors";
 export default function PlusCard({
   /** Şeritten geliyor. Bu kart varsa şerit zaten üç kartlık — varsayılanı da o. */
   cardWidth = SHOP_CARD_WIDTH_3UP,
+  /**
+   * Seçili mod — zeminin rengi buradan. Varsayılanı DEFAULT_APP_MODE: modu
+   * bilmeyen bir çağıran eski kırmızı kartı görür, yeşil "kazara" çıkmaz.
+   */
+  mode = DEFAULT_APP_MODE,
   onPress,
 }: {
   cardWidth?: number;
+  mode?: AppMode;
   onPress?: () => void;
 } = {}) {
   return (
@@ -54,7 +66,7 @@ export default function PlusCard({
       }}
     >
       <LinearGradient
-        colors={gradients.litPlusCard}
+        colors={modePlusCardGradient(mode)}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{

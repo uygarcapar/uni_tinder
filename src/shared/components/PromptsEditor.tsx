@@ -56,8 +56,16 @@ type Props = {
    * davranışını atlıyor. Sheet dışında (kayıt ekranı) varsayılan yeterli.
    */
   InputComponent?: React.ComponentType<any>;
-  onInputFocus?: () => void;
-  onInputBlur?: () => void;
+  /**
+   * Odak/odak kaybı — argüman ODAKLANAN SLOTUN sarmalayıcı View düğümü.
+   *
+   * Düğüm geçiliyor çünkü klavye hizalaması (bkz. useKeyboardAwareField) ölçüm
+   * yapıyor: editörün tamamı ölçülseydi hizalanan şey son slotun altı olurdu ve
+   * üstteki bir slot düzenlenirken alan klavyenin çok yukarısında (hatta ekran
+   * dışında) kalırdı. Çağıran düğümü kullanmak zorunda değil.
+   */
+  onInputFocus?: (node?: any) => void;
+  onInputBlur?: (node?: any) => void;
   /**
    * Hangi modun profili doldurulyor ("Dating" | "Friends") — seçici kataloğu
    * buna göre süzüyor. Verilmezse süzme YOK (eski çağıranlar bozulmaz).
@@ -92,8 +100,8 @@ type RowProps = {
   onBeginEdit: (index: number) => void;
   onCommit: (index: number, answer: string) => void;
   onRemove: (index: number) => void;
-  onInputFocus?: () => void;
-  onInputBlur?: () => void;
+  onInputFocus?: (node?: any) => void;
+  onInputBlur?: (node?: any) => void;
   registerRef: (index: number, node: any) => void;
   /** Slotun taslak okuyucusu — `flush` açık slotun yazılmamış metnini buradan alıyor. */
   registerDraft: (index: number, getter: (() => string) | null) => void;
@@ -175,8 +183,18 @@ const PromptRow = memo(function PromptRow({
     [onCommit, index, getValues],
   );
 
+  /**
+   * Slotun ölçülebilir kutusu — klavye hizalaması bunu ölçüyor (bkz. Props'taki
+   * `onInputFocus` notu). Soru başlığını, cevabı ve hata satırını kapsıyor:
+   * hizalanan alt kenar cevabın altı, yani yazarken imleç klavyenin üstünde.
+   *
+   * ⚠️ `collapsable={false}` ŞART: RN bu View'ı native ağaçtan düşürürse
+   * `measureInWindow` hiç çalışmaz ve hizalama sessizce ölür.
+   */
+  const rowRef = useRef<any>(null);
+
   return (
-    <View style={{ marginBottom: 32 }}>
+    <View ref={rowRef} collapsable={false} style={{ marginBottom: 32 }}>
       {/* Başlık satırı: soruya basınca seçici açılır. Çöp kutusu YALNIZ
           düzenleme modunda görünüyor, chevron ise yalnız okuma modunda —
           düzenlerken satırda tek eylem silme olsun. */}
@@ -265,11 +283,13 @@ const PromptRow = memo(function PromptRow({
                 value={value}
                 editable={isEditing}
                 onChangeText={onChange}
-                onFocus={onInputFocus}
+                // Düğüm GEÇİLİYOR: hizalama bu slotu ölçsün, editörün tamamını
+                // değil (gerekçe Props'taki `onInputFocus` notunda).
+                onFocus={() => onInputFocus?.(rowRef.current)}
                 // Odak kaybında da commit: kullanıcı "Bitir" yerine doğrudan
                 // başka bir yere basarsa taslak kaybolmasın.
                 onBlur={() => {
-                  onInputBlur?.();
+                  onInputBlur?.(rowRef.current);
                   commit();
                 }}
                 // İmleç ve seçim rengi: iOS'ta varsayılan sistem mavisi kalıyordu,

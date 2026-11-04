@@ -104,7 +104,7 @@ describe('normal gönderi', () => {
 });
 
 describe('anonim gönderi — kimlik sızdırmama', () => {
-  it('cinsiyetli etiket çizilir, yazar adı ÇİZİLMEZ', () => {
+  it('sade "anonim" çizilir, yazar adı ÇİZİLMEZ', () => {
     render(
       <FeedPostCard
         post={post({
@@ -122,14 +122,28 @@ describe('anonim gönderi — kimlik sızdırmama', () => {
       />,
     );
     // Anonim etiketi de küçük harf: isimle AYNI slot, aynı listede yan yana.
-    expect(screen.getByText('anonim · kadın')).toBeTruthy();
-    expect(screen.queryByText(tr.feed.anonymous.Women)).toBeNull();
+    expect(screen.getByText('anonim')).toBeTruthy();
     expect(screen.queryByText('esra, 21')).toBeNull();
     expect(screen.queryByText('İTÜ')).toBeNull();
     expect(screen.queryByText('itü')).toBeNull();
   });
 
-  it('authorCategory null ise sade "Anonim"', () => {
+  /**
+   * ⚠️ CİNSİYET SIZDIRMAMA (istek). `authorCategory` wire'da duruyor ama kart
+   * onu HİÇBİR hâlde çizmiyor: "anonim · kadın" etiketi, küçük bir kampüs
+   * akışında cinsiyet+konu+saat üçlüsüyle kişiyi teşhis edilebilir yapıyordu.
+   * Üç kategori de ayrı ayrı sorgulanıyor ki tek bir dal geri sızmasın.
+   */
+  it.each(['Men', 'Women', 'NonBinary'] as const)(
+    'authorCategory=%s olsa bile cinsiyet YAZMIYOR',
+    (category) => {
+      render(<FeedPostCard post={post({ isAnonymous: true, authorCategory: category })} />);
+      expect(screen.getByText('anonim')).toBeTruthy();
+      expect(screen.queryByText(/erkek|kadın|non-binary/i)).toBeNull();
+    },
+  );
+
+  it('authorCategory null ise de sade "Anonim"', () => {
     render(<FeedPostCard post={post({ isAnonymous: true, authorCategory: null })} />);
     expect(screen.getByText('anonim')).toBeTruthy();
   });
@@ -142,7 +156,7 @@ describe('anonim gönderi — kimlik sızdırmama', () => {
         onPressAuthor={onPressAuthor}
       />,
     );
-    fireEvent.press(screen.getByText('anonim · erkek'));
+    fireEvent.press(screen.getByText('anonim'));
     expect(onPressAuthor).not.toHaveBeenCalled();
   });
 
@@ -301,11 +315,15 @@ describe('beğeni', () => {
     expect(screen.getByText('Yarın kütüphane kaçta açılıyor?')).toBeTruthy();
   });
 
-  it('kendi gönderinde basılamaz (UT-7330 duvarına yürütmüyoruz)', () => {
+  // ⚠️ KURAL TERSİNE DÖNDÜ (istek). Eskiden kart `isMine`da butonu kilitliyordu
+  // ("UT-7330 duvarına yürütmüyoruz"); artık kendi gönderini de beğenebiliyorsun
+  // ve kapı TEK YERDE — sunucuda. Reddedilirse hata kullanıcıya söyleniyor
+  // (feedQueries > useTogglePostLike.onError), sessizce yutulmuyor.
+  it('kendi gönderinde de basılabilir', () => {
     const onToggleLike = jest.fn();
     render(<FeedPostCard post={post({ isMine: true })} onToggleLike={onToggleLike} />);
     fireEvent.press(screen.getByText('12'));
-    expect(onToggleLike).not.toHaveBeenCalled();
+    expect(onToggleLike).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
   });
 });
 

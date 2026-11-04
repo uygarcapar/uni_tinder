@@ -21,6 +21,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { feedEnabledForSession } from "@/features/feed/feedFlag";
+// Anahtar fabrikası + singleton client: bu ekran React Query'yi başka hiçbir
+// yerde kullanmıyor, `useQueryClient` için Provider'a bağlanmaya gerek yok
+// (AppNavigator'ın invalidate'leriyle aynı kalıp).
+import { feedKeys } from "@/features/feed/feedKeys";
+import { queryClient } from "@/shared/queries/queryClient";
 import {
 } from "@/features/feed/feedQueries";
 // Kart ARTIK BURADA DEĞİL (2026-10-10): akış yanıtları da aynı kartı çizdiği
@@ -1471,6 +1476,12 @@ export default function LikesScreen() {
     likesRef.current = next;
     setLikes(next);
     dispatch(removeWhoLikedMe(likerUserId));
+    // Akış yazar kartı bayatladı: bekleyen karar ÇÖZÜLDÜ, bu kişinin
+    // gönderisine girilince artık kabul/reddet çizilmemeli. Kabul dalını
+    // `MatchNotification` zaten tazeliyor (AppNavigator); RET'i kapsayan tek
+    // satır bu — yerel küme düşse de sunucunun `hasLikedMe` kolu kartı beş
+    // dakika daha beğenilmiş hâlinde tutardı (feedQueries > staleTime).
+    queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
     // Pass = kesin kaçırılmış eşleşme; bu kişi zaten seni beğenmişti.
     if (direction === "left") {
       showMissedMatchToast({
@@ -1526,7 +1537,11 @@ export default function LikesScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       // İstek ANINDA gidiyor, kartın veriden düşmesi animasyon kadar gecikiyor:
       // görsel yumuşama ağı bekletmesin.
-      swipeMutate({ direction, userId: likerUserId });
+      // Mod ref'ten (gerekçe modeRef'te): bu callback'in deps'i sabit, `mode`u
+      // kapanıştan okusa ilk render'ın değerine tutunurdu. Parametrenin
+      // kendisi ŞART — atlanırsa sunucu swipe'ı Dating'e yazar ve Friends
+      // beğenisi UT-2305 ile reddedilir (bkz. useSwipeMutation).
+      swipeMutate({ direction, userId: likerUserId, mode: modeRef.current });
       if (direction === "right") {
         // ONAY: bu kişi seni zaten beğenmişti, yani sonuç KESİN eşleşme —
         // kutlama MatchModal'ın (bkz. flameSweep'teki kural), kart burada pas
@@ -2081,6 +2096,10 @@ export default function LikesScreen() {
         // Doğrudan `handleLikerSwiped` DEĞİL: engelleme yönü kaçırdıkların
         // listesinden de düşmeli (bkz. handleModalSwipe).
         onSwipe={handleModalSwipe}
+        // Aksiyonun modu — modal swipe isteğini KENDİ atıyor. Prop'ları `any`
+        // olduğu için eksikliğini TS yakalamıyordu: Friends'te verilen karar
+        // Dating'e yazılmaya çalışılıyor, sunucu UT-2305 dönüyordu.
+        mode={mode}
         swipeDisabled={previewSwipeDisabled}
       />
     </View>

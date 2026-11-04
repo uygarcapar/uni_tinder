@@ -10,7 +10,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { CameraView, type CameraType } from "expo-camera";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -19,9 +25,12 @@ import { useTranslation } from "react-i18next";
 
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import MediaChromeIconButton from "@/shared/components/MediaChromeIconButton";
-import type { SFSymbol } from "@/shared/components/SFIcon";
-import { RefreshCw, X, Zap } from "@/shared/icons";
-import { colors, isLight, onMediaAt } from "@/shared/theme/colors";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import { ArrowRight, RefreshCw, X, Zap } from "@/shared/icons";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeAccent } from "@/features/discover/modeTheme";
+import { colors, isLight, onMediaAt, withAlpha } from "@/shared/theme/colors";
+import { GLASS_ICON_CLEAR_SIZE } from "@/shared/theme/glass";
 import { devLog } from "@/shared/utils/devLog";
 import { forgetPhoto } from "@/shared/utils/photoStore";
 import {
@@ -72,26 +81,61 @@ import {
  * donanımı da tutulmuyor.
  */
 
-/** Deklanşör çapı — iOS kamerasının dolu beyaz düğmesiyle aynı ölçek. */
+/**
+ * Deklanşör — iOS kamerasının HALKALI düğmesi: dış beyaz halka, siyah bir
+ * boşluk, içinde açık gri dolu daire.
+ *
+ * Eskiden tek parçaydı (dolu beyaz daire + soluk kenarlık) ve kamera
+ * arayüzünün öğrenilmiş deklanşöründen farklı okunuyordu — boşluk, düğmeye
+ * basıldığında halkanın içindeki dairenin küçüldüğü o bilindik hareketin de
+ * yeri. Üç ölçü birbirine bağlı: `SHUTTER_CORE` çapı kalan boşluktan türüyor.
+ */
 const SHUTTER = 72;
-const SHUTTER_RING = 3;
+/** Dış beyaz halkanın kalınlığı. */
+const SHUTTER_RING = 4;
+/** Halka ile iç daire arasındaki boşluk — zemin (siyah) buradan görünüyor. */
+const SHUTTER_GAP = 3;
+const SHUTTER_CORE = SHUTTER - 2 * (SHUTTER_RING + SHUTTER_GAP);
+/**
+ * İç dairenin grisi — MEDYA rengi, tema token'ı DEĞİL: zemin her temada kamera
+ * görüntüsü/siyah, yani düğme de her temada aynı çiziliyor.
+ */
+const SHUTTER_CORE_FILL = "#CBCBCB";
 
 /** JPEG kalitesi: kırpıcı çıktıyı 900×1200'e indirip 0.85 ile yeniden
  *  kodluyor, buradaki tek iş ara dosyada nesil kaybı bırakmamak. */
 const QUALITY = 0.9;
 
 /**
- * Önizleme kutusunun köşeleri.
+ * Önizleme kutusunun köşeleri — DÖRT KÖŞE DE AYNI.
  *
- * ÜST ekranın KENDİ köşe yarıçapına yakın (çentikli iPhone'larda ~55pt):
- * kutu y=0'a yaslandığı için küçük bir yarıçap cihaz maskesinin altında kalıp
- * hiç görünmezdi. Çentiksiz cihazlarda (düz köşeli ekran) 0 — orada yuvarlak
- * bir üst kenar ekranın köşesiyle hizasız duruyor.
- *
- * ALT daha küçük: kutu orada ekran kenarına değil siyah zemine oturuyor.
+ * Eskiden üst 55pt'ydi: kutu y=0'a yaslıydı, yani üst kenarı ekranın kendi
+ * maskesine değiyordu ve küçük bir yarıçap o maskenin altında kaybolurdu.
+ * Kutu artık güvenli alanın ALTINDAN başlıyor (bkz. `layout`), yani üst kenar
+ * da siyah zeminin içinde duruyor — orada ekran köşesini taklit eden büyük bir
+ * yarıçapın hizalanacağı bir şey yok.
  */
-const RADIUS_TOP = 55;
-const RADIUS_BOTTOM = 28;
+const RADIUS = 28;
+
+/**
+ * Başlık butonlarının pencere kenarına uzaklığı — ÜSTTE VE YANDA AYNI.
+ *
+ * Tek sayı olması şart: butonlar pencerenin üst köşelerine oturuyor ve iki
+ * eksende farklı bir boşluk, yuvarlak köşeye göre hizasız okunuyordu. Üstteki
+ * ölçü pencerenin tepesinden (yani `insets.top`'tan) sayılıyor, ekranın
+ * fiziksel tepesinden değil — güvenli alan artık kutunun dışında.
+ */
+const CHROME_GAP = 16;
+
+/**
+ * Gönder düğmesinin çapı — başlıktaki cam ikon butonlarıyla BİREBİR AYNI.
+ *
+ * Ekrandaki bütün yuvarlak ikon düğmeleri (✕, flaş, çevir, yeniden çek) tek
+ * ölçüde; gönder de onlardan biri gibi okunmalı. Ayrı bir çap, aynı aileden
+ * olmayan bir düğme izlenimi veriyordu. Deklanşör BU AİLENİN DIŞINDA kalıyor
+ * (kendi ölçüsü SHUTTER) — o bir ikon düğmesi değil, kameranın ana eylemi.
+ */
+const SEND = GLASS_ICON_CLEAR_SIZE;
 
 type Session = {
   settle: (outcome: CameraOutcome) => void;
@@ -100,24 +144,50 @@ type Session = {
 };
 
 /**
- * Flaş sırası: kapalı → otomatik → açık.
+ * Flaş: AÇIK ya da KAPALI — ara hâl yok.
  *
- * expo-camera'nın `FlashMode`'u bir de `screen` taşıyor (ekranı flaş olarak
- * kullanan Retina Flash yolu) — BURAYA ALINMADI: ön kamera düğmesi gizli,
- * arka kamerada ise gerçek flaş varken ekranı yakmanın anlamı yok.
+ * ⚠️ `auto` KALDIRILDI (istek). Gerekçesi kararın kendisi: otomatik flaşta
+ * kullanıcı deklanşöre basarken ışığın patlayıp patlamayacağını bilmiyor, yani
+ * düğme bir durum göstermiyor. İki hâlde düğmenin görüntüsü ile sonucu birebir.
+ * i18n'deki `common.camera.flash.auto` anahtarı duruyor ama okunmuyor.
  */
-type FlashChoice = "off" | "auto" | "on";
-const FLASH_ORDER: FlashChoice[] = ["off", "auto", "on"];
+type FlashChoice = "off" | "on";
+const FLASH_ORDER: FlashChoice[] = ["off", "on"];
 
 const FLASH_SYMBOL: Record<FlashChoice, SFSymbol> = {
   off: "bolt.slash.fill",
-  auto: "bolt.badge.automatic.fill",
   on: "bolt.fill",
 };
+
+/**
+ * ÖN KAMERADA FLAŞ = EKRAN FLAŞI.
+ *
+ * Ön kamerada donanım flaşı yok; ışığı ekranın kendisi veriyor (Retina Flash).
+ * expo-camera bunu ayrı bir mod olarak taşıyor ve iki platformda iki ayrı
+ * yoldan uyguluyor:
+ *   • iOS: `screen` → `.on`a eşleniyor (`CameraEnums.swift`) ve AVFoundation
+ *     ön kamerada o modu zaten ekran flaşı olarak çalıştırıyor.
+ *   • Android: CameraX'in kendi `SCREEN_FLASH` yolu — orada `on` ön kamerada
+ *     HİÇBİR ŞEY yapmıyor, yani bu eşleme olmadan düğme ölü olurdu.
+ * Tek kural iki platformu da doğru yere götürüyor.
+ */
+const flashModeFor = (choice: FlashChoice, facing: CameraType) =>
+  choice === "on" && facing === "front" ? "screen" : choice;
 
 export default function CameraCaptureOverlay() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  /**
+   * Gönder düğmesinin dolgusu SEÇİLİ MODUN vurgusu — Flört'te litPlus
+   * kırmızısı, Arkadaş'ta friendsAccent yeşili (Beğeniler ekranındaki dolgulu
+   * CTA'larla tek aile, `modeAccent` tek kaynak).
+   *
+   * ⚠️ DÜĞME YALNIZ YERİNDE ONAY YOLUNDA ÇİZİLİYOR (kampüs anı) — kırpıcıya
+   * giden profil yolunda onay bu ekranda değil kırpıcıda. Yani moda bağlı
+   * renk, modun gerçekten anlamlı olduğu tek akışta görünüyor.
+   */
+  const { mode } = useAppMode();
+  const accent = modeAccent(mode);
   const { width: screenW, height: screenH } = useWindowDimensions();
 
   const cameraRef = useRef<CameraView>(null);
@@ -132,8 +202,76 @@ export default function CameraCaptureOverlay() {
    * bar deklanşör yerine "yeniden çek + gönder" çiftini çiziyor.
    */
   const [shot, setShot] = useState<CameraShot | null>(null);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ÇEKİLEN DOSYA DONMUŞ KARENİN ÜSTÜNE BİNSİN Mİ — iOS'ta VARSAYILAN HAYIR.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Şikâyet birebir: "fotoyu çekiyorum, sonra biraz bekleyip fotoda değişiklik
+   * yapıyor; basar basmaz çektiğiyle kalsın."
+   *
+   * Sebebi: deklanşörde ekran `pausePreview` ile SON CANLI KAREDE donuyor, bir
+   * süre sonra `takePictureAsync`in dosyası gelip onun üstüne biniyordu. İki
+   * görüntü aynı kadrajda (native taraf kareyi önizleme katmanının oranına
+   * kırpıyor — `CameraPhotoCapture.processImageData`) ama AYNI GÖRÜNTÜ DEĞİL:
+   * dosya HDR/Deep Fusion işleminden geçiyor, yani pozlama ve tonu canlı
+   * akıştan farklı. Kullanıcının gördüğü şey "foto kendi kendine değişti".
+   *
+   * Çözüm: iOS'ta dosya PENCEREYE HİÇ ÇİZİLMİYOR. Ekranda kalan şey basıldığı
+   * anda donan karenin ta kendisi; gönderilen dosya yine gerçek çekim.
+   *
+   * ÜÇ DURUMDA yine de çiziliyor (yoksa ekran boş/canlı kalırdı):
+   *   • Android — orada `pausePreview` çekimi kırdığı için akış donmuyor,
+   *     donmuş kareyi ancak dosya sağlıyor (gerekçe `handleCapture`da).
+   *   • `pausePreview` reddedilirse — donma hiç olmadı.
+   *   • Arka plandan dönüşte — askıya alınan oturumun önizleme katmanı ölü bir
+   *     kare (çoğu zaman siyah) olarak geliyor, dosya tek güvenilir görüntü.
+   */
+  const [showStill, setShowStill] = useState(Platform.OS !== "ios");
+  /**
+   * DEKLANŞÖRE BASILDI, DOSYA HENÜZ GELMEDİ.
+   *
+   * Ekranın şekli bu bayrakla değişiyor: karar satırı (açıklama + ok) ve
+   * "yeniden çek" çekimin BİTMESİNİ beklemiyor, basıldığı anda çiziliyor.
+   * Gerekçe `handleCapture`ın başında.
+   */
+  const [capturing, setCapturing] = useState(false);
+  /**
+   * Çekim KUŞAĞI — uçuştaki bir çekimin sonucunun hâlâ istenip istenmediği.
+   * "Yeniden çek"/✕ artık dosya yazılırken de basılabildiği için gerekli:
+   * sayaç ilerlemişse gelen kare sessizce siliniyor.
+   */
+  const captureGenRef = useRef(0);
+  /** Dosya gelmeden "gönder"e basıldı — kare gelir gelmez gönderilecek. */
+  const pendingCommitRef = useRef(false);
   /** Seçilen mercek (iOS) — bkz. `pickDefaultLens`. */
   const [lens, setLens] = useState<string | undefined>(undefined);
+  /**
+   * KAPANIŞ ANİMASYONU UÇUŞTA — oturum bitti ama ekran hâlâ ağaçta.
+   *
+   * Tek işi dokunuşları yutmak: kayarken basılan bir düğme, kapanmış bir
+   * oturumun state'ine yazmaya çalışırdı.
+   */
+  const [closing, setClosing] = useState(false);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * EKRAN ALTTAN GELİP ALTA GİDİYOR — ve bunu `top` İLE YAPIYOR, transform'la
+   * DEĞİL.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Kampüsteki "+" bir sheet açıyormuş gibi okunuyor; ekranın birden belirip
+   * birden kaybolması o akışın tek sert geçişiydi.
+   *
+   * 🔴 `translateY` KULLANILAMAZ: başlıktaki butonlar liquid glass (SwiftUI
+   * Host) ve ATA ZİNCİRİNDEKİ bir transform efekti sessizce düşürüyor — cam
+   * hiç çizilmiyor, buton boş bir daire olarak kalıyor. Kaydırma bu yüzden
+   * yerleşim özelliğiyle (`top`) yapılıyor; aynı tuzağın kuralı uygulamanın
+   * her cam yüzeyinde geçerli.
+   *
+   * 1 = ekran tamamen aşağıda, 0 = yerinde. Giriş `present`te, çıkış
+   * `finish`te; ikisinin arasındaki yarış `epochRef` ile çözülüyor.
+   */
+  const slide = useSharedValue(1);
+  const sheetStyle = useAnimatedStyle(() => ({ top: slide.value * screenH }));
 
   /**
    * ⚠️ `ready` DEKLANŞÖRÜ KİLİTLEMEZ — bir zaman aşımı bayrağından ibarettir.
@@ -159,21 +297,78 @@ export default function CameraCaptureOverlay() {
   // Sonuçlandırma state updater'ının İÇİNDE yapılamaz (bkz. CropperOverlay):
   // React updater'ı iki kez çağırabiliyor ve promise iki kez çözülürdü.
   const sessionRef = useRef<Session | null>(null);
-  sessionRef.current = session;
+  /**
+   * ⚠️🔴 `closing` KAPISI ŞART — yoksa SONUÇLANMIŞ OTURUM GERİ CANLANIYOR.
+   *
+   * Atama her render'da koşuyor. `finish` ref'i null'ladıktan sonra `closing`
+   * bir re-render tetikliyor ve `session` state'i kapanış animasyonu boyunca
+   * HÂLÂ DOLU (bilerek: ekran görünür kalmalı). Kapı olmasaydı bu satır eski
+   * oturumu ref'e geri yazardı; ardından gelen bir `finish` (arka plan, ✕)
+   * aynı promise'i İKİNCİ kez settle ederdi.
+   */
+  sessionRef.current = closing ? null : session;
 
-  const finish = useCallback((outcome: CameraOutcome) => {
-    const current = sessionRef.current;
-    sessionRef.current = null;
-    readyRef.current = false;
+  /**
+   * OTURUM SAYACI — kapanış animasyonunun "hâlâ benim oturumum mu" kapısı.
+   *
+   * ⚠️ GEREKÇESİ KUYRUK: `settle` çağrıldığı anda `cameraBridge > drain`
+   * sıradaki isteği SENKRON olarak açıyor (kırpıcıdaki ✕ → kameraya dönüş bu
+   * yoldan geliyor). Yani kapanış animasyonu biterken ekranda ÇOKTAN yeni bir
+   * oturum olabilir; sayacı karşılaştırmadan temizlemek o yeni oturumu
+   * öldürürdü.
+   */
+  const epochRef = useRef(0);
+
+  /** Animasyon bitti — ekranı GERÇEKTEN söken tek yer. */
+  const dismiss = useCallback((epoch: number) => {
+    if (epochRef.current !== epoch) return;
     setSession(null);
     setBusy(false);
     setError(null);
     setShot(null);
-    current?.settle(outcome);
+    setCapturing(false);
+    setClosing(false);
   }, []);
+
+  const finish = useCallback(
+    (outcome: CameraOutcome) => {
+      const current = sessionRef.current;
+      // ZATEN KAPANIYOR: ikinci bir çağrı (ör. kapanış sırasında arka plana
+      // düşmek) animasyonu baştan başlatırdı.
+      if (!current) return;
+      sessionRef.current = null;
+      readyRef.current = false;
+
+      /**
+       * ⚠️ STATE BURADA TEMİZLENMİYOR (eskiden hepsi bu satırdaydı): ekran
+       * kapanış animasyonu boyunca GÖRÜNÜR kalıyor ve `shot`/`error`/`busy`
+       * silinirse kullanıcı kayarken içeriğin şekil değiştirdiğini görür
+       * (donmuş kare kaybolur, gösterge oka döner). Temizlik `dismiss`te.
+       */
+      setClosing(true);
+      const epoch = epochRef.current;
+      slide.value = withTiming(
+        1,
+        { duration: 220, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          if (finished) runOnJS(dismiss)(epoch);
+        },
+      );
+
+      // ⚠️ EN SON: kuyruğu boşaltıyor ve sıradaki istek SENKRON açılabiliyor
+      // (gerekçe `epochRef`te). Önce animasyonu kurup sonra settle etmek,
+      // yeni oturumun girişinin bu çıkışı iptal etmesini sağlıyor.
+      current?.settle(outcome);
+    },
+    [dismiss, slide],
+  );
 
   const present = useCallback(
     (request: CameraRequest, settle: (outcome: CameraOutcome) => void) => {
+      // Uçuştaki bir kapanış varsa BURADA iptal oluyor: sayaç ilerleyince
+      // bekleyen `dismiss` çağrısı kendini geçersiz sayıyor.
+      epochRef.current += 1;
+      setClosing(false);
       // Her oturum TEMİZ başlıyor: önceki çekimin flaşı ya da çevirdiği kamera
       // kalıcı bir tercih değil, o anın kararı.
       //
@@ -185,11 +380,24 @@ export default function CameraCaptureOverlay() {
       setBusy(false);
       setError(null);
       setShot(null);
+      setShowStill(Platform.OS !== "ios");
+      setCapturing(false);
+      captureGenRef.current += 1;
+      pendingCommitRef.current = false;
       setLens(undefined);
       readyRef.current = false;
       setSession({ settle, request });
+
+      // GİRİŞ: aşağıdan yukarı. Değer ÖNCE 1'e çekiliyor — uçuştaki bir
+      // kapanış yarıda kalmışsa ekran o ara konumdan değil, hep aynı yerden
+      // başlamalı.
+      slide.value = 1;
+      slide.value = withTiming(0, {
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+      });
     },
-    [],
+    [slide],
   );
 
   /**
@@ -276,7 +484,14 @@ export default function CameraCaptureOverlay() {
        * bildirim çekmek yüzünden çöpe atmak olurdu. `busy` de aynı daldan:
        * gönderim ortasında kapatmak "oldu mu olmadı mı" bırakır.
        */
-      if (shot || busy) return;
+      if (shot || busy) {
+        // Elde kare varken ekran açık kalıyor ama DONMUŞ ÖNİZLEME ARTIK
+        // GÜVENİLMEZ: askıya alınmış oturumun katmanı dönüşte ölü/siyah bir
+        // kare olabiliyor. Dosyayı o yüzden burada devreye alıyoruz
+        // (gerekçe `showStill`de).
+        setShowStill(true);
+        return;
+      }
       finish({ status: "cancelled" });
     });
     return () => sub.remove();
@@ -299,25 +514,47 @@ export default function CameraCaptureOverlay() {
     if (!open) return;
     const timer = setTimeout(() => {
       if (readyRef.current || !sessionRef.current) return;
-      devLog("📸 [camera] oturum açılmadı (donanım yok?), sistem kamerasına düşülüyor");
+      devLog(
+        "📸 [camera] oturum açılmadı (donanım yok?), sistem kamerasına düşülüyor",
+      );
       finish({ status: "unavailable" });
     }, 3500);
     return () => clearTimeout(timer);
   }, [open, finish]);
 
   const layout = useMemo(() => {
-    const headerH = insets.top + 56;
-    // 16 (üst pad) + deklanşör + 16 (alt pad).
-    const footerH = insets.bottom + 32 + SHUTTER;
+    // Butonlar pencerenin üst köşelerinden CHROME_GAP kadar içeride: satır
+    // tam buton boyunda, üstündeki pay da güvenli alan + aynı boşluk.
+    const headerH = insets.top + CHROME_GAP + GLASS_ICON_CLEAR_SIZE;
+    /**
+     * DEKLANŞÖR ALT ŞERİDİN TAM ORTASINDA: altındaki boşluk (ekranın alt
+     * kenarına) ile üstündeki boşluk (pencerenin alt kenarına) EŞİT.
+     *
+     * Eskiden ikisi ayrı sayılardan geliyordu — altta `insets.bottom + 16`
+     * (çentikli cihazda 50), üstte `16 + 12` (28) — ve düğme şeridin içinde
+     * aşağı kaçmış duruyordu. Tek ölçüye bağlanınca pencere de aşağı indi:
+     * eski toplam 150pt'lik şerit, çentikli cihazda 140'a düşüyor.
+     *
+     * ⚠️ TABAN 20: güvenli alanı olmayan cihazda (insets.bottom = 0) düğme
+     * ekranın kenarına yapışırdı. Çentiklide ölçü `insets.bottom`un kendisi,
+     * yani ev göstergesinin şeridi kadar — düğme onun üstünde kalıyor.
+     */
+    const footerGap = Math.max(insets.bottom, 20);
+    const footerH = 2 * footerGap + SHUTTER;
     /**
      * ══════════════════════════════════════════════════════════════════════
-     * PENCERE TEPEDEN DEKLANŞÖRE KADAR — ARTIK 3:4 DEĞİL.
+     * PENCERE GÜVENLİ ALANIN ALTINDAN DEKLANŞÖRE KADAR — 3:4 DEĞİL.
      * ══════════════════════════════════════════════════════════════════════
-     * Kutu y=0'dan başlıyor ve altı deklanşörün hemen üstünde bitiyor; başlık
-     * düğmeleri onun ÜSTÜNE biniyor. Eski hâlde kutu ekranın ortasında, 3:4
-     * ve `frameWindow` ile kırpıcınınkiyle birebir aynıydı — `frameWindow`
-     * ortalı yerleşimi varsaydığı için (chrome'u İKİ kat sayıyor) burada
-     * kullanılmıyor.
+     * Kutunun tepesi `insets.top` (çentiğin/durum çubuğunun hemen altı), altı
+     * deklanşörün hemen üstü; başlık düğmeleri onun ÜSTÜNE biniyor.
+     *
+     * ⚠️ GÜVENLİ ALAN KUTUNUN DIŞINDA: kutu daha önce y=0'daydı ve önizleme
+     * çentiğin ardına kadar uzanıyordu. Artık orası siyah zemin, yani dört
+     * köşe de görünüyor (bkz. RADIUS).
+     *
+     * Eski hâlde kutu ekranın ortasında, 3:4 ve `frameWindow` ile
+     * kırpıcınınkiyle birebir aynıydı — `frameWindow` ortalı yerleşimi
+     * varsaydığı için (chrome'u İKİ kat sayıyor) burada kullanılmıyor.
      *
      * ⚠️🔴 WYSIWYG ARTIK TAM DEĞİL — ÖNİZLEME KAREDEN DAR.
      * Kutunun oranı ekranınki (≈9:16), kamera ise hâlâ 3:4 üretiyor
@@ -336,27 +573,57 @@ export default function CameraCaptureOverlay() {
      * başında).
      */
     const winW = screenW;
-    const winH = Math.max(160, screenH - footerH - 12);
+    const top = insets.top;
+    // Pencerenin altı = şeridin üstü. Araya ek bir pay KONMUYOR: `footerGap`
+    // zaten o boşluk (eskiden buraya bir de 12 ekleniyordu ve eşitliği bozan
+    // şey oydu).
+    const winH = Math.max(160, screenH - top - footerH);
     return {
       headerH,
+      footerGap,
       winW,
       winH,
       left: 0,
-      top: 0,
+      top,
     };
   }, [insets.top, insets.bottom, screenH, screenW]);
-
-  /** Çentikli ekran mı — üst yuvarlatmanın kapısı (bkz. RADIUS_TOP). */
-  const roundTop = insets.top >= 40;
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
     // Hazırlık bayrağı KAPI DEĞİL (bkz. readyRef): burada yalnız mükerrer
     // basışa ve oturumsuz çağrıya karşı koruma var.
-    if (!camera || busy || !sessionRef.current) return;
+    if (!camera || busy || capturing || !sessionRef.current) return;
 
-    setBusy(true);
+    /**
+     * ⚠️ `busy` DEĞİL `capturing` — ARADAKİ FARK EKRANIN ŞEKLİ.
+     *
+     * `busy` "bir iş sürüyor, düğmeler ölü" demek ve gönder düğmesini dönen
+     * göstergeye çeviriyor. Dosyanın yazılması ise kullanıcının BEKLEMESİ
+     * gereken bir iş değil: karar satırı (açıklama + ok) deklanşöre basıldığı
+     * anda, dosya daha gelmeden çiziliyor ve basılabilir duruyor. Dosya hazır
+     * olmadan "gönder"e basılırsa istek `pendingCommitRef`te bekliyor.
+     */
+    const generation = ++captureGenRef.current;
+    setCapturing(true);
     setError(null);
+    /**
+     * ══════════════════════════════════════════════════════════════════════
+     * 🔴 FLAŞLI ÇEKİMDE DONMUŞ KARE YANLIŞ — DOSYA BEKLENİYOR.
+     * ══════════════════════════════════════════════════════════════════════
+     * Şikâyet birebir: "flaşlı çekerken preview'de fotonun flaşsız hâli
+     * geliyor, daha patlamadığı için."
+     *
+     * Doğru teşhis de bu: `pausePreview` akışı deklanşöre BASILDIĞI AN
+     * donduruyor, flaş ise çekimin kendisiyle birlikte patlıyor. Yani donmuş
+     * kare ışıktan ÖNCEKİ kare — gerçek fotoğrafla aynı sahne ama bambaşka bir
+     * pozlama.
+     *
+     * Flaş kapalıyken kural tersi (donmuş kare kalır, dosya hiç çizilmez,
+     * gerekçe `showStill`de): orada iki görüntü arasındaki tek fark HDR işlemi
+     * ve kullanıcı onu "foto değişti" diye okuyor. Flaşta ise değişim
+     * ASIL İSTENEN ŞEY — ışığı görmeden fotoğrafı onaylamanın anlamı yok.
+     */
+    if (flash === "on") setShowStill(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     /**
      * ══════════════════════════════════════════════════════════════════════
@@ -395,7 +662,11 @@ export default function CameraCaptureOverlay() {
      * ⚠️ Çağrı `catch`siz BIRAKILMAZ: oturum kurulmadan çağrılınca reddediliyor
      * ve işlenmemiş bir promise hatası çekimi hiç başlatmıyordu.
      */
-    if (Platform.OS === "ios") camera.pausePreview?.().catch(() => {});
+    // ⚠️ REDDEDİLİRSE DOSYAYA DÜŞÜLÜYOR: donma hiç olmadıysa ekranda canlı
+    // akış kalır ve çekilen kare hiç görünmezdi (gerekçe `showStill`de).
+    if (Platform.OS === "ios") {
+      camera.pausePreview?.().catch(() => setShowStill(true));
+    }
     try {
       // Çekim adımları AÇIKÇA loglanıyor: native bir istisna süreci öldürürse
       // (uncaught NSException JS'e hata olarak GELMİYOR) son görülen satır
@@ -424,13 +695,29 @@ export default function CameraCaptureOverlay() {
         height: picture.height ?? 0,
       };
       /**
-       * YERİNDE ONAY: ekran KAPANMIYOR, kare pencerede duruyor (bkz.
-       * cameraBridge > `commit`). Donmuş natif akışın üstüne gerçek dosya
-       * biniyor, yani kullanıcının onayladığı şey tam olarak gönderilecek kare.
+       * ⚠️ KARE ARTIK İSTENMİYOR OLABİLİR: dosya yazılırken kullanıcı "yeniden
+       * çek"e ya da ✕'e basmış olabiliyor (ikisi de artık o saniyede
+       * basılabilir). Sahipsiz kalan dosya DİSKTE kalırdı — her vazgeçilen
+       * çekim 12MP'lik bir çöp demek.
        */
-      if (sessionRef.current?.request.commit) {
+      if (captureGenRef.current !== generation || !sessionRef.current) {
+        forgetPhoto(taken.uri);
+        return;
+      }
+      /**
+       * YERİNDE ONAY: ekran KAPANMIYOR, kare pencerede duruyor (bkz.
+       * cameraBridge > `commit`). Karar satırı zaten çiziliydi; buradaki tek
+       * iş gönderilecek dosyayı elde etmek.
+       */
+      if (sessionRef.current.request.commit) {
         setShot(taken);
-        setBusy(false);
+        setCapturing(false);
+        // Kullanıcı dosyayı beklemeden "gönder"e bastıysa iş TAM BURADA
+        // başlıyor (gösterge o basıştan beri dönüyor).
+        if (pendingCommitRef.current) {
+          pendingCommitRef.current = false;
+          commitShotRef.current?.(taken);
+        }
         return;
       }
       finish({ status: "captured", shot: taken });
@@ -439,6 +726,13 @@ export default function CameraCaptureOverlay() {
       // durum — oturumu kapatmak kullanıcıyı sebepsiz yere akıştan atardı.
       // Hata satır içinde, deklanşör yine basılabilir.
       devLog("📸 [camera] kare çekilemedi", e);
+      // Vazgeçilmiş çekimin hatası ekrana basılmaz (bkz. yukarıdaki aynı kapı).
+      if (captureGenRef.current !== generation || !sessionRef.current) return;
+      // Karar satırı geri alınıyor: deklanşöre dönülüyor ve bekleyen gönderim
+      // isteği düşüyor — gönderilecek bir kare yok.
+      setCapturing(false);
+      pendingCommitRef.current = false;
+      setBusy(false);
       // Donmuş akış geri açılıyor — gerekçe `pausePreview` çağrısının yanında.
       // ⚠️ iOS KAPISI: duraklatma da yalnız orada yapılıyor (gerekçe
       // `pausePreview` çağrısının yanında). Android'de `resumePreview`
@@ -446,9 +740,8 @@ export default function CameraCaptureOverlay() {
       // önizlemede sebepsiz bir yeniden bağlanma ve göz kırpması olurdu.
       if (Platform.OS === "ios") camera.resumePreview?.().catch(() => {});
       setError(t("common.camera.failed"));
-      setBusy(false);
     }
-  }, [busy, facing, flash, lens, finish, t]);
+  }, [busy, capturing, facing, flash, lens, finish, t]);
 
   /**
    * KAMERAYI ÇEVİR — başlıktaki düğme ve önizlemeye ÇİFT DOKUNUŞ aynı yere
@@ -468,6 +761,21 @@ export default function CameraCaptureOverlay() {
   }, [busy]);
 
   /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * EKRANIN ŞEKLİNİ BELİRLEYEN TEK DEĞER: "kare donmuş mu".
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⚠️ `shot`TAN DEĞİL, DEKLANŞÖR BASIŞINDAN itibaren doğru. Dosyanın gelmesi
+   * yüz milisaniyeleri alıyor ve alt barı ona bağlamak, basıldıktan sonra bir
+   * süre daha deklanşörün durması demekti — şikâyet birebir buydu. Önizleme o
+   * anda zaten donuyor (`pausePreview`), yani ekran "fotoğrafın karşısında";
+   * chrome'un da o an değişmesi gerekiyor.
+   *
+   * `commit` KAPISI ŞART: kırpıcıya giden yolda (profil) ekran çekimden hemen
+   * sonra kapanıyor, orada bir karar satırı hiç çizilmemeli.
+   */
+  const frozen = shot !== null || (capturing && !!session?.request.commit);
+
+  /**
    * ÇİFT DOKUNUŞ = ÇEVİR. Tek dokunuşa HİÇBİR ŞEY bağlı değil, o yüzden
    * bekleme/çakışma yok.
    *
@@ -477,7 +785,7 @@ export default function CameraCaptureOverlay() {
   const flipTap = useMemo(
     () =>
       Gesture.Tap()
-        .enabled(!shot && !busy)
+        .enabled(!frozen && !busy)
         .numberOfTaps(2)
         .maxDuration(260)
         .maxDistance(24)
@@ -488,7 +796,7 @@ export default function CameraCaptureOverlay() {
           if (e.numberOfPointers > 1) return;
           runOnJS(handleFlip)();
         }),
-    [shot, busy, handleFlip],
+    [frozen, busy, handleFlip],
   );
 
   /**
@@ -508,12 +816,24 @@ export default function CameraCaptureOverlay() {
     if (uri) forgetPhoto(uri);
   }, []);
 
-  /** Yeniden çek — donmuş kare atılıyor, canlı akış geri açılıyor. */
+  /**
+   * Yeniden çek — donmuş kare atılıyor, canlı akış geri açılıyor.
+   *
+   * ⚠️ DOSYA GELMEDEN DE BASILABİLİR (düğme çekimle birlikte çıkıyor): o
+   * durumda atılacak bir `shot` yok, uçuştaki çekimin sonucu kuşak sayacıyla
+   * düşürülüyor ve dosyası orada siliniyor.
+   */
   const handleRetake = useCallback(() => {
     if (busy) return;
     discard(shot?.uri);
+    captureGenRef.current += 1;
+    pendingCommitRef.current = false;
+    setCapturing(false);
     setShot(null);
     setError(null);
+    // Bir sonraki çekim yine donmuş kareyle kalacak (gerekçe `showStill`de);
+    // arka plandan dönüş gibi bir sebeple açılmışsa burada kapanıyor.
+    setShowStill(Platform.OS !== "ios");
     // iOS kapısı — gerekçe çekim hatasındaki ikizinde.
     if (Platform.OS === "ios") {
       cameraRef.current?.resumePreview?.().catch(() => {});
@@ -528,37 +848,86 @@ export default function CameraCaptureOverlay() {
    * kuralı birebir buydu (bkz. CampusMomentComposer'ın "hata burada kalıyor"
    * notu) — tek fark yüzeyin kendisi.
    */
-  const handleCommit = useCallback(async () => {
-    const commit = sessionRef.current?.request.commit;
-    if (!commit || !shot || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const failure = await commit(shot);
-      // ⚠️ OTURUM HÂLÂ AYNI MI: `commit` saniyeler sürüyor ve arada ekran
-      // kapanmış olabilir (✕, arka plan). Kapanmışsa burada hiçbir state'e
-      // dokunulmamalı — kapanmış bir ekranı "hata var" diye geri açardı.
-      if (!sessionRef.current) return;
-      if (failure) {
-        setError(failure);
+  const commitShot = useCallback(
+    async (target: CameraShot) => {
+      const commit = sessionRef.current?.request.commit;
+      if (!commit) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const failure = await commit(target);
+        // ⚠️ OTURUM HÂLÂ AYNI MI: `commit` saniyeler sürüyor ve arada ekran
+        // kapanmış olabilir (✕, arka plan). Kapanmışsa burada hiçbir state'e
+        // dokunulmamalı — kapanmış bir ekranı "hata var" diye geri açardı.
+        if (!sessionRef.current) return;
+        if (failure) {
+          setError(failure);
+          setBusy(false);
+          return;
+        }
+        finish({ status: "committed" });
+      } catch (e) {
+        devLog("📸 [camera] gönderim başarısız", e);
+        if (!sessionRef.current) return;
+        setError(t("common.camera.failed"));
         setBusy(false);
-        return;
       }
-      finish({ status: "committed" });
-    } catch (e) {
-      devLog("📸 [camera] gönderim başarısız", e);
-      if (!sessionRef.current) return;
-      setError(t("common.camera.failed"));
-      setBusy(false);
+    },
+    [finish, t],
+  );
+
+  /**
+   * `handleCapture` GÖNDERİMİ REF'TEN ÇAĞIRIYOR — ikisi birbirine bağımlı
+   * (çekim bekleyen gönderimi tetikliyor, gönderim çekilen kareyi alıyor) ve
+   * doğrudan bağlamak useCallback zincirinde bir döngü kurardı.
+   */
+  const commitShotRef = useRef(commitShot);
+  commitShotRef.current = commitShot;
+
+  /**
+   * Gönder düğmesi.
+   *
+   * ⚠️ DOSYA HENÜZ GELMEMİŞ OLABİLİR: düğme çekimle birlikte çiziliyor
+   * (gerekçe `handleCapture`ın başında). O durumda istek işaretleniyor,
+   * gösterge dönmeye başlıyor ve kare gelir gelmez gönderim orada başlıyor —
+   * basış yutulmuyor, kullanıcı ikinci kez basmak zorunda kalmıyor.
+   */
+  const handleCommit = useCallback(() => {
+    if (busy || !sessionRef.current?.request.commit) return;
+    if (!shot) {
+      if (!capturing) return;
+      pendingCommitRef.current = true;
+      setBusy(true);
+      return;
     }
-  }, [busy, finish, shot, t]);
+    commitShot(shot);
+  }, [busy, capturing, commitShot, shot]);
 
   if (!session) return null;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: "#000" }]}>
-      {/* Önizleme kutusu: tepeden (y=0) deklanşörün hemen üstüne kadar, tam
-          genişlik, dört köşesi yuvarlak. Oran/kırpma sözleşmesi `layout`ta. */}
+    /* ⚠️ `absoluteFill` DEĞİL, ÖLÇÜ AÇIKÇA VERİLİYOR: `bottom: 0` dururken
+       `top`u animasyonla büyütmek ekranı kaydırmaz, KISALTIRDI (kutu iki
+       kenara birden bağlı kalır ve içerik ezilir). Kaydırmanın gerekçesi
+       `slide`de. */
+    <Animated.View
+      // Kapanırken dokunuş YUTULUYOR: kayan ekranda basılan bir düğme, çoktan
+      // sonuçlanmış bir oturumun state'ine yazmaya çalışırdı.
+      pointerEvents={closing ? "none" : "auto"}
+      style={[
+        {
+          position: "absolute",
+          left: 0,
+          width: screenW,
+          height: screenH,
+          backgroundColor: "#000",
+        },
+        sheetStyle,
+      ]}
+    >
+      {/* Önizleme kutusu: güvenli alanın hemen altından deklanşörün hemen
+          üstüne kadar, tam genişlik, dört köşesi yuvarlak. Oran/kırpma
+          sözleşmesi `layout`ta. */}
       <View
         style={{
           position: "absolute",
@@ -566,12 +935,8 @@ export default function CameraCaptureOverlay() {
           top: layout.top,
           width: layout.winW,
           height: layout.winH,
-          // Köşeler: üstte ekranın kendi yarıçapı, altta daha küçük
-          // (gerekçe RADIUS_TOP'un yanında).
-          borderTopLeftRadius: roundTop ? RADIUS_TOP : 0,
-          borderTopRightRadius: roundTop ? RADIUS_TOP : 0,
-          borderBottomLeftRadius: RADIUS_BOTTOM,
-          borderBottomRightRadius: RADIUS_BOTTOM,
+          // Dört köşe de aynı — gerekçe RADIUS'un yanında.
+          borderRadius: RADIUS,
           borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor: "#000",
@@ -581,7 +946,8 @@ export default function CameraCaptureOverlay() {
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing={facing}
-          flash={flash}
+          // Ön kamerada ekran flaşına çevriliyor — gerekçe `flashModeFor`da.
+          flash={flashModeFor(flash, facing)}
           mode="picture"
           /**
            * ══════════════════════════════════════════════════════════════════
@@ -667,15 +1033,17 @@ export default function CameraCaptureOverlay() {
         />
 
         {/* ÇEKİLEN KARE — pencerenin İÇİNDE, canlı akışın üstünde.
+            ⚠️🔴 iOS'ta NORMALDE ÇİZİLMİYOR: ekranda kalan şey deklanşöre
+            basıldığı anda donan karedir, dosya değil. Hangi üç durumda
+            devreye girdiği ve NEDEN, `showStill`de yazılı.
+
             `cover` ŞART ve natif önizlemenin `resizeAspectFill`iyle aynı işi
-            yapıyor: 3:4 kare, ekran oranındaki kutuyu doldururken iki yandan
-            aynı şekilde kırpılıyor. Donmuş kare ile canlı akış bu sayede
-            birebir aynı kadrajda duruyor (başka bir `contentFit`, deklanşörde
-            bir zıplama olarak okunurdu).
-            ⚠️ `transition` YOK: bu bir sahne değişimi değil, aynı görüntünün
-            donmuş hâlinin yerine keskin hâlinin geçmesi — sönümlenerek gelen
-            bir kopya iki görüntüyü üst üste bindirip titreme gibi okunuyor. */}
-        {shot ? (
+            yapıyor: kare, kutuyu doldururken iki yandan aynı şekilde
+            kırpılıyor — başka bir `contentFit`, dosyanın devreye girdiği
+            durumlarda bir zıplama olarak okunurdu.
+            ⚠️ `transition` YOK: sönümlenerek gelen bir kopya iki görüntüyü üst
+            üste bindirip titreme gibi okunuyor. */}
+        {shot && showStill ? (
           <Image
             source={{ uri: shot.uri }}
             style={StyleSheet.absoluteFill}
@@ -707,8 +1075,8 @@ export default function CameraCaptureOverlay() {
           right: 0,
           top: 0,
           height: layout.headerH,
-          paddingTop: insets.top,
-          paddingHorizontal: 16,
+          paddingTop: insets.top + CHROME_GAP,
+          paddingHorizontal: CHROME_GAP,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -728,42 +1096,66 @@ export default function CameraCaptureOverlay() {
         />
 
         {/* Kırpma ekranının düzeniyle aynı: solda vazgeçme yolu, sağda kareyi
-            değiştiren eylemler.
-            ⚠️ KARE DONMUŞKEN İKİSİ DE GİZLİ: flaş ve kamera çevirme canlı
-            akışın ayarları, donmuş bir karede ikisi de ölü düğme. */}
+            değiştiren eylem.
+            ⚠️ ÇEVİRME ARTIK BURADA DEĞİL: deklanşörün sağına indi (aşağıda),
+            çünkü canlı akışın iki ana eylemi (çek / çevir) aynı elin menzilinde
+            olmalı. Flaş ise üst ORTADA, kendi katmanında. */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          {/* Flaş ön kamerada GİZLİ: donanım flaşı yok, `on` orada sessizce
-              hiçbir şey yapmıyor ve "çalışmayan buton" olarak okunuyor. */}
-          {!shot && facing === "back" && (
+          {/* YENİDEN ÇEK — kare donmuşken SAĞ ÜSTTE, alt barda değil.
+              Alt bar böylece tek bir eyleme, onaya kalıyor. */}
+          {frozen && (
             <MediaChromeIconButton
-              systemImage={FLASH_SYMBOL[flash]}
-              fallbackIcon={Zap}
-              label={t(`common.camera.flash.${flash}`)}
-              onPress={() =>
-                setFlash(
-                  (current) =>
-                    FLASH_ORDER[
-                      (FLASH_ORDER.indexOf(current) + 1) % FLASH_ORDER.length
-                    ],
-                )
-              }
-              disabled={busy}
-              active={flash !== "off"}
-            />
-          )}
-
-          {!shot && (
-            <MediaChromeIconButton
-              systemImage="arrow.triangle.2.circlepath.camera"
+              systemImage="arrow.counterclockwise"
               fallbackIcon={RefreshCw}
-              label={t("common.camera.flip")}
-              // Önizlemeye çift dokunuşla AYNI yol (bkz. handleFlip).
-              onPress={handleFlip}
+              label={t("common.camera.retake")}
+              onPress={handleRetake}
               disabled={busy}
             />
           )}
         </View>
       </View>
+
+      {/* ------------------------------------------------------- flaş (orta)
+          BAŞLIK SATIRININ DEĞİL, KENDİ KATMANININ ÇOCUĞU.
+          Satırın içinde olsaydı ortalanması komşularının genişliğine bağlı
+          kalırdı: solda ✕ hep var, sağdaki "yeniden çek" ise yalnız kare
+          donmuşken çiziliyor — düğme o anda yer değiştirirdi. Ayrı bir
+          katmanda ekranın ORTASI sabit.
+
+          ⚠️ `top` elle veriliyor: mutlak inset verilen bir kutuda Yoga
+          padding'i saymıyor, yani başlığın `paddingTop`una güvenilemez.
+
+          ÖN KAMERADA DA VAR (istek): ışığı ekran veriyor, gerekçe
+          `flashModeFor`da. Kare donmuşken gizli — canlı akışın ayarı. */}
+      {!frozen && (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: insets.top + CHROME_GAP,
+            alignItems: "center",
+          }}
+        >
+          <MediaChromeIconButton
+            systemImage={FLASH_SYMBOL[flash]}
+            fallbackIcon={Zap}
+            label={t(`common.camera.flash.${flash}`)}
+            // İki hâl: açık ↔ kapalı (gerekçe FLASH_ORDER'ın başında).
+            onPress={() =>
+              setFlash(
+                (current) =>
+                  FLASH_ORDER[
+                    (FLASH_ORDER.indexOf(current) + 1) % FLASH_ORDER.length
+                  ],
+              )
+            }
+            disabled={busy}
+            active={flash !== "off"}
+          />
+        </View>
+      )}
 
       {/* ------------------------------------------------------------- alt bar
           TEK EYLEM, ORTADA: deklanşör. Kırpıcının alt barı sağa hizalı ama
@@ -776,8 +1168,10 @@ export default function CameraCaptureOverlay() {
           left: 0,
           right: 0,
           bottom: 0,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
+          // İKİ PAY DA AYNI SAYI — deklanşörün üstü pencerenin altına,
+          // altı ekranın altına eşit uzaklıkta (gerekçe `footerGap`ta).
+          paddingBottom: layout.footerGap,
+          paddingTop: layout.footerGap,
           alignItems: "center",
           gap: 10,
         }}
@@ -797,17 +1191,24 @@ export default function CameraCaptureOverlay() {
           </Text>
         )}
 
-        {shot ? (
+        {frozen ? (
           /**
-           * ── KARE DONMUŞ: KARAR SATIRI ────────────────────────────────────
-           * Solda "yeniden çek", sağda gönder. Deklanşör çizilmiyor — donmuş
-           * bir karede basılacak bir deklanşör yok ve üçüncü bir düğme kararı
-           * zayıflatıyor.
+           * ── KARE DONMUŞ: ONAY SATIRI ─────────────────────────────────────
+           * TEK EYLEM, SAĞDA: gönder. Deklanşör çizilmiyor — donmuş bir karede
+           * basılacak bir deklanşör yok. "Yeniden çek" de burada DEĞİL, sağ üst
+           * köşede (gerekçe başlıkta): alt bar tek bir karara kalınca o karar
+           * zayıflamıyor.
+           *
+           * ⚠️ KOŞUL `shot` DEĞİL `frozen`: satır dosyayı beklemiyor, deklanşör
+           * basışıyla geliyor (gerekçe `frozen`da).
            *
            * ⚠️ GÖNDER SAĞDA ve DOLU: ekranın onay yüzeyi olduğu tek işaret bu.
-           * Kırpıcının alt barı da aynı dili konuşuyor (solda vazgeç, sağda
-           * dolu onay) — iki ekran aynı akışın iki adımıydı, biri kaldırıldı
-           * ama dil kaldı.
+           * Kırpıcının alt barı da aynı dili konuşuyor (sağda dolu onay) — iki
+           * ekran aynı akışın iki adımıydı, biri kaldırıldı ama dil kaldı.
+           *
+           * SOLDA GRİ AÇIKLAMA (`commitHint`): düğme yazısız bir ok, yani
+           * hedefi söyleyen tek yer bu satır. Çağıran vermezse hiç çizilmiyor
+           * ve ok yine sağda kalıyor (`space-between` + esneyen metin).
            */
           <View
             style={{
@@ -815,16 +1216,23 @@ export default function CameraCaptureOverlay() {
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 16,
               paddingHorizontal: 24,
             }}
           >
-            <MediaChromeIconButton
-              systemImage="arrow.counterclockwise"
-              fallbackIcon={RefreshCw}
-              label={t("common.camera.retake")}
-              onPress={handleRetake}
-              disabled={busy}
-            />
+            {/* Metin SOLDA ve esniyor: uzun okul adları okun üstüne binmek
+                yerine satır atlıyor (düğme sabit genişlikte). */}
+            <Text
+              numberOfLines={2}
+              style={{
+                flex: 1,
+                color: onMediaAt(0.65),
+                fontSize: 14,
+                fontWeight: "500",
+              }}
+            >
+              {session.request.commitHint ?? ""}
+            </Text>
 
             <AnimatedPressable
               onPress={handleCommit}
@@ -835,81 +1243,143 @@ export default function CameraCaptureOverlay() {
               }
               pressScale={0.96}
               style={{
-                minWidth: 132,
-                paddingVertical: 14,
-                paddingHorizontal: 24,
+                /**
+                 * YUVARLAK VE YAZISIZ: eylemi ok taşıyor.
+                 *
+                 * Etiket (`commitLabel`) kalkmadı, ERİŞİLEBİLİR ADA taşındı —
+                 * VoiceOver kullanıcısı "Paylaş"ı duymaya devam ediyor, ekranda
+                 * görünen tek şey yön.
+                 */
+                width: SEND,
+                height: SEND,
                 borderRadius: 999,
                 borderCurve: "continuous",
                 alignItems: "center",
                 justifyContent: "center",
-                // Donuk hâl dolgu alfasıyla — opaklıkla DEĞİL (gerekçe
-                // deklanşörün yanında yazılı).
-                backgroundColor: busy ? onMediaAt(0.4) : colors.onMedia,
+                // Dolgu MODUN vurgusu (gerekçe `accent`in yanında). Donuk hâl
+                // dolgu alfasıyla — opaklıkla DEĞİL (gerekçe deklanşörün
+                // yanında yazılı).
+                backgroundColor: busy ? withAlpha(accent, 0.45) : accent,
               }}
             >
               {busy ? (
-                <ActivityIndicator size="small" color={colors.onMediaInverse} />
+                <ActivityIndicator size="small" color={colors.onMedia} />
               ) : (
-                <Text
-                  style={{
-                    color: colors.onMediaInverse,
-                    fontSize: 16,
-                    fontWeight: "700",
-                  }}
-                >
-                  {session.request.commitLabel ?? t("common.save")}
-                </Text>
+                // Mürekkep `onMedia`: zemin kırmızı/yeşil dolgu, yani tema ne
+                // olursa olsun beyaz (chrome butonlarıyla aynı kural).
+                <View pointerEvents="none">
+                  <SFIcon
+                    name="arrow.right"
+                    fallback={ArrowRight}
+                    size={20}
+                    strokeWidth={2.5}
+                    color={colors.onMedia}
+                    weight="semibold"
+                  />
+                </View>
               )}
             </AnimatedPressable>
           </View>
         ) : (
-          <AnimatedPressable
-            onPress={handleCapture}
-            // ⚠️ `ready`YE BAĞLI DEĞİL (bkz. readyRef): hazırlık event'i iOS'ta
-            // kamera çevrildikten sonra bir daha gelmiyor, simülatörde ise hiç
-            // gelmiyor — düğme o yüzden basılamıyordu.
-            //
-            // ⚠️🔴 İÇİNDE GÖSTERGE YOK, DONUK HÂL DE YOK — BİLEREK.
-            // Geri bildirimi veren şey DONAN ÖNİZLEME: basıldığı an
-            // `pausePreview` akışı son karede donduruyor (gerekçe
-            // `handleCapture`da), yani "çekildi" gösterge dönerken değil
-            // GÖRÜNTÜDE okunuyor. Üstüne dönen bir gösterge koymak bitmiş bir
-            // işi sürüyormuş gibi gösteriyordu — şikâyet birebir buydu.
-            // `disabled` duruyor (mükerrer basış yutulmalı) ama bu artık
-            // görsel bir donukluğa çevrilmiyor.
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.camera.capture")}
-            pressScale={0.92}
+          /**
+           * ── CANLI AKIŞ: DEKLANŞÖR + ÇEVİRME ──────────────────────────────
+           * Deklanşör ekranın ORTASINDA kalıyor (sistem kamerasının öğrenilmiş
+           * yeri); çevirme onun SAĞINDA ve aynı dikey hizada.
+           *
+           * ⚠️ ÇEVİRME MUTLAK KONUMDA, satırın ikinci çocuğu DEĞİL: akışta
+           * dursaydı deklanşörü sola iterdi ve orta hizayı kaybederdik.
+           * `top: 0, bottom: 0` + dikey ortalama, iki düğmenin merkezlerini
+           * farklı çaplarına rağmen aynı çizgiye getiriyor.
+           */
+          <View
             style={{
-              width: SHUTTER,
-              height: SHUTTER,
-              borderRadius: 999,
+              alignSelf: "stretch",
               alignItems: "center",
               justifyContent: "center",
-              // Cam YOK: deklanşör, kamera arayüzünün öğrenilmiş dolu beyaz
-              // düğmesi.
-              //
-              // ⚠️ YALNIZ ANDROID'DE SÖNÜYOR — orada önizleme donmuyor.
-              // `pausePreview` Android'de çekimi kırdığı için (gerekçe
-              // `handleCapture`da) akış basıldıktan sonra da akmaya devam
-              // ediyor; hiçbir işaret vermezsek basış yutulmuş gibi okunur.
-              // iOS'ta donan kare zaten işareti veriyor, orada sönük bir
-              // deklanşör gereksiz bir "bekleniyor" sinyali olurdu.
-              // Donukluk OPAKLIKLA DEĞİL dolgu alfasıyla (ata zincirindeki
-              // opacity, chrome'daki cam butonları düşürüyor).
-              backgroundColor:
-                busy && Platform.OS === "android"
-                  ? onMediaAt(0.4)
-                  : colors.onMedia,
-              borderWidth: SHUTTER_RING,
-              borderColor: onMediaAt(
-                busy && Platform.OS === "android" ? 0.25 : 0.55,
-              ),
             }}
-          />
+          >
+            <AnimatedPressable
+              onPress={handleCapture}
+              // ⚠️ `ready`YE BAĞLI DEĞİL (bkz. readyRef): hazırlık event'i iOS'ta
+              // kamera çevrildikten sonra bir daha gelmiyor, simülatörde ise hiç
+              // gelmiyor — düğme o yüzden basılamıyordu.
+              //
+              // ⚠️🔴 İÇİNDE GÖSTERGE YOK, DONUK HÂL DE YOK — BİLEREK.
+              // Geri bildirimi veren şey DONAN ÖNİZLEME: basıldığı an
+              // `pausePreview` akışı son karede donduruyor (gerekçe
+              // `handleCapture`da), yani "çekildi" gösterge dönerken değil
+              // GÖRÜNTÜDE okunuyor. Üstüne dönen bir gösterge koymak bitmiş bir
+              // işi sürüyormuş gibi gösteriyordu — şikâyet birebir buydu.
+              // `disabled` duruyor (mükerrer basış yutulmalı) ama bu artık
+              // görsel bir donukluğa çevrilmiyor.
+              // ⚠️ `capturing` DE KAPI: çekim sürerken deklanşör artık `busy`
+              // kurmuyor (gerekçe `handleCapture`ın başında), mükerrer basışı
+              // yutan tek şey bu.
+              disabled={busy || capturing}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.camera.capture")}
+              pressScale={0.92}
+              style={{
+                width: SHUTTER,
+                height: SHUTTER,
+                borderRadius: 999,
+                alignItems: "center",
+                justifyContent: "center",
+                // Cam YOK: deklanşör, kamera arayüzünün öğrenilmiş halkalı
+                // düğmesi (dış beyaz halka → boşluk → gri daire, bkz. SHUTTER).
+                // Dış katman SADECE halka: dolgu yok, boşluktan zemin görünüyor.
+                backgroundColor: "transparent",
+                borderWidth: SHUTTER_RING,
+                // ⚠️ YALNIZ ANDROID'DE SÖNÜYOR — orada önizleme donmuyor.
+                // `pausePreview` Android'de çekimi kırdığı için (gerekçe
+                // `handleCapture`da) akış basıldıktan sonra da akmaya devam
+                // ediyor; hiçbir işaret vermezsek basış yutulmuş gibi okunur.
+                // iOS'ta donan kare zaten işareti veriyor, orada sönük bir
+                // deklanşör gereksiz bir "bekleniyor" sinyali olurdu.
+                // Donukluk OPAKLIKLA DEĞİL renk alfasıyla (ata zincirindeki
+                // opacity, chrome'daki cam butonları düşürüyor).
+                borderColor: onMediaAt(
+                  (busy || capturing) && Platform.OS === "android" ? 0.4 : 1,
+                ),
+              }}
+            >
+              {/* İÇ DAİRE — halkanın içinde, arada SHUTTER_GAP kadar siyah
+                boşlukla. Ölçüsü sabitlerden türüyor, elle verilmiyor. */}
+              <View
+                pointerEvents="none"
+                style={{
+                  width: SHUTTER_CORE,
+                  height: SHUTTER_CORE,
+                  borderRadius: 999,
+                  backgroundColor:
+                    (busy || capturing) && Platform.OS === "android"
+                      ? onMediaAt(0.35)
+                      : SHUTTER_CORE_FILL,
+                }}
+              />
+            </AnimatedPressable>
+
+            <View
+              style={{
+                position: "absolute",
+                right: 24,
+                top: 0,
+                bottom: 0,
+                justifyContent: "center",
+              }}
+            >
+              <MediaChromeIconButton
+                systemImage="arrow.triangle.2.circlepath.camera"
+                fallbackIcon={RefreshCw}
+                label={t("common.camera.flip")}
+                // Önizlemeye çift dokunuşla AYNI yol (bkz. handleFlip).
+                onPress={handleFlip}
+                disabled={busy}
+              />
+            </View>
+          </View>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 }

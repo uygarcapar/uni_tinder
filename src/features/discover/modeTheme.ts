@@ -77,6 +77,20 @@ export function modeFireTint(mode: AppMode): string {
   return modeFireGradient(mode)[0];
 }
 
+/**
+ * Profil mağaza şeridindeki küçük plus kartının zemini (ProfileScreen >
+ * ShopCardsRow > PlusCard). Dating'de markanın kırmızı-turuncusu, Friends'te
+ * Spark'ın yeşili.
+ *
+ * Kapsamı BİLEREK dar: aynı sayfadaki upsell kartı ve plus sayfasındaki plan
+ * kartları (PlusCardArt) moda bakmıyor — abonelik ürünü tek ve mod-üstü, o iki
+ * yüzeyin kırmızısı marka. Moda dönen yalnız şeritteki kart, çünkü yanındaki
+ * Fire/Spark ve Not kartlarıyla aynı satırda duruyor.
+ */
+export function modePlusCardGradient(mode: AppMode): Gradient {
+  return mode === "Friends" ? gradients.friendsPlusCard : gradients.litPlusCard;
+}
+
 /** Kalbin kenarlık/soluk tonu — SwipeCard:1249/1278 ailesinin karşılığı. */
 export function modeHeartBorder(mode: AppMode): string {
   return mode === "Friends" ? colors.friendsHeartBorder : colors.swipeHeartBorder;

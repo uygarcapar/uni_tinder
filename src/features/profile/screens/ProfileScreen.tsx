@@ -2592,8 +2592,12 @@ export default function ProfileScreen() {
                     OKUMUYOR, aşağıdaki upsell'le AYNI koşulun iki yüzü — ikisi
                     ayrı kaynaktan okursa aktivasyon penceresinde ikisi birden
                     (ya da hiçbiri) çıkar. */}
+                {/* Mod yalnız plus kartının zeminine gidiyor: Arkadaş modunda
+                    şeridin solundaki kart Spark yeşiline dönüyor, yanındaki
+                    Fire/Not kartlarıyla aynı dilde kalsın. */}
                 <ShopCardsRow
                   showPlusCard={showMembershipCard}
+                  mode={mode}
                   onPlusPress={goToPlusPage}
                 />
 

@@ -45,8 +45,17 @@ jest.mock('@/shared/utils/photoPicker', () => ({
 jest.mock('@/shared/hooks/redux', () => ({
   useAppSelector: (fn: any) => fn({ auth: { user: { id: 'u1' } } }),
 }));
+// ⚠️ `i18n` DE DÖNMEK ZORUNDA: kanca okulun görünen adını `resolveLocalized`
+// ile çözerken `i18n.language` okuyor (bkz. `universityName`).
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'tr' } }),
+}));
+// Üniversite listesi ağdan geliyor (staticGet) — kancanın konusu değil, yalnız
+// "… gönder" satırının adı. Diğer export'lar GERÇEK: `normalizeDomain` ve
+// `resolveLocalized` saf fonksiyonlar ve kanca ikisini de kullanıyor.
+jest.mock('@/shared/queries/commonQueries', () => ({
+  ...jest.requireActual('@/shared/queries/commonQueries'),
+  useUniversities: () => ({ data: [] }),
 }));
 
 import { AppState } from 'react-native';

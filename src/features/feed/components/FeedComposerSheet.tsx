@@ -13,7 +13,7 @@ import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
 import { useController, useForm, useFormState, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, { useAppModalScrollHost } from "@/shared/components/AppModal";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon from "@/shared/components/SFIcon";
 import { Info } from "@/shared/icons";
@@ -174,7 +174,12 @@ export default function FeedComposerSheet({
     );
   }, []);
 
-  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
+  // ⚠️ Scroll hattı DIŞARIDA kuruluyor ve modal'a da veriliyor: hook onu
+  // context'ten okuyor ama Provider AppModal'ın İÇİNDE, bu bileşen ise modal'ı
+  // RENDER EDEN taraf — context null geliyordu ve hook sessizce hiçbir şey
+  // yapmıyordu (gerekçenin tamamı `useAppModalScrollHost`un başında).
+  const scrollHost = useAppModalScrollHost();
+  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField(24, scrollHost);
 
   const submit = handleSubmit(({ body }) => {
     if (sending) return;
@@ -234,6 +239,8 @@ export default function FeedComposerSheet({
       maxDynamicContentSize={windowHeight * 0.82}
       // "extend" gönder butonunu klavyenin altına gömüyordu.
       keyboardBehavior="interactive"
+      // Input'un klavyeye hizalanmasının geçtiği hat (bkz. yukarıdaki not).
+      scrollHost={scrollHost}
       // X yok: swipe-down ve backdrop zaten kapatıyor.
       closeButton={false}
       // ⚠️ `paddingTop` ELLE VERİLİYOR ve bu KASITLI — `contentContainerStyle`

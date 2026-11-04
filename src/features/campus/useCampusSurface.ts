@@ -16,6 +16,11 @@ import {
   type RawShot,
 } from "@/shared/utils/photoPicker";
 import { forgetPhoto } from "@/shared/utils/photoStore";
+import {
+  normalizeDomain,
+  resolveLocalized,
+  useUniversities,
+} from "@/shared/queries/commonQueries";
 import { useSwipeMutation } from "@/features/discover/swipeQueries";
 import type { AppMode } from "@/features/discover/modeTheme";
 import { UNLIMITED } from "@/shared/constants/limits";
@@ -102,7 +107,7 @@ export function useCampusSurface({
   domain,
   onPaywall,
 }: UseCampusSurfaceArgs) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const userId = useAppSelector(
     (s: any) => s?.auth?.user?.userId ?? s?.auth?.user?.id ?? null,
   );
@@ -131,6 +136,32 @@ export function useCampusSurface({
 
   const me = meQuery.data;
   const boundary = boundaryQuery.data ?? null;
+
+  /**
+   * KULLANICININ OKULUNUN GÖRÜNEN ADI — kamera ekranındaki "… gönder"
+   * satırının tek değişkeni.
+   *
+   * ⚠️ `distinct` KAPALI: o liste alias domainleri düşürüyor ve domain'i alias
+   * olan kullanıcı (ör. `bau.edu.tr`) hiçbir kayda eşleşmezdi. Yine de
+   * `canonicalDomain` de taranıyor — kampüs sınırı kanonik domain'le gelen bir
+   * kullanıcıda eşleşmeyi tek alana bağlamak gereksiz bir boşluk.
+   *
+   * Liste `staticGet` ile oturum boyu tek sefer çekiliyor (staleTime Infinity),
+   * yani akış/filtre ekranlarıyla aynı isteği paylaşıyor — ek bir tur yok.
+   *
+   * Ad çözülemezse `null`: yarım bir cümle ("… gönder") yazmaktansa satırı hiç
+   * çizmemek doğru (bkz. `commitHint`).
+   */
+  const { data: universities } = useUniversities();
+  const universityName = useMemo(() => {
+    const wanted = normalizeDomain(domain);
+    if (!wanted || !universities?.length) return null;
+    const hit = universities.find(
+      (u) =>
+        u.domain === wanted || normalizeDomain(u.canonicalDomain) === wanted,
+    );
+    return hit ? resolveLocalized(hit.display, i18n.language, hit.name) : null;
+  }, [domain, universities, i18n.language]);
 
   /**
    * Özellik bu kampüste AÇIK MI — TEK OKUMA NOKTASI `/campus/me`.
@@ -462,6 +493,12 @@ export function useCampusSurface({
       const result = await captureAndSendPhoto({
         facing: "front",
         commitLabel: t("campus.composer.share"),
+        // Okul adı bilinmiyorsa satır hiç çizilmiyor (gerekçe
+        // `universityName`de) — yazısız okun yanında yarım bir cümle,
+        // hedefi söylemediği gibi eksik de görünüyor.
+        commitHint: universityName
+          ? t("campus.composer.sendTo", { university: universityName })
+          : undefined,
         commit: shareShot,
       });
 
@@ -497,7 +534,7 @@ export function useCampusSurface({
     } catch (err) {
       devLog("[campus] camera capture failed:", err);
     }
-  }, [shareShot, t, userId]);
+  }, [shareShot, t, universityName, userId]);
 
   // ── Karar yolu ────────────────────────────────────────────────────────────
   const [busyMomentId, setBusyMomentId] = useState<string | null>(null);

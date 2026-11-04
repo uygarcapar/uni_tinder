@@ -372,6 +372,16 @@ interface GradientSet {
    * bütün mürekkep `onMedia*` ailesinden.
    */
   litPlusCard: Gradient;
+  /**
+   * `litPlusCard`ın Friends eşi — mağaza şeridindeki küçük plus kartı Arkadaş
+   * modunda bu yeşille çiziliyor (seçimi modeTheme > modePlusCardGradient
+   * yapar). Duraklar `friendsHeart`in ilk iki durağı: kart Spark'la AYNI
+   * yeşilden okunsun, kendi tonunu icat etmesin.
+   *
+   * ⚠️ Yalnız o küçük kart: upsell kartı ve plus sayfasındaki plan kartları
+   * (PlusCardArt) modsuz yüzeyler, litPlusCard'da kalıyorlar.
+   */
+  friendsPlusCard: Gradient;
   /** SwipeCard fire kalbi dolgusu — buradan ayarla. */
   swipeHeart: Gradient;
   /**
@@ -458,6 +468,10 @@ const fixedGradients = {
   premiumAlt: ["#FF173A", "#FF4D4D", "#FC803D"] as Gradient,
   welcomeBackdrop: ["#ff4d3d", "#ff5d3d", "#ff7e3d"] as Gradient,
   litPlusCard: ["#ff423d", "#ff5138"] as Gradient,
+  // litPlusCard ile aynı şekil (iki yakın durak, koyudan parlağa) ama
+  // friendsHeart'in yeşilinden: Arkadaş modundaki mağaza şeridi Spark'ın
+  // rengini taşısın, kartın kendi yeşili olmasın.
+  friendsPlusCard: ["#0fae57", "#12c96a"] as Gradient,
   // Son durak turuncudan bir tık kırmızıya çekildi (#ff5c33 → #ff452a): alev
   // perdesi (MatchModal) ekranın yarısını kaplıyor ve turuncu uç orada marka
   // kırmızısından kopuyordu. Buton/dalga/perde AYNI token — bkz. aşağıdaki not.

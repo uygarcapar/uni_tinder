@@ -12,7 +12,6 @@ import { colors, ink } from "@/shared/theme/colors";
 import { TOPIC_FILL_ALPHA, TOPIC_TEXT, topicPillInk } from "./feedTopicPill";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import toDisplayLowercase from "@/shared/utils/textCase";
-import { anonymousLabelKey } from "../feedPolicy";
 // Kart `/api/feed/me`yi GÖRMÜYOR (prop olarak inmesi listedeki her satıra bir
 // nesne daha taşımak olurdu), o yüzden etiket i18n yedeğinden çözülüyor —
 // `topicHashtag(key, null)` tam bunun için null kabul ediyor. Sunucunun kendi
@@ -228,7 +227,15 @@ function FeedPostCardBase({
   }, [onPressAuthor, post]);
 
 
-  const anonLabel = t(anonymousLabelKey(post.authorCategory));
+  /**
+   * Anonim gönderinin etiketi — SABİT, `authorCategory` OKUNMUYOR.
+   *
+   * Eski hâli "anonim · kadın" idi. Cinsiyeti basmak anonimliğin yarısını geri
+   * alıyordu: tek bir kampüs akışında "kadın + bu konu + bu saat" üçlüsü
+   * çoğu zaman tek kişiye iniyor. Gerekçenin tamamı feedPolicy'de, kaldırılan
+   * `anonymousLabelKey`in yerinde.
+   */
+  const anonLabel = t("feed.anonymous.plain");
 
   /**
    * Çizilecek avatar — sunucunun değeri, yoksa KENDİ fotoğrafım.
@@ -626,12 +633,19 @@ function FeedPostCardBase({
           marginTop: BLOCK_GAP,
         }}
       >
-        {/* Kendi gönderini beğenemezsin (UT-7330) → buton hiç çizilmiyor,
-            yalnız sayı duruyor. */}
+        {/* ⚠️ `isMine` KAPISI KALDIRILDI (istek): kendi gönderini de
+            beğenebilirsin. Eski kapı UT-7330'u (sunucu "kendi gönderini
+            beğenemezsin" diyor) kullanıcıya hiç göstermemek içindi.
+
+            ⚠️ SUNUCU TARAFI AÇILMADAN buton reddedilen bir istek yolluyor:
+            iyimser kalp dolup geri sönüyor ve hata toast'ı düşüyor (bkz.
+            useTogglePostLike > onError). Kapı artık TEK YERDE — sunucuda —
+            yani UT-7330 kalkar kalkmaz bu buton istemci sürümü beklemeden
+            çalışmaya başlıyor. */}
         <Pressable
           testID={`feed-card-like-${post.id}`}
           onPress={handleLike}
-          disabled={post.isMine || !onToggleLike}
+          disabled={!onToggleLike}
           hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center" }}
         >

@@ -2596,13 +2596,11 @@ const tr = {
       plusAction: 'Daha fazla paylaş',
     },
 
-    // Anonim gönderide yazar yerine çizilen etiket. `authorCategory` null ise
-    // `plain` kullanılıyor — cinsiyet uydurulmuyor.
+    // Anonim gönderide yazar yerine çizilen etiket — TEK metin.
+    // `Men/Women/NonBinary` varyantları KALDIRILDI (istek): cinsiyeti basmak
+    // anonimliğin yarısını geri alıyordu (gerekçe: feedPolicy).
     anonymous: {
       plain: 'Anonim',
-      Men: 'Anonim · Erkek',
-      Women: 'Anonim · Kadın',
-      NonBinary: 'Anonim · Non-binary',
     },
 
     sort: {
@@ -2886,6 +2884,9 @@ const tr = {
       title: 'Kampüs anın',
       hint: 'Bugün bir kez paylaşabilirsin ve değiştiremezsin.',
       share: 'Paylaş',
+      // Kamera ekranında, ok düğmesinin solunda: karenin nereye gideceği.
+      // Ok yazısız olduğu için hedefi söyleyen tek satır bu.
+      sendTo: 'Anını {{university}} kampüsüne gönder',
       sharing: 'Paylaşılıyor…',
       removeConfirmTitle: 'Anını kaldır',
       removeConfirmBody: 'Kaldırırsan bugün yeniden paylaşamazsın.',

@@ -156,6 +156,20 @@ const EXPAND_SPRING = {
 // Animasyon süreleri
 const FADE_IN_DURATION = 100;
 
+/**
+ * Yatay kaydırmanın KARAR EŞİĞİ (px, görsel yol üzerinden ölçülüyor).
+ *
+ * 2026-10-13'te jestle birlikte kaldırılmıştı, 2026-11-04'te jestle birlikte
+ * GERİ GELDİ — sayı eskisinin aynısı. Ham `translationX` değil rubber-band'den
+ * geçmiş `tx` ile karşılaştırılıyor: kullanıcı kartın NEREYE gittiğini görüyor,
+ * parmağının ne kadar yol aldığını değil (bkz. horizontalPan > onUpdate).
+ *
+ * Rozetin kendi eşiği AYRI (SwipeOverlay > SWIPE_THRESHOLD = 120): tik/X tam
+ * doygunluğa karar eşiğinden biraz sonra varıyor, yani "kararı verdim" anı
+ * rozetin en parlak hâliyle çakışmıyor — eşikteki haptic o farkı dolduruyor.
+ */
+const SWIPE_THRESHOLD = 85;
+
 /*
  * ── KARTIN ÇIKIŞ UÇUŞU TAMAMEN KALDIRILDI (istek, 2026-10-13) ──────────────
  *
@@ -186,6 +200,25 @@ const FADE_IN_DURATION = 100;
  *   • `dragX` · `buttonDragX` prop'ları ve `SWIPE_THRESHOLD`: ilki alttaki
  *     kartın tülünün paydasıydı (sürükleme oranı), ikincisinin okuyucusu çok
  *     önce kalkmıştı. Tül artık yalnız GİRİŞ oranını okuyor.
+ *
+ * ⚠️ BU NOTUN YARISI ARTIK TARİH (istek, 2026-11-04): yatay JEST geri geldi,
+ * ama UÇUŞ GELMEDİ. `tx` · `rotate` · `SWIPE_THRESHOLD` yeniden var ve parmağı
+ * takip ediyorlar; kart yine de ekranı TERK ETMİYOR — eşik geçilince karar
+ * `commitExit`e gidiyor, kart bırakıldığı yerde kalıyor ve değişimi alev
+ * örtüyor (bkz. horizontalPan). Yani bu listenin geri kalanı — flyOut ·
+ * EXIT_DISTANCE/OVERSHOOT/HANDOFF · exitConfig · unwindForExit · rozetin çıkış
+ * sönümü — HÂLÂ KALDIRILMIŞ DURUMDA ve destenin devrini hâlâ alev söylüyor
+ * ("değişim hiçbir dalda örtüsüz olmaz" kuralı jestle birlikte DELİNMEDİ).
+ *
+ * `dragX` · `buttonDragX` prop'ları da geri gelmedi: alttaki kartın tülü
+ * sürükleme oranını artık ROZET kanalından (`overlayDragX`) okuyor — onu zaten
+ * hem jest hem buton yolu yazıyor, ikinci bir kanal tutmanın karşılığı yok
+ * (bkz. underDimStyle).
+ *
+ * CAM YÜZEYLERİN BEDELİ DURUYOR: sürükleme boyunca kartın ata transform'u
+ * kimliksel olmuyor, yani o karelerde içerideki GlassView'lar efektlerini
+ * çizmeyebilir (bkz. memo: GlassView yaşam döngüsü). Giriş kayması da aynı
+ * bedeli ödüyordu; jest boyunca süren bir durum olması tek farkı.
  */
 
 /**
@@ -294,12 +327,12 @@ interface SwipeWrapperProps {
   isTopCard: boolean;
   /*
    * DiscoverScreen'de yaşayan, kartlar arasında PAYLAŞILAN shared value'lar:
-   * üst kart yazar, rozet okur.
+   * üst kart yazar, rozet VE alttaki kartın tülü okur.
    *
    * `dragX` ve `buttonDragX` KALDIRILDI (uçuşla birlikte, bkz. yukarıdaki
-   * not): ilki alttaki kartın tülünün paydasıydı — tül artık yalnız GİRİŞ
-   * oranını okuyor — ikincisinin okuyucusu (kaymayla ölçeklenen eski aksiyon
-   * barı) çok önce kalkmıştı.
+   * not) ve yatay jest geri gelince de DÖNMEDİLER: tülün paydası artık
+   * `overlayDragX` (bkz. underDimStyle), ikincisinin okuyucusu (kaymayla
+   * ölçeklenen eski aksiyon barı) çok önce kalkmıştı.
    */
   overlayDragX: SharedValue<number>;
   overlayOpacity: SharedValue<number>;
@@ -321,12 +354,19 @@ interface SwipeWrapperProps {
    * VERİLMEZSE kutlama her zaman oynar (eski davranış).
    */
   willMatch?: (profile: PotentialMatch) => boolean;
-  /*
-   * `swipeQuotaExhausted` KALDIRILDI: tek okuyucusu sağa kaydırmanın kota
-   * dalıydı (bkz. yatay jestin kaldırıldığı not). Beğeni kotası artık yalnız
-   * beğen BUTONUNDA sınanıyor — orası toast'ı da açıyor, jest dalı
-   * açmıyordu.
+  /**
+   * Beğeni kotası doldu — SAĞA KAYDIRMA burada bloklanıyor: kart yerine geri
+   * yaylanıyor, istek atılmıyor, paywall açılıyor (bkz. horizontalPan > onEnd).
+   *
+   * Jestle birlikte kaldırılıp jestle birlikte geri geldi. O arada kotanın tek
+   * kapısı beğen butonuydu (DiscoverScreen > handleLikeButton) ve O KAPI
+   * DURUYOR — iki yol aynı toast'ı + aynı sheet'i açıyor, farkları yalnız
+   * tetikleyici: buton doğrudan çağırıyor, jest `uiBus > swipePaywall`
+   * üzerinden (worklet'ten JS'e tek atlayış).
+   *
+   * SOLA KAYDIRMA (geç) BLOKLANMIYOR: backend pass'i günlük kotaya saymıyor.
    */
+  swipeQuotaExhausted?: boolean;
   fireQuotaExhausted?: boolean;
   /*
    * `snapEntry` KALDIRILDI: tek işi yeni üst kartın 0.92→1 giriş yayını
@@ -379,6 +419,7 @@ function SwipeWrapper({
   onFire,
   mode,
   willMatch,
+  swipeQuotaExhausted = false,
   fireQuotaExhausted = false,
   entryX,
   superLikesRemaining,
@@ -405,16 +446,32 @@ function SwipeWrapper({
   // içine giriyordu). Kap tüm ekrana açılınca kabuğun taşacağı bir yer kalmadı;
   // bar'ın üstünde durması gereken tek şey kapağın alt bandındaki chrome ve o
   // payı kart kendi içinde okuyor (SwipeCard > coverBottomInset).
-  // `tx` (yatay sürükleme/uçuş kanalı) KALDIRILDI — gerekçesi uçuşun
-  // kaldırıldığı notta. Kartı yana götüren hiçbir yol kalmadı; `ty` duruyor,
-  // onu Fire çekişi sürüyor.
+  /**
+   * YATAY SÜRÜKLEME KANALI — kartın parmağı takip ettiği pay (px).
+   *
+   * Kartın GİTTİĞİ yol, parmağın gittiği yol değil: rubber-band'den geçmiş
+   * değer burada duruyor ve eşik kararı da bunun üzerinden veriliyor (bkz.
+   * horizontalPan).
+   *
+   * ÇIKIŞ KANALI DEĞİL: kart bu kanalla ekranı terk etmiyor. Eşik geçilince
+   * değer bırakıldığı yerde DONUYOR (alev onu örtene kadar kartın nerede
+   * bırakıldığı görünsün diye) ve örtünün altında sıfırlanıyor — rozetle
+   * birebir aynı ömür (bkz. collapseUnderCover).
+   *
+   * KARTA ÖZEL, paylaşılan değil: alttaki kart bu değeri okumuyor, tülünü
+   * rozet kanalından sürüyor (bkz. underDimStyle).
+   */
+  const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scrollY = useSharedValue(0);
   // Scroll bitip rubber-band'in başladığı andaki translationY baseline'ı.
   // Sürekli gesture'da scroll → rubber-band geçişi yumuşak olsun diye.
   const dragOffsetY = useSharedValue(0);
-  // `hasVibrated` (yatay eşiğin bir-kez haptic kapısı) yatay jestle birlikte
-  // kaldırıldı — gerekçesi o jestin notunda.
+  // Yatay eşiğin bir-kez haptic kapısı: eşik GEÇİLDİĞİNDE bir kez patlıyor,
+  // altına inilince yeniden kuruluyor (parmak eşiğin iki yanında gezinirken
+  // titreşim makinesi olmasın). Jestle birlikte kaldırılıp jestle birlikte
+  // geri geldi.
+  const hasVibrated = useSharedValue(false);
   // Pull-down sırasında süper-like kalbinin doluluk oranı (0-1). SwipeCard'a iletilir.
   const fireProgress = useSharedValue(0);
   /**
@@ -471,6 +528,13 @@ function SwipeWrapper({
    */
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
 
+  // Yatay eşiğin haptic'i — hafif. Fire'ınki (Heavy) ondan BİLEREK ayrı: aynı
+  // parmak iki farklı kararı veriyor, ikisi aynı şiddette olursa hangisinin
+  // eşiğine varıldığı yalnız gözle anlaşılır.
+  const triggerHaptic = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const triggerFireHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   };
@@ -508,14 +572,52 @@ function SwipeWrapper({
   };
   useEffect(() => resetSuperHaptics, []);
 
+  /**
+   * ── SIFIRLAMANIN WORKLET AYNASI ───────────────────────────────────────────
+   *
+   * `resetSuperHaptics` bir ref'i 0'lıyor ve varsa bir timer'ı temizliyor —
+   * yani SIFIRLANACAK BİR ŞEY YOKKEN çağırmanın tek etkisi `runOnJS`in kendi
+   * maliyeti: UI thread'inden JS thread'ine bir atlama.
+   *
+   * O atlama aşağıda (verticalPan.onUpdate) HER PAN UPDATE'İNDE yapılıyordu ve
+   * bedeli normal scroll'da ödeniyordu: jest `simultaneousWithExternalGesture`
+   * ile native scroll'la birlikte koşuyor, yani parmak içeriği kaydırırken de
+   * `onUpdate` her karede çalışıyor. Dalların üçü de (scroll modu · pull-up ·
+   * yatay) koşulsuz `runOnJS` çağırıyordu — Fire'a dair hiçbir şey olmamasına
+   * rağmen her kare JS thread'i uyandırılıyordu.
+   *
+   * Kalıp YATAY JESTTEN alındı, yeni değil: `hasVibrated` orada tam bunu yapıyor
+   * — `runOnJS` yalnız eşik GEÇİŞİNDE, her karede değil.
+   *
+   * Bayrak yalnız gerçekten haptic döngüsü başlatıldığında kalkıyor
+   * (`updateSuperHaptics`in çağrıldığı dal), sıfırlamada iniyor. Sıfırlama
+   * idempotent olduğu için atlanan çağrıların davranışsal karşılığı yok.
+   */
+  const hapticArmed = useSharedValue(false);
+  const disarmSuperHaptics = () => {
+    "worklet";
+    if (!hapticArmed.value) return;
+    hapticArmed.value = false;
+    runOnJS(resetSuperHaptics)();
+  };
+
   // Expand/collapse'in haptic'i YOK: eşik kalkınca haber verilecek bir an da
   // kalmadı (bkz. yukarıdaki "EXPAND ARTIK EŞİKSİZ"). Fire'ın haptic'i
   // duruyor — o hâlâ eşikli bir karar.
 
-  // `openPaywall` (uiBus > swipePaywall) yatay jestle birlikte kaldırıldı:
-  // beğeni kotasının tek kapısı artık beğen butonu (bkz. DiscoverScreen >
-  // handleLikeButton). Fire'ın kendi paywall'ı DURUYOR — o hâlâ bir jestten
-  // tetiklenebiliyor.
+  /**
+   * Beğeni kotası dolu kartta sağa kaydırıldı.
+   *
+   * `swipePaywall` dinleyicisi DiscoverScreen'de duruyor (jest kaldırılmışken
+   * de duruyordu — premium filtreler ve geri alma kotası da aynı event'i
+   * kullanıyor) ve payload'suz emit'i bilerek "beğeni kotası" sayıyor: önce
+   * "hakkın şu saatte yenilenecek" toast'ı, sonra sheet. Yani bu yolun
+   * gördüğü şey beğen butonununkiyle birebir aynı.
+   */
+  const openPaywall = () => {
+    uiBus.emit("swipePaywall", {});
+  };
+
   const openFirePaywall = () => {
     uiBus.emit("firePaywall", {});
   };
@@ -579,6 +681,11 @@ function SwipeWrapper({
     scrollY.value = 0;
     overlayDragX.value = 0;
     overlayOpacity.value = 1;
+    // Sürükleme payı da burada siliniyor, rozetle aynı gerekçeyle: kart eşiği
+    // geçtiği YERDE kalıyor (bırakışta geri yaylanmıyor — kullanıcı kararının
+    // nereye düştüğünü görüyor) ve alev onu örtünce sıfırlanıyor. Yaylanarak
+    // kapatılsaydı alev yükselirken kart arkada kıpırdıyor olurdu.
+    tx.value = 0;
   };
 
   /**
@@ -643,10 +750,13 @@ function SwipeWrapper({
   // gidebilirdi.
   const exitPending = useSharedValue(false);
 
-  // Worklet'ten okumak için mirror — runOnJS'siz quota check. BEĞENİ
-  // kotasının aynası (`quotaExhaustedSV`) yatay jestle birlikte kaldırıldı:
-  // onu okuyan tek dal sağa kaydırmaydı. Fire'ın aynası duruyor, çekiş jesti
-  // hâlâ var.
+  // Worklet'ten okumak için mirror — runOnJS'siz quota check. İkisi de jestin
+  // `onEnd`inde okunuyor: beğeni kotası sağa kaydırmada, Fire kotası aşağı
+  // çekişte.
+  const quotaExhaustedSV = useSharedValue(swipeQuotaExhausted);
+  useEffect(() => {
+    quotaExhaustedSV.value = swipeQuotaExhausted;
+  }, [swipeQuotaExhausted, quotaExhaustedSV]);
   const fireExhaustedSV = useSharedValue(fireQuotaExhausted);
   useEffect(() => {
     fireExhaustedSV.value = fireQuotaExhausted;
@@ -656,6 +766,8 @@ function SwipeWrapper({
     if (isTopCard) {
       // Canlı kart artık bu: bekleyen bir Fire kilidi devralınmasın.
       exitPending.value = false;
+      // Eşiğin haptic kapısı da yeni kartta kapalı doğmalı.
+      hasVibrated.value = false;
       return;
     }
     // ── KART TEPEDEN DÜŞTÜ: ÜSTÜNDEKİ HER ARTIK SİLİNİYOR ───────────────────
@@ -665,17 +777,19 @@ function SwipeWrapper({
     // destenin en altındaki geri al yuvasında duruyor (bkz. DiscoverScreen >
     // slotProfile). Yani bu bileşen aynı kartla ikinci kez üste çıkabiliyor.
     //
-    // `tx` SIFIRLAMASI BURADAN GİTTİ, kanalın kendisiyle birlikte: kartı
-    // ekranın dışında bırakan bir uçuş yok (bkz. uçuşun kaldırıldığı not),
-    // dolayısıyla geri al yuvasından üste çıkan kart artık hiçbir karede
-    // ekran dışında doğmuyor. `ty` DURUYOR — Fire çekişi yarıda kalmış
-    // olabilir.
+    // `tx` SIFIRLAMASI GERİ GELDİ (jestle birlikte) ama GEREKÇESİ DEĞİŞTİ:
+    // eskiden kartı ekran dışında bırakan uçuşu temizliyordu, bugün yarıda
+    // kalmış bir SÜRÜKLEMEYİ. Kart yana uçmuyor (bkz. uçuşun kaldırıldığı
+    // not), ama geri al yuvasından üste çıkan kart kaydırılmış hâlde donmuş
+    // olabilir. `ty` aynı sebeple duruyor — Fire çekişi yarıda kalmış olabilir.
     //
     // ANINDA VE GÖRÜNMEZ: sıfırlama ÜSTTEKİ kartın tam ekran opak gövdesinin
     // ardında oluyor. Ham atama koşan animasyonu da iptal ediyor.
     scrollY.value = 0;
     ty.value = 0;
-  }, [isTopCard, scrollY, exitPending, ty]);
+    tx.value = 0;
+    hasVibrated.value = false;
+  }, [isTopCard, scrollY, exitPending, ty, tx, hasVibrated]);
   /*
    * ── PAYLAŞILAN KANALLAR BURADA SIFIRLANMIYOR ──────────────────────────────
    *
@@ -797,15 +911,21 @@ function SwipeWrapper({
    * "önce pinch'in başarısız olmasını bekle" ilişkisi tek parmaklı çekişi de
    * geciktirir.
    *
-   * YATAY KANALLAR BURADAN GİTTİ (`tx · dragX · buttonDragX`): pinch'in iptal
-   * edebileceği tek sürükleme dikey olan. Rozet kanalı yine sıfırlanıyor —
-   * ucu açık kalmasın.
+   * `tx` BURAYA GERİ DÖNDÜ (yatay jestle birlikte): pinch'in iptal edebileceği
+   * sürükleme yine iki yönlü. `dragX · buttonDragX` dönmedi — o kanallar hiç
+   * geri gelmedi (bkz. prop'ların notu).
+   *
+   * BURADA YAYLANARAK sıfırlanıyor, `collapseUnderCover`daki gibi ham atamayla
+   * değil: bu bir KARAR DEĞİL, iptal — kartın yerine geri oturduğunun
+   * görünmesi gerekiyor.
    */
   const cancelDragForPinch = () => {
     "worklet";
     const cfg = { damping: 16, stiffness: 380, mass: 1 };
+    tx.value = withSpring(0, cfg);
     overlayDragX.value = withSpring(0, cfg);
     overlayOpacity.value = 1;
+    hasVibrated.value = false;
     ty.value = withSpring(0, cfg);
     fireProgress.value = withSpring(0);
     cardPullProgress.value = withSpring(0);
@@ -824,31 +944,122 @@ function SwipeWrapper({
   );
 
   /**
-   * ── YATAY SWIPE JESTİ KALDIRILDI (istek, 2026-10-13) ──────────────────────
+   * ── YATAY SWIPE JESTİ GERİ GELDİ (istek, 2026-11-04) ──────────────────────
    *
-   * Kartı yana sürükleyip beğenme/geçme hareketi yok: karar artık YALNIZ
-   * BUTONLARDAN veriliyor (kapağın sağ alt kolonundaki tik ve X, bkz.
-   * SwipeCard) ve oradan da programmaticSwipe kanalıyla Fire'ın yoluna
-   * giriyor — kart yerinde kalıyor, değişimi alev örtüyor (bkz. commitExit).
+   * 2026-10-13'te kaldırılmıştı (karar yalnız kapağın sağ alt kolonundaki tik
+   * ve X'te kalmıştı); jestin kendisi bugün geri döndü. Parmak kartı yana
+   * sürüklüyor, kart eğiliyor, büyük tik/X rozeti doluyor ve eşikte haptic
+   * patlıyor — yani 13 Ekim öncesinin HİSSİ birebir.
    *
-   * Burada duran ve onunla birlikte DÜŞEN şeyler:
-   *   • `Gesture.Pan()` + rubber-band (max 400, c 1.2) ve eşik kararı
-   *     (SWIPE_THRESHOLD 85 ya da 2500 px/sn hız + 60 px yol).
-   *   • Eşik geçilince patlayan `triggerHaptic` ve onun bir-kez-kapısı
-   *     (`hasVibrated`).
-   *   • Sağa kaydırmanın KOTA dalı: `quotaExhaustedSV` aynası + `openPaywall`
-   *     (uiBus > swipePaywall). Kota kapısı artık tek yerde, beğen butonunda
-   *     (bkz. DiscoverScreen > handleLikeButton) — oradaki yol toast'ı da
-   *     açıyor, bu dalda yoktu.
-   *   • Jest başında paylaşılan kanalların devralınması (`onBegin`): dragX ·
-   *     overlayDragX · buttonDragX · overlayOpacity. İlk ikisi tamamen
-   *     kalktı (bkz. uçuşun kaldırıldığı not), rozet kanallarını yazan tek
-   *     taraf da programmatic dal.
+   * ⚠️ AMA ÇIKIŞ MODELİ ESKİYE DÖNMEDİ (bilinçli, bkz. dosya başındaki uçuş
+   * notu): bırakışta kart ekranın dışına UÇMUYOR. Eşik geçilince karar
+   * butonlarınkiyle AYNI kapıdan — `commitExit` — geçiyor: kart bırakıldığı
+   * yerde duruyor, alev alttan yukarı süpürüyor ve deste dalga ekranı tam
+   * kapattığı karede ilerliyor. Üç yolun (jest · buton · Fire çekişi) tek
+   * çıkış modeli var ve "değişim hiçbir dalda örtüsüz olmaz" kuralı duruyor.
    *
-   * GERİ İSTENİRSE: jest `Gesture.Simultaneous` ile dikey pan'ın yanına
-   * dönmeli ve `failOffsetY/activeOffsetX` payları birlikte ayarlanmalı —
-   * ikisi aynı parmağı paylaşıyor.
+   * Bu yüzden eşik geçildikten SONRA kart geri yaylanMIYOR: kullanıcı kararını
+   * nereye bıraktığını görüyor, temizliği örtü altında `collapseUnderCover`
+   * yapıyor — rozetin ömrüyle birebir aynı.
+   *
+   * DİKEY JESTLE AYNI PARMAĞI PAYLAŞIYORLAR: ikisi `Gesture.Simultaneous`
+   * altında ve payları birlikte ayarlı — yatay `failOffsetY([-15,15])` ile
+   * dikey niyette çekiliyor, dikey `failOffsetX([-20,20])` ile yatayda. Birini
+   * oynatan ötekine bakmak zorunda; aksi halde ya kart çapraz parmakta
+   * titriyor ya da Fire çekişi hiç aktive olmuyor.
    */
+  const horizontalPan = Gesture.Pan()
+    .enabled(isTopCard)
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-15, 15])
+    .onUpdate((event) => {
+      // Foto büyütülüyor → kart kıpırdamasın (bkz. cancelDragForPinch).
+      if (photoPinchActive.value) return;
+      // Karar verildi, alevin örtmesi bekleniyor: kart artık kilitli.
+      if (exitPending.value) return;
+
+      // Asimptotik rubber-band — "orta zorlanma": max=400, c=1.2 → 200 px
+      // parmak yolunda kart ~150 px gidiyor (eşiğin epey üstü), 400 px'te
+      // ~240 px. Asimptot 400 olduğu için sert çekişte kart hâlâ kıpırdıyor
+      // ama duvara dayanmış gibi değil.
+      const delta = event.translationX;
+      const absDelta = Math.abs(delta);
+      const max = 400;
+      const c = 1.2;
+      const damped = (absDelta * max * c) / (max + c * absDelta);
+      const signed = delta < 0 ? -damped : damped;
+      tx.value = signed;
+      // Rozet kartın GİTTİĞİ yolu okuyor (parmağınkini değil) — kart ile tik/X
+      // aynı anda doluyor. Aynı kanalı alttaki kartın tülü de okuyor.
+      overlayDragX.value = signed;
+
+      // Haptic görsel yol üzerinden: kart eşiği GÖZLE geçtiğinde patlasın.
+      if (!hasVibrated.value && Math.abs(signed) > SWIPE_THRESHOLD) {
+        hasVibrated.value = true;
+        runOnJS(triggerHaptic)();
+      }
+      if (hasVibrated.value && Math.abs(signed) < SWIPE_THRESHOLD) {
+        hasVibrated.value = false;
+      }
+    })
+    .onEnd((event) => {
+      hasVibrated.value = false;
+      if (exitPending.value) return;
+      // Parmaklar kalktı ama büyütme kapanışı sürüyor: bu jest pinch'in
+      // parçasıydı, swipe olarak yorumlanmamalı.
+      if (photoPinchActive.value) {
+        cancelDragForPinch();
+        return;
+      }
+
+      // İki kapı: YOL (85 px) ya da HIZ (2500 px/sn + en az 60 px yol). Hız
+      // dalı olmadan hızlı/kısa fiskeler yutuluyordu.
+      const VELOCITY_THRESHOLD = 2500;
+      const VELOCITY_MIN_DISPLACEMENT = 60;
+      const goRight =
+        tx.value > SWIPE_THRESHOLD ||
+        (event.velocityX > VELOCITY_THRESHOLD &&
+          tx.value > VELOCITY_MIN_DISPLACEMENT);
+      const goLeft =
+        tx.value < -SWIPE_THRESHOLD ||
+        (event.velocityX < -VELOCITY_THRESHOLD &&
+          tx.value < -VELOCITY_MIN_DISPLACEMENT);
+
+      // Spring'ler burada tek yerde: eşik geçilemeyen bırakış ve kota bloğu
+      // aynı fizikle geri dönüyor (Fire'ın geri sarımıyla da aynı).
+      const cfg = { damping: 16, stiffness: 380, mass: 1 };
+
+      // Beğeni kotası bitti: sağa kaydırma GERÇEKLEŞMİŞ olsa bile kart yerine
+      // dönsün, istek atılmasın, paywall açılsın. Sola kaydırma (geç) backend'de
+      // kotaya sayılmadığı için burada da bloklanmıyor.
+      // KOTA DIŞINDA KİLİT YOK: profil keşif havuzunda görünmese bile backend
+      // like/pass/Fire'ı kabul ediyor (rehber §3), istemci kendi kuralını
+      // uydurmuyor.
+      if (goRight && quotaExhaustedSV.value) {
+        tx.value = withSpring(0, cfg);
+        overlayDragX.value = withSpring(0, cfg);
+        overlayOpacity.value = 1;
+        runOnJS(openPaywall)();
+        return;
+      }
+
+      if (goRight || goLeft) {
+        // Rozet tam doygunluğa tamamlanıyor (buton yolundaki değerin aynısı):
+        // karar kilitlendi, alev yükselirken tik/X eşikteki yarım hâlinde
+        // asılı kalmasın. Kart ise OLDUĞU YERDE kalıyor — `tx`e dokunmuyoruz.
+        overlayDragX.value = withTiming(goRight ? 150 : -150, {
+          duration: FADE_IN_DURATION,
+        });
+        overlayOpacity.value = 1;
+        commitExit(goRight ? "right" : "left");
+        return;
+      }
+
+      // Eşik geçilemedi — kart ve rozet yaylanarak yerine dönüyor.
+      tx.value = withSpring(0, cfg);
+      overlayDragX.value = withSpring(0, cfg);
+      overlayOpacity.value = 1;
+    });
 
   // Dikey pan: 3 modda çalışır:
   //  - Card mode + pull-down → fire (mevcut)
@@ -883,7 +1094,7 @@ function SwipeWrapper({
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
-        runOnJS(resetSuperHaptics)();
+        disarmSuperHaptics();
         return;
       }
       const delta = event.translationY - dragOffsetY.value;
@@ -906,11 +1117,14 @@ function SwipeWrapper({
         // sürdüğü krom devri kesilip isim/pill bloğu geri sıçrıyor.
         if (progress >= 1 && !fireReady.value) {
           fireReady.value = true;
-          runOnJS(resetSuperHaptics)();
+          disarmSuperHaptics();
           runOnJS(triggerFireHaptic)();
         } else if (progress < 1) {
           if (fireReady.value) fireReady.value = false;
           // Threshold'a kadar artan sıklıkta haptic (JS loop'u kendini zamanlar).
+          // AYNAYI BURADA KALDIRIYORUZ: döngüyü başlatan tek dal bu, yani
+          // sıfırlamanın gerçekten iş yapacağı tek hâl de buradan doğuyor.
+          hapticArmed.value = true;
           runOnJS(updateSuperHaptics)(progress);
         }
       } else if (delta < 0) {
@@ -923,14 +1137,14 @@ function SwipeWrapper({
         fireProgress.value = 0;
         cardPullProgress.value = 0;
         fireReady.value = false;
-        runOnJS(resetSuperHaptics)();
+        disarmSuperHaptics();
       } else {
         // delta tam 0 — parmak yatay gidiyor. Fire artıkları temizleniyor;
         // krom kanalına DOKUNULMUYOR (gerekçe bir üstteki dalda).
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
-        runOnJS(resetSuperHaptics)();
+        disarmSuperHaptics();
       }
     })
     .onEnd(() => {
@@ -975,10 +1189,11 @@ function SwipeWrapper({
       pullActive.value = 0;
     });
 
-  // Tek jest kaldı (bkz. yatay jestin kaldırıldığı not): aşağı çekişte Fire.
-  // `Gesture.Simultaneous` sarmalayıcısı da onunla birlikte düştü — tek
-  // elemanlı bir kompozisyon yalnız fazladan bir jest düğümü demekti.
-  const composedGesture = verticalPan;
+  // İki jest aynı parmağı paylaşıyor (yatay karar · aşağı çekişte Fire), o
+  // yüzden `Simultaneous`: biri ötekinin başarısız olmasını BEKLEMİYOR, ikisi
+  // birden dinliyor ve hangisinin konuşacağını `activeOffset/failOffset`
+  // payları seçiyor (bkz. horizontalPan'in notu).
+  const composedGesture = Gesture.Simultaneous(horizontalPan, verticalPan);
 
   // Moderasyon köprüleri — SwipeCard argümansız handler bekliyor, DiscoverScreen
   // ise hangi profilin şikayet/engel edildiğini bilmek zorunda. Prop verilmezse
@@ -1011,15 +1226,25 @@ function SwipeWrapper({
   // hızlarda açar.
 
   const animatedStyle = useAnimatedStyle(() => {
-    // KARTIN YATAY KANALI (`tx`) VE ONA BAĞLI `rotate` KALKTI: sürükleme de
-    // çıkış uçuşu da yok (bkz. uçuşun kaldırıldığı not). Geriye kalan tek
-    // yatay hareket GİRİŞ — o da kendi eğimini `entryT`den türetiyor.
+    // İKİ AYRI YATAY HAREKET, AYNI EKSENDE TOPLANIYOR:
+    //   • `tx` — parmağın sürüklemesi (bkz. horizontalPan). Yalnız üst kartta
+    //     yazılıyor ve ÇIKIŞ DEĞİL: kart bununla ekranı terk etmiyor.
+    //   • `entryX` — yeni üst kartın giriş kayması (px, ≤ 0), DiscoverScreen
+    //     sürüyor.
+    // Pratikte ikisi aynı anda olmuyor (giriş biterken jest henüz başlamıyor),
+    // ama toplanmaları şart: giriş yarıdayken parmak değerse kart kendi
+    // yolundan devam etsin, sıfırdan başlamasın.
     //
-    // Girişin tek sürücüsü `entryX` (px, ≤ 0). Dikey pay ve eğim ondan
-    // TÜRETİLİYOR — ayrı kanallar olsaydı üçü farklı anlarda yerine oturur,
-    // çapraz hareket kırılırdı.
+    // Girişin dikey payı ve eğimi `entryX`ten TÜRETİLİYOR — ayrı kanallar
+    // olsaydı üçü farklı anlarda yerine oturur, çapraz hareket kırılırdı.
     const entry = isTopCard && entryX ? entryX.value : 0;
     const entryT = Math.min(1, Math.abs(entry) / CARD_ENTRY_DISTANCE);
+    // Sürüklemenin EĞİMİ: ekran genişliğinde EXIT_TILT'e varan doğrusal
+    // yatma — kart parmağın altında yana "deviriliyor". Girişin eğimiyle aynı
+    // tavanı paylaşıyor, çünkü ikisi de aynı hareketin iki ucu.
+    const dragRotate = isTopCard
+      ? interpolate(tx.value, [-width, 0, width], [-EXIT_TILT, 0, EXIT_TILT])
+      : 0;
 
     return {
       // Expanded lift'in bedeli: kart HEADER_COVER kadar yukarı binince,
@@ -1059,8 +1284,8 @@ function SwipeWrapper({
       // panel ekranın ortasında. Kutu deste boyunca aynı olmak zorunda.
       bottom: -HEADER_COVER,
       transform: [
-        // Giriş ofseti YALNIZ ÜST KARTTA — tek yatay sürücü bu.
-        { translateX: entry },
+        // Sürükleme + giriş ofseti; ikisi de YALNIZ ÜST KARTTA yazılıyor.
+        { translateX: entry + (isTopCard ? tx.value : 0) },
         // ty: geçici çekiş payı (Fire peek'i).
         // İkinci terim kalıcı lift — açık kartta kutu bu kadar yukarıda.
         // Üçüncüsü GİRİŞİN DİKEY PAYI: kart yatay değil ÇAPRAZ geliyor, yani
@@ -1073,11 +1298,16 @@ function SwipeWrapper({
               : 0) +
             entryT * CARD_ENTRY_RISE,
         },
-        // Girişin EĞİMİ: aynı oranla açılıp kapanıyor ve işareti reddetme
-        // atışıyla aynı (sola giden kart -15°'ye yatıyor) — kart o yatıklıktan
-        // düzelerek yerine oturuyor, yani hareket atışın geri sarımı.
+        // İKİ EĞİM TOPLANIYOR (translateX'teki toplamın karşılığı):
+        //   • Sürüklemenin eğimi — kart parmağın altında yana deviriliyor.
+        //   • Girişin eğimi: aynı oranla açılıp kapanıyor ve işareti reddetme
+        //     atışıyla aynı (sola giden kart -15°'ye yatıyor) — kart o
+        //     yatıklıktan düzelerek yerine oturuyor, yani hareket atışın geri
+        //     sarımı.
         {
-          rotate: isTopCard ? `${-entryT * CARD_ENTRY_TILT}deg` : "0deg",
+          rotate: isTopCard
+            ? `${dragRotate - entryT * CARD_ENTRY_TILT}deg`
+            : "0deg",
         },
         // ── ÖLÇEK KALDIRILDI (`scale`) ─────────────────────────────────────
         // Alt kart 0.92'de duruyor, yeni üst kart da 0.92→1 yayıyla büyüyordu
@@ -1126,20 +1356,22 @@ function SwipeWrapper({
    * sokmadığı için kartın içindeki blur bantları ve cam yüzeyler alt karttayken
    * de normal çiziliyor — kart üste geçtiğinde gölgesi çoktan yerinde oluyor.
    *
-   * Oran eski opaklığın tümleyeni (1 − 0.8). İki sürücü OR'lanıyor: Fire çekişi
-   * ve gelen kartın giriş yolu — ikisinde de arkadaki kart önden açılıyor, yani
-   * "0.8 → 1 zıplaması" olmuyor.
+   * Oran eski opaklığın tümleyeni (1 − 0.8). Üç sürücü OR'lanıyor: yatay
+   * sürükleme, Fire çekişi ve gelen kartın giriş yolu — üçünde de arkadaki kart
+   * önden açılıyor, yani "0.8 → 1 zıplaması" olmuyor.
    *
-   * YATAY SÜRÜKLEME TERİMİ KALKTI (`|dragX| / SWIPE_THRESHOLD`): o jest de
-   * kartın yana uçuşu da yok (bkz. uçuşun kaldırıldığı not). Beğen/geç'te
-   * arkadaki kart artık hiç açılmıyor — açılmasına gerek de yok, değişim
-   * alevin altında oluyor ve kullanıcı o kareleri görmüyor.
+   * YATAY TERİM GERİ GELDİ (jestle birlikte) ama PAYDASI DEĞİŞTİ: eskiden
+   * kartlar arasında paylaşılan `dragX` vardı, bugün rozet kanalı
+   * (`overlayDragX`) okunuyor. Aynı sayıyı veriyor — jest sürüklemeyi oraya da
+   * yazıyor — ve bir kanal fazla tutmaktan kurtarıyor. BUTON YOLUNDA DA
+   * ÇALIŞIYOR, eskisi gibi: rozet ±150'ye koşarken arkadaki kart açılıyor.
    */
   const underDimStyle = useAnimatedStyle(() => {
     if (isTopCard) return { opacity: 0 };
     const combined = Math.min(
       1,
       Math.max(
+        Math.abs(overlayDragX.value) / SWIPE_THRESHOLD,
         cardPullProgress.value,
         // GİRİŞ DE AÇIYOR: gelen kart yoldayken alttaki kart (yani bir önceki
         // üst kart) sönükleşmemiş olmalı — ekranda görünen o. Gelen kart
@@ -1215,6 +1447,7 @@ export default React.memo(SwipeWrapper, (prev, next) => {
   return (
     prev.profile?.userId === next.profile?.userId &&
     prev.isTopCard === next.isTopCard &&
+    prev.swipeQuotaExhausted === next.swipeQuotaExhausted &&
     prev.fireQuotaExhausted === next.fireQuotaExhausted &&
     prev.superLikesRemaining === next.superLikesRemaining &&
     prev.onSwipe === next.onSwipe &&

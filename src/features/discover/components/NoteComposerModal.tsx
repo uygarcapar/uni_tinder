@@ -19,7 +19,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { noteSchema } from "@/shared/schemas/formSchemas";
 import { Pen } from "@/shared/icons";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, { useAppModalScrollHost } from "@/shared/components/AppModal";
 import SFIcon from "@/shared/components/SFIcon";
 import NoteGlyph from "@/shared/components/NoteGlyph";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
@@ -543,7 +543,12 @@ export default function NoteComposerModal({
 }: NoteComposerModalProps) {
   const { t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
-  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
+  // ⚠️ Scroll hattı DIŞARIDA kuruluyor ve modal'a da veriliyor: hook onu
+  // context'ten okuyor ama Provider AppModal'ın İÇİNDE, bu bileşen ise modal'ı
+  // RENDER EDEN taraf — context null geliyordu ve hook sessizce hiçbir şey
+  // yapmıyordu (gerekçenin tamamı `useAppModalScrollHost`un başında).
+  const scrollHost = useAppModalScrollHost();
+  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField(24, scrollHost);
   // Sheet kapanırken `target` null'a düşüyor; başlık son karede boşalmasın diye
   // son geçerli hedef tutuluyor (kapanış animasyonu boyunca çiziliyor).
   const lastTarget = useRef<NoteTarget | null>(null);
@@ -628,6 +633,8 @@ export default function NoteComposerModal({
       // kalıp içerik alanı kısalıyor ve buton ancak scroll'la çıkıyordu —
       // içeriği klavyeyle birlikte tam sığmadığında altta kalabiliyordu.
       keyboardBehavior="interactive"
+      // Input'un klavyeye hizalanmasının geçtiği hat (bkz. yukarıdaki not).
+      scrollHost={scrollHost}
       closeButton={false}
       contentContainerStyle={{ paddingTop: 28, paddingBottom: 28 }}
     >

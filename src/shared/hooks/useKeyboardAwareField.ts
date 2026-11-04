@@ -2,7 +2,10 @@ import { useCallback, useContext, useEffect, useRef } from "react";
 import { Dimensions } from "react-native";
 import { runOnJS } from "react-native-reanimated";
 import { useGenericKeyboardHandler } from "react-native-keyboard-controller";
-import { AppModalScrollContext } from "@/shared/components/AppModal";
+import {
+  AppModalScrollContext,
+  type AppModalScrollHost,
+} from "@/shared/components/AppModal";
 import { resolveScroller } from "@/shared/hooks/useAppModalScroll";
 
 /**
@@ -20,6 +23,18 @@ import { resolveScroller } from "@/shared/hooks/useAppModalScroll";
  * Ölçüm input yerine sarmalayan View üzerinden yapılır — RNGH TextInput'un
  * ref'i measure API'sini garanti etmiyor, View her zaman veriyor.
  *
+ * ⚠️ ANCHOR = BİR ALAN, hepsi değil. `anchorRef` birden çok alanı (örn. bütün
+ * prompt slotlarını) sarıyorsa hesap yanlış olur: ölçülen kutunun ALT kenarı
+ * klavyeye yaslanır, yani odaktaki alan odağın altındaki slotların yüksekliği
+ * kadar YUKARIDA kalır — üstteki bir slot düzenlenirken ekranın dışına bile
+ * çıkabilir. Çok alanlı listelerde `onFocus`/`onBlur`a o alanın düğümü
+ * geçilir (`onFocus(node)`); hook o düğümü ölçer, anchor yalnız yedektir.
+ *
+ * ⚠️ SCROLL HATTI: context Provider AppModal'ın İÇİNDE. Hook'u modal'ı RENDER
+ * EDEN bileşende çağırıyorsan context null gelir ve hook sessizce hiçbir şey
+ * yapmaz — o durumda hattı `useAppModalScrollHost()` ile dışarıda kurup hem
+ * modal'a (`scrollHost`) hem buraya (ikinci argüman) ver.
+ *
  * Zamanlama: keyboard-controller'ın `onStart`'ı klavye animasyonunun başında
  * hedef yükseklikle geliyor → scroll klavyeyle aynı anda başlar ("hemen"),
  * ScrollView'ın animated scroll'u da onu yumuşak taşır ("yavaşça").
@@ -29,9 +44,16 @@ import { resolveScroller } from "@/shared/hooks/useAppModalScroll";
  * çıkıyor) ve sheet klavye davranışını — içerik yüksekliğini klavye kadar
  * kısaltmayı — tamamen atlıyor.
  */
-export function useKeyboardAwareField(gap = 24) {
-  const ctx = useContext(AppModalScrollContext);
+export function useKeyboardAwareField(
+  gap = 24,
+  host?: AppModalScrollHost | null,
+) {
+  const inherited = useContext(AppModalScrollContext);
+  const ctx = host ?? inherited;
   const anchorRef = useRef<any>(null);
+  // Odaktaki alanın KENDİ düğümü — `onFocus(node)` ile bildirilir. Yoksa
+  // anchor ölçülür (tek alanlı kullanım).
+  const targetRef = useRef<any>(null);
   const keyboardHeight = useRef(0);
   const isFocused = useRef(false);
   const recheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,8 +70,15 @@ export function useKeyboardAwareField(gap = 24) {
   // gürültüsü yüzünden gereksiz ikinci animasyon tetiklenmesin.
   const reveal = useCallback(
     (height: number, tolerance: number) => {
-      const node = anchorRef.current;
+      const node = targetRef.current ?? anchorRef.current;
       const scroller = resolveScroller(ctx?.scrollRef.current);
+      if (__DEV__ && !ctx) {
+        console.warn(
+          "[useKeyboardAwareField] scroll hattı yok: hook AppModal'ın " +
+            "children'ı DIŞINDA çağrılmış olabilir. useAppModalScrollHost() ile " +
+            "hattı dışarıda kurup hem <AppModal scrollHost=…> hem de bu hook'a ver.",
+        );
+      }
       if (height <= 0 || !node?.measureInWindow || !scroller) return;
 
       node.measureInWindow((_x: number, y: number, _w: number, h: number) => {
@@ -112,17 +141,37 @@ export function useKeyboardAwareField(gap = 24) {
     [handleKeyboardStart, handleKeyboardEnd],
   );
 
-  const onFocus = useCallback(() => {
-    isFocused.current = true;
-    // Klavye zaten açıksa (başka input'tan geçiş) yeni bir keyboard event'i
-    // gelmez; ölçümü hemen kendimiz yapıyoruz.
-    if (keyboardHeight.current > 0) reveal(keyboardHeight.current, 1);
-  }, [reveal]);
+  // `node`: odaklanan alanın ölçülebilir düğümü (çok alanlı listelerde ŞART,
+  // bkz. başlıktaki "ANCHOR = BİR ALAN" notu). Doğrudan bir TextInput'un
+  // `onFocus`una bağlandığında argüman native event olur — `measureInWindow`u
+  // olmadığı için yok sayılır ve anchor ölçülür.
+  const onFocus = useCallback(
+    (node?: any) => {
+      targetRef.current = node?.measureInWindow ? node : null;
+      isFocused.current = true;
+      // Klavye zaten açıksa (başka input'tan geçiş) yeni bir keyboard event'i
+      // gelmez; ölçümü hemen kendimiz yapıyoruz.
+      if (keyboardHeight.current > 0) reveal(keyboardHeight.current, 1);
+    },
+    [reveal],
+  );
 
-  const onBlur = useCallback(() => {
-    isFocused.current = false;
-    clearRecheck();
-  }, [clearRecheck]);
+  const onBlur = useCallback(
+    (node?: any) => {
+      // GEÇ GELEN BLUR: `keyboardShouldPersistTaps="handled"` altında bir
+      // alandan diğerine dokunmak eski alanı o dokunuşta blur ETMİYOR — blur
+      // ancak odak yeni alana geçtikten SONRA geliyor. O olayı işlersek daha
+      // yeni odağı "kapalı" sayar, doğrulama geçişini (handleKeyboardEnd)
+      // iptal eder ve hedefi kaybederiz. Düğüm bildirildiyse eskimiş blur'u
+      // tanıyıp atlıyoruz.
+      if (node?.measureInWindow && targetRef.current && node !== targetRef.current)
+        return;
+      isFocused.current = false;
+      targetRef.current = null;
+      clearRecheck();
+    },
+    [clearRecheck],
+  );
 
   useEffect(() => clearRecheck, [clearRecheck]);
 

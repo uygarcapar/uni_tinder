@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, { useAppModalScrollHost } from "@/shared/components/AppModal";
 import PromptsEditor, {
   type PromptsEditorHandle,
 } from "@/shared/components/PromptsEditor";
@@ -207,14 +207,23 @@ export default function ModeSetupSheet({
    * üstüne gelecek şekilde kaydırılıyor — profil düzenlemedeki prompt
    * alanlarıyla aynı mekanizma (bkz. useKeyboardAwareField).
    *
-   * Bu sheet'te zaten gereken iki koşul var: input `BottomSheetTextInput`
-   * (aşağıda) ve kap AppModal, yani hook scroll view'ı context'ten bulabiliyor.
+   * Bu sheet'te gereken üç koşul:
+   *
+   * 1. input `BottomSheetTextInput` (aşağıda),
+   * 2. ölçülen kutu ODAKTAKİ SLOT — `PromptsEditor` odakta kendi satırının
+   *    düğümünü geçiyor, anchor yalnız yedek,
+   * 3. ⚠️ SCROLL HATTI DIŞARIDA kuruluyor. Hook context'ten okuyordu ama
+   *    Provider AppModal'ın İÇİNDE: bu bileşen onu RENDER EDEN taraf, yani
+   *    ağaçta provider'ın ÜSTÜNDE kalıyor ve `useContext` null dönüyordu →
+   *    hook hiç kaydırmadan çıkıyordu (hata yok, sessiz). `useAppModalScrollHost`
+   *    aynı hattı ikisine birden veriyor.
    */
+  const scrollHost = useAppModalScrollHost();
   const {
     anchorRef: promptsAnchorRef,
     onFocus: onPromptsFocus,
     onBlur: onPromptsBlur,
-  } = useKeyboardAwareField();
+  } = useKeyboardAwareField(24, scrollHost);
 
   /**
    * ── Kaydırma payı ─────────────────────────────────────────────────────────
@@ -234,29 +243,46 @@ export default function ModeSetupSheet({
    */
   const [promptsFocused, setPromptsFocused] = useState(false);
   const roomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Odaktaki slotun düğümü — geç gelen blur'u tanımak için (aşağıda).
+  const focusedNode = useRef<any>(null);
   const clearRoomTimer = useCallback(() => {
     if (roomTimer.current) {
       clearTimeout(roomTimer.current);
       roomTimer.current = null;
     }
   }, []);
-  const handlePromptsFocus = useCallback(() => {
-    clearRoomTimer();
-    setPromptsFocused(true);
-    onPromptsFocus();
-  }, [clearRoomTimer, onPromptsFocus]);
-  const handlePromptsBlur = useCallback(() => {
-    clearRoomTimer();
-    roomTimer.current = setTimeout(() => {
-      roomTimer.current = null;
-      setPromptsFocused(false);
-    }, 250);
-    onPromptsBlur();
-  }, [clearRoomTimer, onPromptsBlur]);
+  const handlePromptsFocus = useCallback(
+    (node?: any) => {
+      clearRoomTimer();
+      focusedNode.current = node ?? null;
+      setPromptsFocused(true);
+      onPromptsFocus(node);
+    },
+    [clearRoomTimer, onPromptsFocus],
+  );
+  const handlePromptsBlur = useCallback(
+    (node?: any) => {
+      onPromptsBlur(node);
+      // GEÇ GELEN BLUR: slottan slota geçerken yeni odak ESKİ blur'dan önce
+      // geliyor. Gecikmeli kapanış tek başına yetmiyordu — timer'ı iptal
+      // edecek focus çoktan geçmiş oluyor, 250ms sonra pay yeni slot
+      // düzenlenirken düşüyor ve scroll geri çekiliyordu. Düğüm eşleşmiyorsa
+      // bu olay eskimiş demektir, paya dokunmuyoruz.
+      if (node && focusedNode.current && node !== focusedNode.current) return;
+      clearRoomTimer();
+      roomTimer.current = setTimeout(() => {
+        roomTimer.current = null;
+        focusedNode.current = null;
+        setPromptsFocused(false);
+      }, 250);
+    },
+    [clearRoomTimer, onPromptsBlur],
+  );
   // Sheet kapanınca pay da gitsin (bir sonraki açılış temiz başlasın).
   useEffect(() => {
     if (!visible) {
       clearRoomTimer();
+      focusedNode.current = null;
       setPromptsFocused(false);
     }
   }, [visible, clearRoomTimer]);
@@ -297,6 +323,9 @@ export default function ModeSetupSheet({
        * kısaltıyor — kaydırılabilir alanın dibi tam klavyenin üstü.
        */
       keyboardBehavior="extend"
+      // Scroll hattı: prompt alanının klavyeye hizalanması buradan geçiyor
+      // (gerekçe `useAppModalScrollHost` çağrısının yanında).
+      scrollHost={scrollHost}
       contentContainerStyle={{ paddingBottom: 28 }}
     >
       <Text

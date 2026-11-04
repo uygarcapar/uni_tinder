@@ -42,9 +42,10 @@ jest.mock('@/shared/components/SFIcon', () => {
     default: ({ name }: any) => React.createElement(View, { testID: `sficon-${name}` }),
   };
 });
-// ⚠️ `AppModalScrollContext` de mock'lanmak ZORUNDA: `useKeyboardAwareField`
-// onu `useContext`e veriyor ve mock'ta yoksa `useContext(undefined)` patlıyor.
-// Değeri null — composer klavye kaydırmasını test etmiyor.
+// ⚠️ `AppModalScrollContext` ve `useAppModalScrollHost` da mock'lanmak ZORUNDA:
+// `useKeyboardAwareField` context'i `useContext`e veriyor (mock'ta yoksa
+// `useContext(undefined)` patlıyor), hattı da composer'ın kendisi kuruyor.
+// İkisi de boş — composer klavye kaydırmasını test etmiyor.
 jest.mock('@/shared/components/AppModal', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -52,6 +53,10 @@ jest.mock('@/shared/components/AppModal', () => {
     __esModule: true,
     SHEET_TOP_RADIUS_LARGE: 44,
     AppModalScrollContext: React.createContext(null),
+    useAppModalScrollHost: () => ({
+      scrollRef: { current: null },
+      scrollY: { value: 0 },
+    }),
     default: ({ visible, children }: any) =>
       visible ? React.createElement(View, { testID: 'app-modal' }, children) : null,
   };

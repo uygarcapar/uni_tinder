@@ -54,8 +54,22 @@ export type CameraRequest = {
    * sonra kırpıcı açılıyor).
    */
   commit?: (shot: CameraShot) => Promise<string | null>;
-  /** Gönder düğmesinin metni — yoksa ortak "Kaydet". */
+  /**
+   * Gönder düğmesinin ERİŞİLEBİLİR adı — yoksa ortak "Kaydet".
+   *
+   * ⚠️ ARTIK EKRANDA YAZMIYOR: düğme yazısız bir ok (gerekçe
+   * CameraCaptureOverlay'deki gönder düğmesinin yanında). Metin yalnız
+   * VoiceOver'a gidiyor; kullanıcıya görünen açıklama `commitHint`.
+   */
   commitLabel?: string;
+  /**
+   * Düğmenin SOLUNDA duran gri açıklama — "karenin nereye gideceği".
+   *
+   * Yazısız ok tek başına hedefi söylemiyor: kampüs yolunda gönderilen şey
+   * kullanıcının kendi okuluna açılıyor ve bu, basmadan önce bilinmesi gereken
+   * tek bilgi. Yoksa satır boş kalır (düğme yine sağda).
+   */
+  commitHint?: string;
 };
 
 export type CameraOutcome =

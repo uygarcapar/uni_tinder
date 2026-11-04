@@ -6,6 +6,7 @@ import {
   SHOP_CARD_WIDTH_2UP,
   SHOP_CARD_WIDTH_3UP,
 } from "@/features/profile/components/ConsumableShopCard";
+import { DEFAULT_APP_MODE, type AppMode } from "@/features/discover/modeTheme";
 
 /**
  * ProfileScreen'in mağaza şeridi: Fire ve Not kartları yan yana, premium'da
@@ -36,9 +37,12 @@ export default function ShopCardsRow({
   /** ProfileScreen'deki `showMembershipCard` — alttaki üyelik kartıyla TEK
    *  bayrak: "abonesin" iki yerde birden yazar ya da hiç yazmaz. */
   showPlusCard = false,
+  /** Seçili mod — yalnız plus kartının zeminini döndürüyor (bkz. PlusCard). */
+  mode = DEFAULT_APP_MODE,
   onPlusPress,
 }: {
   showPlusCard?: boolean;
+  mode?: AppMode;
   onPlusPress?: () => void;
 }) {
   // Üç kartlık şeritte kartlar bir tık dar: üçüncüsünün kenarı ekrandan sarkıp
@@ -65,7 +69,9 @@ export default function ShopCardsRow({
         paddingBottom: 16,
       }}
     >
-      {showPlusCard && <PlusCard cardWidth={cardWidth} onPress={onPlusPress} />}
+      {showPlusCard && (
+        <PlusCard cardWidth={cardWidth} mode={mode} onPress={onPlusPress} />
+      )}
       <FireCard cardWidth={cardWidth} />
       <NoteCard cardWidth={cardWidth} />
     </ScrollView>

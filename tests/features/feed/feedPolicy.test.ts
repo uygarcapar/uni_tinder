@@ -16,7 +16,6 @@
 
 import {
   anonymousGate,
-  anonymousLabelKey,
   composeGate,
   dedupeById,
   postPresentation,
@@ -281,19 +280,9 @@ describe('filtre kapıları', () => {
   });
 });
 
-describe('anonymousLabelKey', () => {
-  it('kategori varsa cinsiyetli anahtar', () => {
-    expect(anonymousLabelKey('Women')).toBe('feed.anonymous.Women');
-    expect(anonymousLabelKey('Men')).toBe('feed.anonymous.Men');
-    expect(anonymousLabelKey('NonBinary')).toBe('feed.anonymous.NonBinary');
-  });
-
-  it('kategori null/bilinmeyen → sade "Anonim"', () => {
-    expect(anonymousLabelKey(null)).toBe('feed.anonymous.plain');
-    expect(anonymousLabelKey(undefined)).toBe('feed.anonymous.plain');
-    expect(anonymousLabelKey('Other' as any)).toBe('feed.anonymous.plain');
-  });
-});
+// `anonymousLabelKey` KALDIRILDI (istek): anonim etiketi artık sabit "Anonim".
+// Kartın cinsiyet yazmadığı FeedPostCard.test.tsx'te kilitli — burada eşleniği
+// yok çünkü geriye saf bir karar kalmadı.
 
 describe('dedupeById — İLK görülen kazanır', () => {
   it('tekrar eden id ikinci kez eklenmez', () => {

@@ -4,6 +4,7 @@ import { BlurView } from "expo-blur";
 import { colors as theme } from "@/shared/theme/colors";
 import { ultraThinBlurTint } from "@/shared/theme/blur";
 import { hasLiquidGlassSurface } from "@/shared/theme/glass";
+import { DISCOVER_PERF_PROBE } from "@/features/discover/perfProbe";
 
 /**
  * Açık kartın ZEMİNİ — ana fotoğrafın blur'lanmış hali.
@@ -171,7 +172,10 @@ const BACKDROP_BLUR_SCREEN_RADIUS =
  * RENDER ANINDA ÇAĞRILIYOR, modül seviyesinde sabitlenmiyor: bayrağın kaynağı
  * native modülün kendi sabiti, modül import sırasına bağlanmasın.
  */
-const blurViewPath = (): boolean => hasLiquidGlassSurface();
+const blurViewPath = (): boolean =>
+  // TEST 1 (geçici teşhis, bkz. discover/perfProbe.ts): bayrak açıkken tüm
+  // sürümler eski yola düşüyor ve ağaçta hiç efekt view kalmıyor.
+  !DISCOVER_PERF_PROBE.killBackdropBlur && hasLiquidGlassSurface();
 
 /**
  * ── ÖLÇEK: ÇERÇEVEYİ DOLDURAN EN KÜÇÜK BÜYÜTME ────────────────────────────

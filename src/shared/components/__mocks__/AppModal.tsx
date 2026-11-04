@@ -5,6 +5,14 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 // bu modülden import ediyor. Mock'ta da var olmalı, yoksa useContext patlar.
 export const AppModalScrollContext = React.createContext<any>(null);
 
+// Gerçek modüldeki scroll hattı kurucusu — sheet'i render eden bileşenler
+// (ModeSetupSheet, NoteComposerModal, FeedComposerSheet) çağırıyor. Mock'ta
+// scroll yok; şekli aynı, içi boş bir hat dönüyor.
+export const useAppModalScrollHost = () => {
+  const scrollRef = React.useRef<any>(null);
+  return React.useMemo(() => ({ scrollRef, scrollY: { value: 0 } }), []);
+};
+
 // Gerçek modüldeki köşe yarıçapı sabiti — tüketiciler (FilterModal,
 // ProfileEditModal) bunu prop olarak geçiriyor.
 export const SHEET_TOP_RADIUS_LARGE = 44;

@@ -7,6 +7,8 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import uiBus from "@/shared/services/uiBus";
+import i18n from "@/shared/i18n";
+import { showInfoToast } from "@/shared/services/toaster";
 import { FEED_CODES } from "@/shared/constants/responseCodes";
 import profileService from "@/features/profile/profileService";
 // Ana fotoğraf sırası (isMainPhoto → ilk foto → profileImageUrl) ve sürüm
@@ -577,12 +579,31 @@ export function useTogglePostLike() {
     onError: (e, { postId }, ctx) => {
       ctx?.posts.forEach(([k, d]) => qc.setQueryData(k, d));
       ctx?.mine.forEach(([k, d]) => qc.setQueryData(k, d));
+      const code = feedErrorCode(e);
       // Gönderi gitmiş (410) → geri almakla kalmayıp satırı düşür.
-      if (feedErrorCode(e) === FEED_CODES.POST_GONE) {
+      if (code === FEED_CODES.POST_GONE) {
         removePostFromCaches(qc, postId);
       }
-      // UT-7330 (kendi gönderini beğenemezsin) sessiz: buton `isMine`da hiç
-      // çizilmiyor, buraya düşmek bayat bir karttan gelir.
+      /**
+       * UT-7330 (kendi gönderini beğenemezsin) ARTIK SESSİZ DEĞİL.
+       *
+       * Kart `isMine`da butonu kilitlemeyi bıraktı (bkz. FeedPostCard >
+       * beğeni satırı), yani bu dal artık gerçekten basılabilir bir yol.
+       * Sessiz bırakılsaydı iyimser kalp dolup sebepsizce geri sönerdi ve
+       * kullanıcı bunu "beğeni tutmuyor" diye okurdu — reddedildiğini
+       * SÖYLEMEK, reddi gizlemekten iyi.
+       *
+       * ⚠️ Sunucunun `message`'ı KAZANIR (composer hata makinesiyle aynı
+       * kural): kullanıcının dilinde ve kural değişince birlikte güncelleniyor.
+       *
+       * Sunucu bu kısıtı kaldırdığında burası kendiliğinden ölü kalır.
+       */
+      if (code === FEED_CODES.OWN_POST_LIKE) {
+        showInfoToast({
+          message:
+            feedErrorMessage(e) ?? i18n.t("feed.codes.UT-7330"),
+        });
+      }
     },
     // Sunucu gerçeği nihai: PUT idempotent olduğu için iki hızlı basışta bizim
     // tahminimiz sapabilir.

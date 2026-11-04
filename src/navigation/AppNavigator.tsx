@@ -1095,6 +1095,11 @@ export default function AppNavigator() {
         // Eşleşen kişi artık "gelen beğeni" değil — rozet Likes ekranı mount
         // olmasa da düşsün (ekran kendi listesini uiBus'tan budar).
         dispatch(removeWhoLikedMe(m?.matchedUserId));
+        // TERS YÖN: eşleştikten sonra kartta HİÇBİR aksiyon olmamalı
+        // (feedCardActions > eşleşme kapısı). Bayat `isMatched:false` kart
+        // beş dakika daha Fire/not çizer ve kullanıcı zaten sohbet kanalı
+        // açık birine bakiye yakar.
+        queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
         uiBus.emit('match', m);
         if (m.conversationId) {
           realtimeService.joinConversation(m.conversationId).catch(() => {});
@@ -1130,6 +1135,18 @@ export default function AppNavigator() {
           return;
         }
         dispatch(addWhoLikedMe(payload?.likerUserId));
+        /**
+         * Akış yazar kartı BAYATLADI: bu kişinin gönderisine girildiğinde
+         * kabul/reddet çizilmeli. Kart `staleTime: 5dk` ile cache'li
+         * (feedQueries > useFeedAuthorProfile), yani sunucunun `hasLikedMe`
+         * kolu beş dakika boyunca "hayır" demeye devam ederdi.
+         *
+         * Yerel `whoLikedMeIds` kolu (yukarıdaki `addWhoLikedMe`) bu boşluğu
+         * ÇOĞU HÂLDE kapatıyor ama hepsini değil: kart yalnız `cardMode ===
+         * selectedMode` iken o kümeye bakıyor (bkz. FeedScreen >
+         * authorHasLikedMe). Tazeleme iki kolu da hizalıyor.
+         */
+        queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
         uiBus.emit('incomingLike', payload);
         scheduleLikesReconcile();
 
@@ -2056,6 +2073,43 @@ export default function AppNavigator() {
     });
     return unsub;
   }, []);
+
+  /**
+   * ── AKSİYON REDDİ (`swipeRejected`) — GLOBAL DİNLEYİCİ ────────────────────
+   *
+   * ⚠️ BURADA olmak zorunda, Keşif'te DEĞİL. Olayı yalnız DiscoverScreen
+   * dinliyordu ve o sekme `lazy: true` (bkz. TabNavigator) — Beğeniler'den,
+   * Akış'tan ya da Kampüs'ten atılan bir aksiyon reddedilince kullanıcı hiçbir
+   * geri bildirim görmüyordu: kart sessizce düşüyor, "bir şey oldu mu?" diye
+   * bakakalıyordu. `LikerSwipeModal > fireBlocked`in notu bu boşluğu bir kez
+   * istemci kapısıyla yamalamıştı; asıl çözüm dinleyiciyi hep ayakta olan
+   * yere taşımak.
+   *
+   * Mesaj NÖTR: UT-2305/2309 karşı tarafın modunu ya da cinsiyetini ifşa
+   * etmemeli (backend sözleşmesi). Sunucu mesajı önce — kurallar sunucuda
+   * değişiyor, istemci kopyası bayatlıyor; kod tanınmıyorsa jenerik metin.
+   *
+   * Kart GERİ KONMUYOR ve bu olayın işi değil: desteler iyimser ilerliyor,
+   * kartı geri koymak kullanıcıyı aynı reddedilecek kişiyle tekrar
+   * karşılaştırırdı (bkz. MODE_DROP_CARD_CODES).
+   */
+  useEffect(
+    () =>
+      uiBus.on('swipeRejected', (payload: any) => {
+        const code = payload?.code as string | undefined;
+        showInfoToast({
+          message:
+            payload?.message ??
+            (code
+              ? t(`discover.mode.errors.${code}`, {
+                  defaultValue: t('common.somethingWentWrong'),
+                })
+              : t('common.somethingWentWrong')),
+          variant: 'error',
+        });
+      }),
+    [t],
+  );
 
   // Resume flow: check if user has a valid in-progress registration
   useEffect(() => {

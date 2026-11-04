@@ -41,6 +41,8 @@ import {
   isNearBottom,
 } from "./cardScrollTuning";
 import { PREVIEW_COVER_ASPECT } from "./cardPreviewGeometry";
+import { DISCOVER_PERF_PROBE } from "@/features/discover/perfProbe";
+import { probeCounters } from "@/features/discover/PerfProbeOverlay";
 
 // Native gesture varsa GestureDetector ile sarar (SwipeWrapper ile simultaneous için);
 // yoksa (PreviewModal gibi standalone kullanımlarda) düz render eder.
@@ -1994,6 +1996,14 @@ export default function SwipeCard({
   onCoverReady,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
+  // GEÇİCİ teşhis sayacı (bkz. perfProbe.ts > overlay): canlı/toplam kart.
+  useEffect(() => {
+    probeCounters.alive += 1;
+    probeCounters.total += 1;
+    return () => {
+      probeCounters.alive -= 1;
+    };
+  }, []);
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
@@ -3221,8 +3231,11 @@ export default function SwipeCard({
     0,
     COVER_NAME_BOTTOM + coverBottomInset - COVER_STICKY_EDGE_GAP,
   );
+  // TEST 2 (geçici teşhis, bkz. discover/perfProbe.ts): bayrak açıkken sticky
+  // transform kimliğe sabitleniyor — katmanlar duruyor, her-kare yazım gidiyor.
+  const stickyPinned = previewMode || DISCOVER_PERF_PROBE.killCoverSticky;
   const coverStickyStyle = useAnimatedStyle(() => {
-    if (previewMode) return { transform: [{ translateY: 0 }] as const };
+    if (stickyPinned) return { transform: [{ translateY: 0 }] as const };
     const y = Math.max(0, scrollY?.value ?? 0);
     return {
       transform: [{ translateY: Math.min(y, coverStickyMax) }] as const,
@@ -4621,8 +4634,16 @@ export default function SwipeCard({
                         gap: 6,
                       }}
                     >
+                      {/* İsim ve yaş AYRI Text: tek Text olduğunda uzun isim
+                          satırı taşırıyordu — `flexShrink` tek parça metni
+                          kısaltmıyor, yalnız sarmasına izin veriyor, tek
+                          kelimelik uzun isimde o da olmuyor. Kısalan YALNIZ
+                          isim; yaş (ve rozetler) flexShrink 0 ile hep görünür
+                          kalıyor, yani "Aleyna Nur Büyükşahi…, 23". */}
                       <Text
                         className="font-bold"
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                         // Punto/satır className'de DEĞİL: rozetin ölçüsü bu
                         // sayıdan türüyor (bkz. PremiumBadge), Tailwind sınıfına
                         // gömülü kalsa rozet sessizce ayrışırdı. Kapak ismi
@@ -4639,8 +4660,24 @@ export default function SwipeCard({
                         }}
                       >
                         {profile.displayName}
-                        {ageSuffix}
                       </Text>
+                      {ageSuffix !== "" && (
+                        <Text
+                          className="font-bold"
+                          numberOfLines={1}
+                          style={{
+                            flexShrink: 0,
+                            color: theme.onMedia,
+                            fontSize: CARD_NAME_FONT,
+                            lineHeight: CARD_NAME_LINE,
+                            // İsimle arasındaki gap'i yut: ", 23" ismin
+                            // devamı gibi okunmalı, ayrı bir alan değil.
+                            marginLeft: -6,
+                          }}
+                        >
+                          {ageSuffix}
+                        </Text>
+                      )}
                       {/* Foto doğrulama rozeti — premium rozetinden AYRI bir
                           işaret, `isVerified`e de katılmıyor. Alan gelmezse
                           (backend'in bu sürümü yok) hiçbir şey çizilmiyor.

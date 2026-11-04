@@ -1,7 +1,6 @@
 import { PAYWALL_TYPES } from "@/shared/constants/responseCodes";
 import { parseUtc } from "@/shared/utils/dateUtc";
 import type {
-  FeedAuthorCategory,
   FeedMeDto,
   FeedPostDto,
   FeedPostStatus,
@@ -198,21 +197,15 @@ export function kindFilterGate(me?: FeedMeDto | null): FilterGate {
 }
 
 /**
- * Anonim gönderinin başlık etiketi anahtarı: "Anonim · Kadın".
- * `authorCategory` null ise sadece "Anonim".
+ * `anonymousLabelKey` KALDIRILDI (istek): anonim gönderinin etiketi artık
+ * HER ZAMAN sade "Anonim".
+ *
+ * ⚠️ `FeedPostDto.authorCategory` wire'da DURUYOR ama istemci onu hiçbir yerde
+ * ÇİZMİYOR. Eski etiket "Anonim · Kadın" diyordu; anonimliğin tek vaadi "kim
+ * olduğum görünmesin" iken cinsiyeti basmak o vaadin yarısını geri alıyordu —
+ * küçük bir akışta "kadın + bu konu + bu saat" üçlüsü tek başına teşhis edici.
+ * Alanı tekrar okumadan önce bu gerekçe çürütülmeli.
  */
-export function anonymousLabelKey(
-  category: FeedAuthorCategory | null | undefined,
-): string {
-  switch (category) {
-    case "Men":
-    case "Women":
-    case "NonBinary":
-      return `feed.anonymous.${category}`;
-    default:
-      return "feed.anonymous.plain";
-  }
-}
 
 /**
  * Id'ye göre tekilleştirme — İLK görülen kazanır.

@@ -51,6 +51,16 @@ export const feedKeys = {
   /** ⚠️ LikesScreen'in "Akış yanıtları" sekmesi de BU anahtarı kullanır — tek cache. */
   repliesReceived: ["feed", "replies", "received"] as const,
   repliesCount: ["feed", "replies", "count"] as const,
+  /**
+   * TÜM yazar kartı sorgularının ortak kökü (`postsRoot` deseni).
+   *
+   * Canlı olaylar (`IncomingLike`, `MatchNotification`) hangi gönderinin kartı
+   * açıktı bilmiyor — hatta genelde hiçbiri açık değil, olay kartın BİR
+   * SONRAKİ açılışını etkiliyor. Kart `staleTime: 5dk` ile cache'li olduğu
+   * için kökten invalidate edilmezse bayat "beni beğenmiş / eşleştik" cevabı
+   * beş dakika boyunca yanlış buton çizdiriyor.
+   */
+  authorProfileRoot: ["feed", "authorProfile"] as const,
   authorProfile: (postId: string) => ["feed", "authorProfile", postId] as const,
   replierProfile: (replyId: string) =>
     ["feed", "replierProfile", replyId] as const,

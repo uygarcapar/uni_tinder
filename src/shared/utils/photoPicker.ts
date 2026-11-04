@@ -401,8 +401,10 @@ export type SendShotResult = { sent: boolean; error: string | null };
  */
 export const captureAndSendPhoto = async (options: {
   facing?: 'front' | 'back';
-  /** Gönder düğmesinin metni — kampüste "Paylaş". */
+  /** Gönder düğmesinin erişilebilir adı — kampüste "Paylaş". */
   commitLabel?: string;
+  /** Düğmenin solundaki gri açıklama — kampüste "… gönder" (bkz. köprü). */
+  commitHint?: string;
   commit: (shot: RawShot) => Promise<string | null>;
 }): Promise<SendShotResult> => {
   await ensureCameraPermission();
@@ -410,6 +412,7 @@ export const captureAndSendPhoto = async (options: {
   const outcome = await presentCameraCapture({
     facing: options.facing,
     commitLabel: options.commitLabel,
+    commitHint: options.commitHint,
     commit: (shot) => {
       warnIfFrameInflated(shot.width, shot.height);
       return options.commit({

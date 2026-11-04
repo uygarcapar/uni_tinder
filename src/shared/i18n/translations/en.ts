@@ -2521,9 +2521,6 @@ const en = {
 
     anonymous: {
       plain: 'Anonymous',
-      Men: 'Anonymous · Man',
-      Women: 'Anonymous · Woman',
-      NonBinary: 'Anonymous · Non-binary',
     },
 
     sort: {
@@ -2762,6 +2759,9 @@ const en = {
       title: 'Your campus moment',
       hint: 'You can post once a day and you cannot change it.',
       share: 'Share',
+      // Camera screen, left of the arrow button: where the frame is going.
+      // The arrow carries no text, so this line is the only target label.
+      sendTo: 'Send moment to {{university}}',
       sharing: 'Sharing…',
       removeConfirmTitle: 'Remove your moment',
       removeConfirmBody: 'If you remove it, you cannot post again today.',
