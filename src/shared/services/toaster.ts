@@ -1,6 +1,8 @@
 import { Easing } from 'react-native';
 import { Notifier } from 'react-native-notifier';
 import i18n from '@/shared/i18n';
+import { isAppMode, modeTitleKey } from '@/features/discover/modeTheme';
+import { readAppModeFor, writeAppMode } from '@/features/discover/useAppMode';
 import { navigationRef } from '@/shared/services/navigationRef';
 import MessageToast, { MessageToastProps } from '@/shared/components/toaster/MessageToast';
 import LikeToast, { LikeToastProps } from '@/shared/components/toaster/LikeToast';
@@ -54,11 +56,18 @@ const BANNER_MOTION = {
  * `hideNotification()` çağırmaya gerek yok.
  */
 
-type ShowMessageToastArg = MessageToastProps & {
+type ShowMessageToastArg = Omit<MessageToastProps, 'modeLabel'> & {
   conversationId: string;
   partnerUserId?: string;
   /** Unmatch edilmiş sohbette composer kapalı açılsın (bkz. ChatScreen). */
   isActive?: boolean;
+  /**
+   * Konuşmanın modu — yerel `conv` satırından, ham (payload mode TAŞIMIYOR).
+   * `modeLabel` dışarıdan alınmaz, BURADA hesaplanır: geçerli ve seçili moddan
+   * farklıysa etiket; boş/çöp → etiket de devir de yok (`undefined` ≠ Dating).
+   */
+  mode?: string | null;
+  selfUserId?: string | null;
 };
 
 export function showMessageToast({
@@ -69,9 +78,22 @@ export function showMessageToast({
   conversationId,
   partnerUserId,
   isActive = true,
+  mode,
+  selfUserId,
 }: ShowMessageToastArg) {
+  const convMode = isAppMode(mode) ? mode : null;
+  const modeLabel =
+    convMode && convMode !== readAppModeFor(selfUserId)
+      ? i18n.t(modeTitleKey(convMode))
+      : null;
+
   const goToChat = () => {
     if (!navigationRef.isReady()) return;
+    // MOD DEVRİ navigate'ten önce (Like push'ındaki fıkranın aynısı): sohbet
+    // öbür modunsa seçimi oraya çek ki geri dönüşte liste süzgeci sohbeti
+    // göstersin. KOŞULSUZ: aynı modsa `writeAppMode` zaten no-op, ve toast
+    // ekrandayken kullanıcı mod değiştirdiyse tap yine OLAYIN moduna indirir.
+    if (convMode) writeAppMode(selfUserId, convMode);
     navigationRef.navigate('Chat', {
       conversationId,
       partner: partnerUserId
@@ -83,7 +105,13 @@ export function showMessageToast({
 
   Notifier.showNotification({
     Component: MessageToast,
-    componentProps: { senderName, photoUrl, preview, voiceDuration } as MessageToastProps,
+    componentProps: {
+      senderName,
+      photoUrl,
+      preview,
+      voiceDuration,
+      modeLabel,
+    } as MessageToastProps,
     onPress: goToChat,
     swipeEnabled: true,
     ...BANNER_MOTION,
