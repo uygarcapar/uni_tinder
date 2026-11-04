@@ -88,6 +88,7 @@ jest.mock('@/shared/components/AppModal', () => {
       children,
       actionLabel,
       onAction,
+      actionDisabled,
       leftLabel,
       onLeftPress,
     }: any) =>
@@ -100,8 +101,26 @@ jest.mock('@/shared/components/AppModal', () => {
             ),
             React.createElement(
               TouchableOpacity,
-              { key: 'action', testID: 'apply', onPress: onAction },
+              {
+                key: 'action',
+                testID: 'apply',
+                // Gerçek AppModal `actionDisabled`ı butonun `disabled`ına
+                // veriyor (AppModal.tsx:830). Mock bunu yutarsa kilitli buton
+                // testte basılabilir görünür ve guard'ı doğrulamak imkânsız
+                // olur.
+                disabled: actionDisabled,
+                onPress: actionDisabled ? undefined : onAction,
+              },
               React.createElement(Text, null, actionLabel),
+            ),
+            // Kilit durumu AYRI bir düğümde: TouchableOpacity'nin `disabled`ı
+            // host düğüme bu adla ulaşmıyor, `toBeFalsy()` ile sınamak her
+            // durumda geçen sahte bir test üretiyordu. Burada sınanan şey
+            // FilterModal'ın GERÇEKTEN ne gönderdiği.
+            React.createElement(
+              Text,
+              { key: 'action-disabled', testID: 'apply-disabled' },
+              String(!!actionDisabled),
             ),
             React.createElement(View, { key: 'body' }, children),
           ])
@@ -201,6 +220,10 @@ jest.mock('@/shared/queries/commonQueries', () => {
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import FilterModal from '@/features/discover/components/FilterModal';
+// Bölüm başlığı anahtardan okunuyor, sabit metinden değil: başlık metni bu
+// dalda ayrıca düzeltiliyor ("İlgi Alanı" hobilerle karışıyordu) ve test o
+// düzeltmeye bağlı olmamalı.
+import trDict from '@/shared/i18n/translations/tr';
 
 // Backend'in dealbreakerCapableFields listesi (2026-08-17 sözleşmesi).
 // Dil ve dini görüş bu sürümle eklendi; `UsagePurpose` ise "kullanım amacı"
@@ -250,7 +273,7 @@ const baseFilters = {
 
 const renderModal = (filters: any, opts: any = {}) => {
   const onSave = jest.fn();
-  render(
+  const view = render(
     <FilterModal
       visible
       onClose={jest.fn()}
@@ -258,9 +281,24 @@ const renderModal = (filters: any, opts: any = {}) => {
       isPremium={opts.isPremium ?? true}
       onSave={onSave}
       saving={false}
+      mode={opts.mode}
     />,
   );
-  return { onSave };
+  // Mod değişimini AYNI mount içinde sınamak için: remount bölümün geri
+  // gelmesini zaten garanti ederdi, sınanan şey canlı prop değişimi.
+  const setMode = (mode: string) =>
+    view.rerender(
+      <FilterModal
+        visible
+        onClose={jest.fn()}
+        filters={filters}
+        isPremium={opts.isPremium ?? true}
+        onSave={onSave}
+        saving={false}
+        mode={mode}
+      />,
+    );
+  return { onSave, setMode };
 };
 
 // i18n gerçek sözlükle 'tr' başlatılıyor (jest.setup.ts) — assert'ler
@@ -964,5 +1002,93 @@ describe('FilterModal — mesafe sınırı anahtarı', () => {
     // Ekran da anında güncellenmeli: sıfırlama başarısız olursa modal açık
     // kalıyor ve kullanıcı anahtarı yeni haliyle görmeli.
     expect(screen.getByTestId(SWITCH).props.value).toBe(false);
+  });
+});
+
+/**
+ * MOD FARKINDALIĞI — "kiminle ilgileniyorsun" bölümü yalnız Dating'in.
+ *
+ * Friends modunda eşleşme kuralı aynı cinsiyet ve değeri sunucu türetip
+ * kilitliyor. Bölümün orada çizilmesi iki ayrı hata üretiyordu: kullanıcıya
+ * modun tanımını gevşetebileceğini söylüyordu, VE filtreler hesap seviyesinde
+ * TEK olduğu için (swipeKeys.filters, uçta mod yok) Friends'te yapılan bir
+ * seçim Dating destesini de daraltıyordu.
+ *
+ * `interestedInEmpty` guard'ı bugün görünmüyor çünkü değer dolu geliyor;
+ * bölüm kalkınca o sessiz bağımlılık açığa çıkıyor — Friends'te boş değer
+ * Uygula'yı ve Sıfırla'yı kilitlememeli.
+ */
+describe('FilterModal — mod farkındalığı', () => {
+  const TITLE = trDict.discover.filters.interestedIn.title;
+
+  it('Friends modunda interestedIn bölümü çizilmiyor', () => {
+    renderModal(baseFilters, { mode: 'Friends' });
+
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  it('Dating modunda bölüm çiziliyor', () => {
+    renderModal(baseFilters, { mode: 'Dating' });
+
+    expect(screen.queryByText(TITLE)).not.toBeNull();
+  });
+
+  it('mod verilmediğinde bölüm çiziliyor (eski çağıranlar bozulmuyor)', () => {
+    renderModal(baseFilters);
+
+    expect(screen.queryByText(TITLE)).not.toBeNull();
+  });
+
+  it('Friends modunda interestedIn boşken Uygula kilitli DEĞİL', () => {
+    const { onSave } = renderModal(
+      { ...baseFilters, interestedIn: [] },
+      { mode: 'Friends' },
+    );
+
+    expect(screen.getByTestId('apply-disabled').props.children).toBe('false');
+    fireEvent.press(screen.getByTestId('apply'));
+    expect(onSave).toHaveBeenCalled();
+  });
+
+  it('Dating modunda interestedIn boşken Uygula kilitli', () => {
+    const { onSave } = renderModal(
+      { ...baseFilters, interestedIn: [] },
+      { mode: 'Dating' },
+    );
+
+    expect(screen.getByTestId('apply-disabled').props.children).toBe('true');
+    fireEvent.press(screen.getByTestId('apply'));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('Friends modunda interestedIn boşken Sıfırla çalışıyor', () => {
+    const { onSave } = renderModal(
+      { ...baseFilters, interestedIn: [] },
+      { mode: 'Friends' },
+    );
+
+    fireEvent.press(screen.getByTestId('reset'));
+
+    expect(onSave).toHaveBeenCalled();
+  });
+
+  it('Friends kaydı Dating tercihini olduğu gibi taşıyor', () => {
+    // Bölüm görünmediği için kullanıcı değeri değiştiremiyor; yine de
+    // payload'da gitmeli — aksi hâlde Friends'te filtre kaydetmek Dating
+    // tercihini sıfırlardı.
+    const { onSave } = renderModal(baseFilters, { mode: 'Friends' });
+
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].interestedIn).toEqual([1]);
+  });
+
+  it('mod canlı değişince bölüm geri geliyor', () => {
+    const { setMode } = renderModal(baseFilters, { mode: 'Friends' });
+    expect(screen.queryByText(TITLE)).toBeNull();
+
+    setMode('Dating');
+
+    expect(screen.queryByText(TITLE)).not.toBeNull();
   });
 });

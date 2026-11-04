@@ -1715,8 +1715,22 @@ export default function FilterModal({
   isPremium: isPremiumProp,
   onSave,
   saving,
+  mode,
 }: any) {
   const { t, i18n } = useTranslation();
+
+  /**
+   * Seçili uygulama modu ("Dating" | "Friends"). Opsiyonel: verilmezse
+   * Dating gibi davranıyor, yani mod geçmeyen eski çağıran bozulmuyor.
+   *
+   * Friends'te "kiminle ilgileniyorsun" bölümü ÇİZİLMİYOR — orada eşleşme
+   * kuralı aynı cinsiyet ve değeri sunucu türetip kilitliyor (bkz.
+   * backend_friends_same_gender_2026-11.md). Bölümü orada göstermek iki ayrı
+   * hata üretirdi: modun tanımını kullanıcıya gevşetilebilir gibi sunmak, VE
+   * filtreler hesap seviyesinde TEK olduğu için (swipeKeys.filters, uçta mod
+   * yok) Friends'teki bir seçimle Dating destesini daraltmak.
+   */
+  const isFriends = mode === "Friends";
 
   // Tier kararı prop'tan gelir; prop'un kaynağı DiscoverScreen'deki kanonik
   // premium (bkz. features/profile/premiumTier). Bu bileşen bilerek "saf":
@@ -2518,7 +2532,13 @@ export default function FilterModal({
     // Kayıt sürerken ikinci istek atma; interestedIn boşken payload geçersiz
     // (Apply de o durumda kilitli) — o iki halde yalnızca local sıfırlama olur,
     // modal açık kalır.
-    if (saving || (reset.interestedIn || []).length === 0) return;
+    //
+    // ⚠️ Friends'te bu guard ÇALIŞMAMALI: bölüm çizilmediği için boşluğu
+    // doldurmanın yolu yok ve "Sıfırla" sessizce hiçbir şey kaydetmeyen bir
+    // butona dönerdi. Koşul `interestedInEmpty` ile AYNI anlamı taşıyor ama
+    // ayrı bir ifade: o `local`i okuyor, bu sıfırlama payload'ını.
+    if (saving || (!isFriends && (reset.interestedIn || []).length === 0))
+      return;
     applyFilters(reset);
   };
 
@@ -2550,7 +2570,14 @@ export default function FilterModal({
   // aynı kuralı uyguluyor. Backend boş listeyi artık 7 (herkes) olarak yazıyor,
   // yani hesabı karartmıyor — ama "hiçbiri seçili değil" ile "hepsi seçili"
   // aynı sonucu veren belirsiz bir durum olurdu, o yüzden Apply kilitli kalıyor.
-  const interestedInEmpty = (local?.interestedIn || []).length === 0;
+  //
+  // Friends'te bu guard HİÇ ÇALIŞMAMALI: bölüm çizilmediği için kullanıcının
+  // boşluğu doldurmasının bir yolu yok ve kilitli Uygula çıkışsız bir ekran
+  // olurdu. Tek yerde `false`a düşürülüyor — hem `actionDisabled` hem de
+  // "Sıfırla" guard'ı bu değeri okuyor, ikisine ayrı koşul yazmak ikisinin
+  // ayrışmasına davetiye olurdu.
+  const interestedInEmpty =
+    !isFriends && (local?.interestedIn || []).length === 0;
 
   // Karşımda görmek istediğim hobiler — premium-only, HARD FİLTRE DEĞİL.
   // Backend bunu skor boost'u olarak kullanıyor: seçilen hobilere sahip
@@ -2869,7 +2896,14 @@ export default function FilterModal({
 
       {/* İlgilendiğim cinsiyet — eskiden profil düzenlemedeydi, artık filtre.
           Free alan: premium gate yok. Cinsiyet tercihinin TEK kaynağı burası;
-          eski "Cinsiyet" bölümü (genders/PreferredGendersFlags) kaldırıldı. */}
+          eski "Cinsiyet" bölümü (genders/PreferredGendersFlags) kaldırıldı.
+
+          YALNIZ DATING (bkz. `isFriends`). Değer Friends'te de payload'da
+          taşınmaya devam ediyor — `local.interestedIn` dokunulmadan
+          `onSave`a gidiyor — yoksa Friends'te filtre kaydetmek kullanıcının
+          Dating tercihini sıfırlardı. */}
+      {!isFriends ? (
+        <>
       <FilterSection
         title={t('discover.filters.interestedIn.title')}
         description={t('discover.filters.interestedIn.description')}
@@ -2919,6 +2953,8 @@ export default function FilterModal({
         >
           {t('discover.filters.interestedIn.required')}
         </Text>
+      ) : null}
+        </>
       ) : null}
 
 

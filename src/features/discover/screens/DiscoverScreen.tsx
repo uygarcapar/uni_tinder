@@ -3418,6 +3418,9 @@ export default function DiscoverScreen() {
         isPremium={isPremium}
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
+        // Friends'te "kiminle ilgileniyorsun" bölümü çizilmiyor: orada
+        // eşleşme kuralı aynı cinsiyet ve değeri sunucu kilitliyor.
+        mode={mode}
       />
       {/* Fire kotası bitti → premium paywall DEĞİL, consumable paket sheet'i.
           Premium kullanıcının da satın alabileceği bir ürün olduğu için backend
