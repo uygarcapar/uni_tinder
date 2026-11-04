@@ -87,8 +87,6 @@ import {
   SWIPE_GUARD_MS,
 } from "@/features/discover/deckProgress";
 import { decideTopUp } from "@/features/discover/deckTopUp";
-import { DISCOVER_PERF_PROBE } from "@/features/discover/perfProbe";
-import PerfProbeOverlay from "@/features/discover/PerfProbeOverlay";
 import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
 import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
@@ -3144,14 +3142,11 @@ export default function DiscoverScreen() {
      * "açığa çıkma" riski bu tek karede yok: üstteki kart tam ekran opak ve o
      * pencerede sürüklenebilen bir şey de yok (çıkış jesti kaldırıldı).
      */
-    // TEST 0 (geçici teşhis, bkz. discover/perfProbe.ts): bayrak açıkken yalnız
-    // üstteki kart çiziliyor — önizlemeyle aradaki "kaç kart" farkı kapanıyor.
-    // Geri alma ve kart geçişi bu bayrak açıkken bozuk; yalnız scroll ölçümü için.
-    const painted = (
-      DISCOVER_PERF_PROBE.soloCard
-        ? [topProfile]
-        : [slotProfile, deckSettled ? nextProfile : undefined, topProfile]
-    ).filter((p): p is NonNullable<typeof p> => !!p);
+    const painted = [
+      slotProfile,
+      deckSettled ? nextProfile : undefined,
+      topProfile,
+    ].filter((p): p is NonNullable<typeof p> => !!p);
     return painted
       .map((profile) => {
         const isTopCard = profile.userId === topProfile?.userId;
@@ -3208,8 +3203,6 @@ export default function DiscoverScreen() {
 
   return (
     <GestureHandlerRootView testID="discover-screen" style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* GEÇİCİ teşhis overlay'i — bkz. perfProbe.ts > overlay. */}
-      {__DEV__ && DISCOVER_PERF_PROBE.overlay && <PerfProbeOverlay />}
       {/* ── KART: TAM EKRAN ──────────────────────────────────────────────────
           Kap ne üstten ne alttan pay bırakıyor. Kapak fotoğrafı durum
           çubuğunun ardından geçip ekranın tepesine, yüzen tab bar'ın ardından

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Dimensions, StyleSheet } from "react-native";
+import { Dimensions, StyleSheet, View } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
@@ -294,6 +294,64 @@ const CARD_ENTRY_RISE = CARD_ENTRY_DISTANCE * 0.22;
  * başında ekranın içinde kalırdı.
  */
 const CARD_ENTRY_TILT = EXIT_TILT;
+
+/**
+ * ── ÖRTÜLÜ KARTIN RASTER SARMALAYICISI ──────────────────────────────────────
+ *
+ * `shouldRasterizeIOS`in iki zamanlama kuralı var ve ikisi de burada:
+ *
+ * 1. GECİKMELİ AÇILIŞ. Bayrak `covered` olur olmaz kalksaydı doku çizimleri
+ *    alevin penceresine yığılırdı — o pencere zaten destenin en kalabalık anı:
+ *    eski üst kart yuvaya düşüyor, paneli 700ms'de soğuyor (içerik değişimi =
+ *    yeniden doku), yeni arka kart ısınma zinciriyle (foto · panel 240ms · cam
+ *    remount 700ms) mount oluyor ve HER adım ayrı bir tam ekran rasterleştirme.
+ *    Bekleme o zincirin tamamından uzun: kart sakinleşmeden doku çekilmiyor.
+ *    O ana kadar örtülü kart canlı yoldan boyanıyor — scroll o pencerede değil.
+ *
+ * 2. GECİKMESİZ KAPANIŞ. Kart üste geçerken canlı render'a dönüş alevin
+ *    örtüsü altında / giriş kayması sırasında olmalı, bir timer'ın arkasında
+ *    değil.
+ *
+ * AYRI BİLEŞEN OLMASI OPTİMİZASYONUN KENDİSİ, taşıma kolaylığı değil: state
+ * SwipeWrapper'ın gövdesindeyken her geçiş (`setState`) 6000 satırlık SwipeCard
+ * ağacını baştan render ediyordu — biri tam devir karesinde (bayrağın inişi),
+ * ikisi alev çıktıktan 1.5sn sonra (iki örtülü kartın timer'ı). Belirti "alev
+ * girerken ve çıktıktan bir süre sonra JS kasıyor"du. Burada `children`
+ * SwipeWrapper'ın render'ından geliyor ve bu bileşenin kendi state geçişinde
+ * REFERANSI DEĞİŞMİYOR → React alt ağacı hiç render etmiyor; geçişin tek işi
+ * View'ın prop güncellemesi. State'i tekrar yukarı taşıma.
+ *
+ * `collapsable={false}`: kabın tek görsel işi raster prop'u; Fabric onsuz
+ * view'ı düzleştirip rasterize edilecek katmanı yok edebilir (bkz.
+ * DiscoverScreen'deki zIndex sızıntısı notu — aynı tuzak ailesi).
+ *
+ * Android karşılığı (`renderToHardwareTextureAndroid`) BİLEREK yok: orada cam
+ * yok, blur'lar 'none' (bkz. CardGlassBackdrop) — örtülü kart zaten ucuz,
+ * doku belleği ise bedava değil.
+ */
+const RASTER_SETTLE_MS = 1500;
+function RasterizeWhenCovered({
+  covered,
+  children,
+}: {
+  covered: boolean;
+  children: React.ReactNode;
+}) {
+  const [raster, setRaster] = React.useState(false);
+  useEffect(() => {
+    if (!covered) {
+      setRaster(false);
+      return;
+    }
+    const id = setTimeout(() => setRaster(true), RASTER_SETTLE_MS);
+    return () => clearTimeout(id);
+  }, [covered]);
+  return (
+    <View collapsable={false} shouldRasterizeIOS={raster} style={{ flex: 1 }}>
+      {children}
+    </View>
+  );
+}
 // ⚠️ Burada bir zamanlar `EXIT_DISTANCE_Y` (Fire'ın yukarı uçuşu) vardı ve
 // KALDIRILDI (2026-10-06): Fire artık hiçbir dalda kartı fırlatmıyor — ne
 // eşleşmeyen dalda (alev süpürmesi örtüyor) ne eşleşmeli dalda (kutlama
@@ -1404,25 +1462,52 @@ function SwipeWrapper({
           animatedStyle,
         ]}
       >
-        <SwipeCard
-          mode={mode}
-          profile={profile}
-          onPass={onPass}
-          onLike={onLike}
-          onFire={onFire}
-          scrollY={scrollY}
-          scrollRef={scrollRef}
-          nativeScrollGesture={nativeScrollGesture}
-          isTopCard={isTopCard}
-          expanded={expanded}
-          superLikesRemaining={superLikesRemaining}
-          onReport={onReport ? handleReport : undefined}
-          onBlock={onBlock ? handleBlock : undefined}
-          onMenu={onMenu ? handleMenu : undefined}
-          onNote={onNote ? handleNote : undefined}
-          onCoverReady={onCoverReady}
-          panelWarmup={!rewindSlot}
-        />
+        {/* ── ÖRTÜLÜ KART TEK DOKUYA RASTERİZE EDİLİYOR ──────────────────────
+            Keşif'te scroll "60fps'te ama takılıyor"du ve CPU tarafı temizdi
+            (kare aralıkları 17ms tavanında, kasma anında bile). Kaynak GPU:
+            deste 3 kart mount ediyor ve HER kart, görünmese de, kare başına
+            kompozit edilen pahalı katmanlar taşıyor — kapağın tamamını saran
+            erime maskesi + dipteki maskeli progressive-blur rampası (maske =
+            her kare tam ekran offscreen geçiş) + blur/cam yüzeyler. 3 kart ×
+            2 maske 60Hz telefonda scroll'un kendi yüküyle birleşince kare
+            ekrana geç yetişiyordu. Teşhis kaydı: deste teke indirilince
+            kasma tamamen kayboldu; zemin BlurView'ını söküp maskeleri
+            bırakmak ise değiştirmedi.
+
+            Çare katmanları örtülü kartta SÖKMEK DEĞİL (ısınma mimarisi onları
+            bilerek erken kuruyor: panel warmup, camın ilk-layout kuralı,
+            rewind yuvası — bkz. SwipeCard > profileReady), kompozisyonu
+            önbelleklemek: `shouldRasterizeIOS` örtülü kartı BİR KEZ dokuya
+            çizdiriyor, sonraki her kare o dokuyu tek quad olarak basıyor.
+            İçerik değişince (foto geldi, panel kuruldu) doku kendiliğinden
+            tazeleniyor — bu olay bazlı, kare bazlı değil. Bayrağın ZAMANLAMASI
+            sarmalayıcının kendisinde (RasterizeWhenCovered — gecikmeli açılış,
+            gecikmesiz kapanış, ve state'in orada tutulma sebebi).
+
+            TÜL (underDim) BU KABIN BİLEREK DIŞINDA: opaklığı swipe boyunca
+            her kare değişiyor; içeride kalsaydı her karesi tam ekran yeniden
+            rasterleştirme olurdu — kazancın tam tersi. */}
+        <RasterizeWhenCovered covered={!isTopCard}>
+          <SwipeCard
+            mode={mode}
+            profile={profile}
+            onPass={onPass}
+            onLike={onLike}
+            onFire={onFire}
+            scrollY={scrollY}
+            scrollRef={scrollRef}
+            nativeScrollGesture={nativeScrollGesture}
+            isTopCard={isTopCard}
+            expanded={expanded}
+            superLikesRemaining={superLikesRemaining}
+            onReport={onReport ? handleReport : undefined}
+            onBlock={onBlock ? handleBlock : undefined}
+            onMenu={onMenu ? handleMenu : undefined}
+            onNote={onNote ? handleNote : undefined}
+            onCoverReady={onCoverReady}
+            panelWarmup={!rewindSlot}
+          />
+        </RasterizeWhenCovered>
         {/* Tül — KARTIN ÜSTÜNDE ve dokunma almıyor. Üst kartta opaklığı 0;
             yine de çiziliyor (koşulsuz) ki kart üste geçerken bir katman
             mount/unmount edilmesin — swap karesi destenin en dar yeri. */}

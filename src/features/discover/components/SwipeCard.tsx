@@ -41,8 +41,6 @@ import {
   isNearBottom,
 } from "./cardScrollTuning";
 import { PREVIEW_COVER_ASPECT } from "./cardPreviewGeometry";
-import { DISCOVER_PERF_PROBE } from "@/features/discover/perfProbe";
-import { probeCounters } from "@/features/discover/PerfProbeOverlay";
 
 // Native gesture varsa GestureDetector ile sarar (SwipeWrapper ile simultaneous için);
 // yoksa (PreviewModal gibi standalone kullanımlarda) düz render eder.
@@ -1996,14 +1994,6 @@ export default function SwipeCard({
   onCoverReady,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
-  // GEÇİCİ teşhis sayacı (bkz. perfProbe.ts > overlay): canlı/toplam kart.
-  useEffect(() => {
-    probeCounters.alive += 1;
-    probeCounters.total += 1;
-    return () => {
-      probeCounters.alive -= 1;
-    };
-  }, []);
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
@@ -3231,11 +3221,8 @@ export default function SwipeCard({
     0,
     COVER_NAME_BOTTOM + coverBottomInset - COVER_STICKY_EDGE_GAP,
   );
-  // TEST 2 (geçici teşhis, bkz. discover/perfProbe.ts): bayrak açıkken sticky
-  // transform kimliğe sabitleniyor — katmanlar duruyor, her-kare yazım gidiyor.
-  const stickyPinned = previewMode || DISCOVER_PERF_PROBE.killCoverSticky;
   const coverStickyStyle = useAnimatedStyle(() => {
-    if (stickyPinned) return { transform: [{ translateY: 0 }] as const };
+    if (previewMode) return { transform: [{ translateY: 0 }] as const };
     const y = Math.max(0, scrollY?.value ?? 0);
     return {
       transform: [{ translateY: Math.min(y, coverStickyMax) }] as const,
