@@ -18,6 +18,7 @@ import {
   clampFeedText,
   feedTextLength,
   formatExpiresIn,
+  formatPostTimestamp,
   formatQuotaReset,
   resolveFeedPostMaxLength,
   resolveFeedReplyMaxLength,
@@ -184,5 +185,52 @@ describe('formatQuotaReset', () => {
     expect(formatQuotaReset(null, t)).toBeNull();
     expect(formatQuotaReset(undefined, t)).toBeNull();
     expect(formatQuotaReset('bozuk', t)).toBeNull();
+  });
+});
+
+describe('formatPostTimestamp — menüdeki tam tarih', () => {
+  // 4 Kasım 2026 Çarşamba 12:00, YEREL saat. Girdiler aynı yerel andan
+  // toISOString ile üretiliyor ki test TZ'den bağımsız kalsın.
+  const now = new Date(2026, 10, 4, 12, 0).getTime();
+  const iso = (d: Date) => d.toISOString();
+
+  it('bugünkü gönderi → today anahtarı + 24 saatlik dakika', () => {
+    expect(
+      formatPostTimestamp(iso(new Date(2026, 10, 4, 10, 23)), t, 'tr-TR', now),
+    ).toBe('chat.messages.today 10:23');
+  });
+
+  it('dünkü gönderi 23:59 → yesterday (takvim günü, 24 saat DEĞİL)', () => {
+    expect(
+      formatPostTimestamp(iso(new Date(2026, 10, 3, 23, 59)), t, 'tr-TR', now),
+    ).toBe('chat.messages.yesterday 23:59');
+  });
+
+  it('hafta içi → gün adı + saat (kullanıcı örneği: pazartesi 10:23)', () => {
+    // 2 Kasım 2026 = Pazartesi
+    expect(
+      formatPostTimestamp(iso(new Date(2026, 10, 2, 10, 23)), t, 'tr-TR', now),
+    ).toBe('Pazartesi 10:23');
+  });
+
+  it('tam 7 gün önce → gün adı DEĞİL tam tarih (hangi çarşamba belirsiz)', () => {
+    expect(
+      formatPostTimestamp(iso(new Date(2026, 9, 28, 9, 5)), t, 'tr-TR', now),
+    ).toBe('28 Ekim 09:05');
+  });
+
+  it("Z'siz damga parseUtc'den geçer (TR cihazda 3 saat kaymaz)", () => {
+    // toISOString'in Z'si silinince elde Z'siz ama UTC duvar saatli bir damga
+    // kalıyor. parseUtc onu UTC sayar → aynı an → Z'li girdiyle AYNI çıktı.
+    // Naif `new Date(str)` kullanılsaydı yerel sayar ve 3 saat kayardı.
+    const d = new Date(2026, 10, 2, 10, 23); // yerel Pazartesi 10:23
+    const zless = d.toISOString().replace('Z', '');
+    expect(formatPostTimestamp(zless, t, 'tr-TR', now)).toBe('Pazartesi 10:23');
+  });
+
+  it('boş girdi → boş string, çökme yok', () => {
+    expect(formatPostTimestamp('', t, 'tr-TR', now)).toBe('');
+    expect(formatPostTimestamp(null, t, 'tr-TR', now)).toBe('');
+    expect(formatPostTimestamp(undefined, t, 'tr-TR', now)).toBe('');
   });
 });

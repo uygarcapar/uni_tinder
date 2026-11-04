@@ -120,3 +120,49 @@ export function formatQuotaReset(
   });
   return t("feed.quota.reset", { time });
 }
+
+/**
+ * Gönderi menüsündeki TAM tarih — "pazartesi 10:23" (istek).
+ *
+ * `formatRelativeTime`ın takvim-günü katmanlaması (bugün / dün / <7 gün adı /
+ * daha eskisi tarih) AMA her katmanda SAAT de var ve >7 günde ay adı uzun:
+ * karttaki kısa etiketin aksine menü "tam dakikayı" gösteriyor. Tam 7 gün
+ * önceki gönderi gün adı ALMAZ — "çarşamba" hangi çarşamba, belirsiz.
+ *
+ * Bugün/dün metinleri `chat.messages.*` anahtarlarından: formatRelativeTime
+ * da aynı anahtarı kullanıyor, metin tek kaynakta kalsın.
+ *
+ * `locale` PARAMETRE (çağıran `getDateLocale()` verir): `getDateLocale`ı
+ * buradan import etmek `i18n/index`'i çekerdi, bu modül saf kalmalı.
+ * Dönen metin büyük harfle başlar; küçük harfe çevirme (akışın
+ * `toDisplayLowercase` kuralı) ÇAĞIRANIN işi.
+ */
+export function formatPostTimestamp(
+  iso: string | null | undefined,
+  t: Translate,
+  locale: string,
+  now: number = Date.now(),
+): string {
+  if (!iso) return "";
+  const d = parseUtc(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+
+  // Saat dilden bağımsız 24 saatlik — formatRelativeTime ile aynı karar.
+  const time = d.toLocaleTimeString("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const startOfDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.floor(
+    (startOfDay(new Date(now)).getTime() - startOfDay(d).getTime()) / DAY_MS,
+  );
+
+  if (dayDiff <= 0) return `${t("chat.messages.today")} ${time}`;
+  if (dayDiff === 1) return `${t("chat.messages.yesterday")} ${time}`;
+  if (dayDiff < 7)
+    return `${d.toLocaleDateString(locale, { weekday: "long" })} ${time}`;
+  return `${d.toLocaleDateString(locale, { day: "numeric", month: "long" })} ${time}`;
+}
