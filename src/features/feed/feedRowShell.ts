@@ -112,13 +112,10 @@ const ROW_GAP = 10;
  * içinde. Yarıçap büyür ya da dolgu küçülürse bu toplam yeniden kontrol
  * edilmeli; eşiğe yaklaşınca avatarın sol-üst yuvarlağı kırpılır.
  */
-/**
- * ⚠️ DIŞA AÇIK, çünkü ikinci bir tüketicisi var: boş durumun paneli
- * (FeedListPage > FeedEmptyWrap) üst köşelerinde AYNI yarıçapı kullanıyor —
- * iki yerde elle yazılsaydı boş sayfa ile dolu sayfa arasında geçerken köşe
- * eğrisi oynardı.
- */
-export const ROW_RADIUS = 34;
+// Bir ara dışa da açıktı (boş durumun paneli aynı yarıçapı kullanıyordu);
+// panel 2026-11-04'te kaldırıldı (bkz. FeedListPage > FeedEmptyWrap), tek
+// tüketici yine bu dosya.
+const ROW_RADIUS = 34;
 
 /**
  * BALONCUĞUN GÖLGESİ (istek: "postların arkaplanına theme'e göre gölge ver

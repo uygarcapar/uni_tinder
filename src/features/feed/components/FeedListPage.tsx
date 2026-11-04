@@ -22,7 +22,7 @@ import FeedFlightCell, { FeedFlightContext } from "./FeedFlightCell";
 // Yan pay `feedRowShell`den geliyor: satır kabuğu da onu okuyor (çizgiyi ekran
 // kenarına taşıyan negatif marj için) ve tek kaynak orada olmak zorunda — ters
 // yön döngü yapardı (bu dosya iskeleti import ediyor, iskelet de kabuğu).
-import { LIST_H_PADDING, ROW_RADIUS } from "../feedRowShell";
+import { LIST_H_PADDING } from "../feedRowShell";
 import FeedSkeletonList, { type FeedSkeletonVariant } from "./FeedSkeletonList";
 
 /**
@@ -329,105 +329,28 @@ function FeedRefreshSpinner({
 export { LIST_H_PADDING };
 
 /**
- * Yüzen native tab bar'ın geometrisi — Mesajlar ve Keşif'teki İKİ sayıyla aynı
- * (bkz. MessagesScreen:96 ve discover/components/discoverHeaderMetrics:73).
- * Orada da yerel kopya duruyor; bu dosya o ekranlardan hiçbirini import
- * etmiyor ve etmemeli (akış → keşif bağımlılığı). Değişirse üçü birlikte.
- */
-const FLOATING_TAB_BAR_HEIGHT = 64;
-const FLOATING_TAB_BAR_BOTTOM_GAP = -10;
-
-/**
- * Panelin tab bar bandının DA altına uzadığı pay (istek: "çekince de modalı
- * alttan gözükmesin").
+ * Boş durumun ortak sarmalayıcısı — İKİ SAYFADA DA ÇIPLAK.
  *
- * Boş sayfada liste tam ekran boyunda ama `alwaysBounceVertical` açık (RN'in
- * dikey listelerdeki varsayılanı) — yani içerik kaydırılamayacak olsa bile
- * aşağı/yukarı esniyor. Yukarı doğru esnetildiğinde panel de birlikte
- * kalkıyor ve dibinde `bg` rengi bir şerit beliriyordu: modalın ALT KENARI
- * görünüyordu. Bounce'u kapatmak çözüm DEĞİL — aynı jest pull-to-refresh'i
- * besliyor, kapatınca boş akış yenilenemez hâle gelirdi. O yüzden kenar
- * çekmenin ulaşabileceğinden daha aşağıya taşınıyor.
+ * Bir ara akış sayfası `surface` parametresiyle `colors.bg` renginde, üst
+ * köşeleri `ROW_RADIUS`lu, tab bar'ın arkasından ekranın dibine taşan bir
+ * panel alıyordu (Gönderilerim hep çıplaktı). 2026-11-04'te panel TAMAMEN
+ * KALDIRILDI (istek: "arkaplan rengi kalsın, direkt Gönderilerim sayfası gibi
+ * olsun; map üstüne yazılar ve buton sadece"): boş akışta sayfa zemini olduğu
+ * gibi kalıyor, haritanın üstünde yalnız boş durum metni + CTA duruyor.
+ * Panelle birlikte tab bar geometrisi kopyaları ve bounce taşma payı da gitti
+ * — geri getirirken git tarihine bak, sayıları yeniden türetme.
  *
- * 420 keyfi görünüyor ama bedeli yok: taşan kısmı scroll view sınırında
- * kırpıyor, içerik boyu büyümüyor (negatif marj kabın yüksekliğini
- * oynatmıyor), ortalanan alan da aynı payın iç dolgu olarak geri verilmesiyle
- * korunuyor. iOS'un lastik direnci bir ekran boyunu zorlukla buluyor, bu pay
- * gerçekçi her çekmeyi örtüyor.
- */
-const EMPTY_PANEL_BOUNCE_OVERSHOOT = 420;
-
-/**
- * Boş durumun ortak sarmalayıcısı.
- *
- * ⚠️ `surface` YALNIZ AKIŞ SAYFASINDA AÇIK (istek: "gönderilerim kısmında
- * olmasın bu modal, sadece burası için"). Gönderilerim'de boş durum çıplak
- * kalıyor — kardeş sekmelerin (Mesajlar, Bildirimler) boş durumuyla aynı
- * görünüş. Varsayılan KAPALI: yeni bir boş durum ekleyen biri panelin
- * sahipliğini düşünmek zorunda kalsın, sessizce miras almasın.
- *
- * Panel açıkken: SAYFA ZEMİNİ (`colors.bg`) rengiyle alttan ve yanlardan
- * taşan düz bir yüzey. Bir ara gönderi yüzeyi kılığında (`colors.surface` +
- * `ROW_RADIUS` + üst hairline) bir modal denendi ve geri alındı (istek:
- * "arkaplan rengi bizim normal arkaplan rengi olsun sayfaların ve üstte
- * border belli oluyor, border kaldır"): kart görünümü boş durumu sayfadan
- * ayrı bir levha gibi gösteriyordu, üst çizgi de ekranın ortasında asılı
- * duran bir ayraç olarak okunuyordu. Kalan tek iş TAŞMA (bkz. aşağı) —
- * yüzeyin kendisi artık sayfadan ayırt edilemiyor.
- *
- * İÇERİĞİN YERİ DEĞİŞMEDİ: ölçüler MESAJLAR ekranından — orada da `flex-1
- * items-center justify-center` ve `pb-[40%]` var (bkz. MessagesScreen >
- * ListEmptyComponent). Burası 35'ti, yani akışın boş durumu kardeş
- * sekmelerden birkaç puan aşağıda duruyordu. Zemin eklenirken bu üçlüye
- * DOKUNULMADI; eklenen tek şey yüzeyin kendisi.
- *
- * ZEMİN: `colors.bg` — kardeş sekmelerin (Mesajlar, Bildirimler, Keşif) sayfa
- * zemininin TA KENDİSİ. Boş sayfa ile dolu sayfa aynı pager'da yan yana
- * kaydırılıyor; boş tarafa ayrı bir gri vermek ikisini iki ayrı ürün gibi
- * gösteriyordu.
- *
- * ⚠️ SABİT YÜKSEKLİK YOK, PANEL KALAN ALANI DOLDURUYOR — bir ara 280'lik bir
- * kart denendi ve reddedildi (istek): ekranın altında bir şerit `bg` kalıyordu
- * ve kutu, listenin ortasında asılı duran bir levha gibi okunuyordu. `flex: 1`
- * panelin dibini içerik kabının dibine (`emptyListContentStyle`in paddingBottom'u
- * SIFIR, bkz. yukarı) indiriyor; NEGATİF ALT MARJ ise oradan CİHAZIN kenarına
- * kadar taşırıyor (istek: "en alttan telefonun kenarına kadar doldursun").
- * Pay, yüzen native tab bar'ın bandı — Mesajlar ve Keşif'in listelerine ALT
- * DOLGU olarak verdiği sayının aynısı, burada ters işaretle: orada içeriği
- * bar'ın üstünde tutuyor, burada yüzeyi bar'ın arkasından geçirip ekranın
- * dibine dayandırıyor; üstüne `EMPTY_PANEL_BOUNCE_OVERSHOOT` biniyor (çekme
- * payı, gerekçesi orada). Taşan kısmı scroll view kendi sınırında kırpıyor,
- * yani liste bir şekilde zaten kenara değiyorsa bu pay görünür bir şey
- * değiştirmez (içerik boyu da büyümüyor: negatif marj kabın yüksekliğini
- * oynatmıyor).
- *
- * ⚠️ YANLARDA `ROW_BLEED` DEĞİL TAM TAŞMA: baloncuk ekranın 10'unda duruyor,
- * bu panel 0'ında. Fark bilinçli — baloncuk ekranda yüzen bir kutu, bu panel
- * sayfanın dibine oturan bir yüzey; 10'luk pay onu yine "asılı levha"ya
- * çeviriyordu. Yani liste payı `-LIST_H_PADDING` ile TAMAMEN geri alınıyor.
- *
- * ⚠️ ÜST YARIÇAP KALIYOR, ÇERÇEVE GİTTİ: üst hairline (0.5 /
- * `colors.hairline`) KALDIRILDI — zemin sayfa rengine dönünce ekranda görünen
- * tek işaret o oldu ve "sayfanın ortasına çizilmiş bir çizgi" gibi okunuyordu.
- * `ROW_RADIUS` + `borderCurve: continuous` ise DURUYOR (istek: "border
- * radiusu kaldırma"): panelin alt ve yan kenarları ekranın dışında kalıyor,
- * yuvarlaklık yalnız üstte çalışıyor ve satır kabuğuyla (`feedRowShell`) aynı
- * değer olmak zorunda — silmeye kalkma.
+ * ÖLÇÜLER MESAJLAR EKRANINDAN: orada da `flex-1 items-center justify-center`
+ * ve `pb-[40%]` var (bkz. MessagesScreen > ListEmptyComponent) — kardeş
+ * sekmelerle aynı hiza.
  *
  * ⚠️ `EmptyState`in kendi `topOffset`u da SIFIRLANMALI (varsayılanı 24).
  * Mesajlar `topOffset={0}` geçiyor; sarmalayıcı zaten dikeyde ortalıyor,
  * üstüne eklenen pay bloğu aşağı kaydırıyor. Çağıranların hepsi geçiyor —
  * yeni bir boş durum eklerken atlama.
  */
-export function FeedEmptyWrap({
-  children,
-  surface = false,
-}: {
-  children: React.ReactNode;
-  surface?: boolean;
-}) {
-  const insets = useSafeAreaInsets();
-  const content = (
+export function FeedEmptyWrap({ children }: { children: React.ReactNode }) {
+  return (
     <View
       style={{
         flex: 1,
@@ -437,34 +360,6 @@ export function FeedEmptyWrap({
       }}
     >
       {children}
-    </View>
-  );
-  if (!surface) return content;
-
-  const overshoot =
-    insets.bottom +
-    FLOATING_TAB_BAR_HEIGHT +
-    FLOATING_TAB_BAR_BOTTOM_GAP +
-    EMPTY_PANEL_BOUNCE_OVERSHOOT;
-  return (
-    <View
-      style={{
-        flex: 1,
-        marginHorizontal: -LIST_H_PADDING,
-        marginBottom: -overshoot,
-        // Negatif marjla kazanılan payı İÇ DOLGU olarak geri veriyor: yüzey
-        // bar'ın arkasından geçip ekranın dibine iniyor ama ORTALANAN ALAN
-        // eskisi kadar kalıyor. Verilmezse içerik, panel ne kadar uzadıysa
-        // onun yarısı kadar aşağı kayıyor — metnin yeri bu değişiklikte
-        // oynamamalı.
-        paddingBottom: overshoot,
-        backgroundColor: colors.bg,
-        borderTopLeftRadius: ROW_RADIUS,
-        borderTopRightRadius: ROW_RADIUS,
-        borderCurve: "continuous",
-      }}
-    >
-      {content}
     </View>
   );
 }

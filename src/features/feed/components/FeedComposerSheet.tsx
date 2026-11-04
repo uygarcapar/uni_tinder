@@ -509,9 +509,11 @@ const TopicChips = memo(function TopicChips({
               onPress={() => onToggle(key)}
               style={{
                 // ⚠️ KUTU KARTTAN KOPYALANMADI (geri alındı — istek); gerekçe
-                // filtre sheet'inin Chip'inde.
-                paddingHorizontal: 14,
-                paddingVertical: 8,
+                // filtre sheet'inin Chip'inde. Pay 14/8 → 10/5'e İNDİ (istek:
+                // çipler sheet'te fazla yer kaplıyordu) — yazı aynı kaldı,
+                // yalnız kutu daraldı. Filtre sheet'inin ikizi 14/8'de duruyor.
+                paddingHorizontal: 10,
+                paddingVertical: 5,
                 borderRadius: 999,
                 borderCurve: "continuous",
                 // ⚠️ KENARLIK SİLİNDİ — çipin görünüşü akış kartındaki hashtag
