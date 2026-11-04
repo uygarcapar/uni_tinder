@@ -138,6 +138,17 @@ const initialState: AuthState = {
     referralCode: null,
     referralCodeToasted: null,
     mode: '',
+    // Arkadaş modunda "kimleri görmek istersin" havuz sorusu sorulacak mı —
+    // yani kullanıcının cinsiyeti YALNIZ Non-Binary kategorisinde mi.
+    //
+    // Türetme RegisterStepMode'da bir kez yapılıp buraya yazılıyor; ilerleme
+    // çubuğu buradan okuyor. Çubuk kendisi türetseydi cinsiyet kataloğunu
+    // (React Query) kayıt akışının HER ekranına taşırdı.
+    //
+    // Temizlenme yolu: `clearRegistrationForm` (kayıt bitince ya da tur
+    // yarıda kalınca) ve her RegisterStepMode geçişinde yeniden yazılması —
+    // kullanıcı geri dönüp cinsiyetini değiştirirse değer bayat kalmıyor.
+    asksFriendsPool: false,
   },
 };
 
@@ -223,6 +234,9 @@ const authSlice = createSlice({
           // Mod da sıfırlanıyor: yeni tur kendi modunu sormalı. Kalsaydı
           // ilerleme çubuğu ilk adımda bile kısalmış paydayla açılırdı.
           mode: '',
+          // Moda bağlı türetme de gidiyor — mod sıfırlanıp bu kalsaydı yeni
+          // turun barı yanlış paydayla açılırdı.
+          asksFriendsPool: false,
         };
       },
       // prepare: argümansız çağrı (kayıt başarıyla bittiğinde) tam temizlik.

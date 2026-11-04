@@ -26,9 +26,11 @@ export const REGISTRATION_FLOW = [
   // tam burada: InterestedIn yalnız flörte ait, prompt'lar ve niyet ise seçilen
   // modun profilini doldurur.
   'RegisterStepMode',
-  // Kiminle ilgilendiğin — YALNIZ FLÖRT. Arkadaş modunda bu adım atlanıyor ve
-  // sunucu `InterestedInFlags`i varsayılan (üç kategori) bırakıyor; kullanıcı
-  // sonradan flört profilini açarsa soru o akışta soruluyor.
+  // Kiminle ilgilendiğin — flörtte HER ZAMAN, arkadaşta YALNIZ Non-Binary
+  // kullanıcıda (orada soru "arkadaş modunda kimleri görmek istersin" hâline
+  // geliyor). Arkadaşta ikili kategorilerde adım atlanıyor ve değeri sunucu
+  // kendi cinsiyetinden türetip kilitliyor; kullanıcı sonradan flört profilini
+  // açarsa soru o akışta soruluyor.
   'RegisterStep10',
   'RegisterStep13',
   // Sorular (prompt'lar) — bio'nun yerini alan adım. Hobilerden SONRA, yaşam
@@ -47,12 +49,15 @@ export type RegistrationStepRoute = (typeof REGISTRATION_FLOW)[number];
 export const FIRST_REGISTRATION_STEP: RegistrationStepRoute = REGISTRATION_FLOW[0];
 
 /**
- * YALNIZ FLÖRT modunda gösterilen adımlar.
+ * Arkadaş modunda ELENEBİLİR adımlar.
  *
- * Arkadaş modu seçen kullanıcı bunları hiç görmüyor; `stepsForMode` akıştan
- * eliyor. Set olarak duruyor çünkü iki yer okuyor: ilerleme çubuğunun payda
- * hesabı ve resume yığını. İkisi ayrışırsa Arkadaş kullanıcısının barı
- * 14/15'te takılır ya da geri tuşu ona ait olmayan bir soruya düşer.
+ * Eleme KOŞULLU: Arkadaş seçen kullanıcı bunları normalde hiç görmüyor, ama
+ * Non-Binary kullanıcıda `RegisterStep10` havuz sorusu olarak akışta kalıyor
+ * (bkz. `stepsForMode`un `asksFriendsPool` parametresi).
+ *
+ * Set olarak duruyor çünkü iki yer okuyor: ilerleme çubuğunun payda hesabı ve
+ * resume yığını. İkisi ayrışırsa Arkadaş kullanıcısının barı 14/15'te takılır
+ * ya da geri tuşu ona ait olmayan bir soruya düşer.
  */
 export const DATING_ONLY_STEPS: ReadonlySet<string> = new Set(['RegisterStep10']);
 
@@ -66,8 +71,20 @@ const MODE_STEP_INDEX = REGISTRATION_FLOW.indexOf('RegisterStepMode');
  * o noktada barın paydası tam akış, ve mod seçilince payda bir adım kısalıyor.
  * Arkadaş'ta barın bir tık ilerlemesi doğru olan — adım gerçekten azaldı.
  */
-export function stepsForMode(mode?: string | null): RegistrationStepRoute[] {
+export function stepsForMode(
+  mode?: string | null,
+  asksFriendsPool = false,
+): RegistrationStepRoute[] {
   if (mode !== 'Friends') return [...REGISTRATION_FLOW];
+  // Arkadaş'ta InterestedIn adımı KOŞULLU elenir. Non-Binary kullanıcıya
+  // "arkadaş modunda kimleri görmek istersin" sorusu bu adımın kendisi:
+  // onlarda "yalnız kendi kategorin" kuralı kampüs ölçeğinde boş deste
+  // demekti. İkili kategorilerde değeri sunucu türetip kilitlediği için adım
+  // orada hâlâ elenmeli.
+  //
+  // Karar BURADA TÜRETİLMİYOR, çağırandan geliyor (bkz. useAsksFriendsPool):
+  // bu modülün cinsiyet kataloğuna erişimi yok ve olmamalı.
+  if (asksFriendsPool) return [...REGISTRATION_FLOW];
   return REGISTRATION_FLOW.filter((r) => !DATING_ONLY_STEPS.has(r));
 }
 
@@ -88,12 +105,13 @@ export function isRegistrationStep(name?: string | null): name is RegistrationSt
 export function registrationResumeStack(
   route?: string | null,
   mode?: string | null,
+  asksFriendsPool = false,
 ): RegistrationStepRoute[] {
   // ⚠️ Eleme ÖNCE yapılıyor, slice SONRA: tam akıştan dilimleyip sonra elemek
   // Arkadaş kullanıcısında yığını bir adım kısa bırakır (elenen adım dilimin
   // İÇİNDEyse). Eleme sonrası dizide index de kaydığı için `indexOf` de bu
   // dizide aranmalı.
-  const steps = stepsForMode(mode);
+  const steps = stepsForMode(mode, asksFriendsPool);
   const at = (steps as readonly string[]).indexOf(route ?? '');
   if (at <= 0) return [FIRST_REGISTRATION_STEP];
   return steps.slice(0, at + 1);
@@ -132,6 +150,9 @@ export const REGISTRATION_STEP_NUMBERS: number[] =
  * Barın moda göre payda listesi. Arkadaş modunda flörte özel adım çıkınca
  * payda da kısalıyor — yoksa bar son adımda %100'e varmaz.
  */
-export function stepNumbersForMode(mode?: string | null): number[] {
-  return stepsForMode(mode).map(numberFor);
+export function stepNumbersForMode(
+  mode?: string | null,
+  asksFriendsPool = false,
+): number[] {
+  return stepsForMode(mode, asksFriendsPool).map(numberFor);
 }

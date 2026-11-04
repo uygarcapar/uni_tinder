@@ -33,7 +33,20 @@ export default function RegisterProgressBar({ step }: { step: number }) {
   const mode = useAppSelector(
     (s) => (s as any).auth?.registrationForm?.mode as string | undefined,
   );
-  const visibleSteps = stepNumbersForMode(mode);
+  // Arkadaş + Non-Binary'de InterestedIn adımı havuz sorusu olarak akışta
+  // KALIYOR, yani payda da kısalmıyor. Bar ile resume yığını aynı kaynaktan
+  // okumalı (bkz. DATING_ONLY_STEPS başlığı) — ikisine ayrı karar yazmak
+  // barın takılmasının klasik yolu.
+  //
+  // Değer BURADA TÜRETİLMİYOR, redux'tan okunuyor: türetme cinsiyet
+  // kataloğunu (React Query) gerektiriyor ve bu bileşen kayıt akışının her
+  // ekranında çiziliyor — kataloğu buraya bağlamak tüm akışı bir
+  // QueryClientProvider'a mecbur ederdi. Yazan taraf: RegisterStepMode.
+  const asksFriendsPool = useAppSelector(
+    (s) =>
+      ((s as any).auth?.registrationForm?.asksFriendsPool as boolean) ?? false,
+  );
+  const visibleSteps = stepNumbersForMode(mode, asksFriendsPool);
   const total = visibleSteps.length;
   const index = progressIndex(visibleSteps, step);
   const target = index / total;

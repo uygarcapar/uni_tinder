@@ -42,6 +42,16 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
     { enumName: "NonBinary", label: t('auth.step10.nonBinary') },
   ];
   const profile = useAppSelector((s) => (s as any).profile || {});
+  /**
+   * AYNI EKRAN, İKİ SORU. Flört'te "kiminle ilgileniyorsun"; Arkadaş'ta
+   * (yalnız Non-Binary kullanıcıya gösteriliyor, bkz. useAsksFriendsPool)
+   * "arkadaş modunda kimleri görmek istersin". Seçenekler ve wire değerleri
+   * AYNI, değişen yalnız başlık/açıklama — ayrı bir ekran açmak aynı listeyi
+   * ve aynı şemayı ikizlerdi.
+   */
+  const isFriendsPool = useAppSelector(
+    (s) => (s as any).auth?.registrationForm?.mode === "Friends",
+  );
 
   const initial =
     Array.isArray(profile.interestedIn) && profile.interestedIn.length > 0
@@ -80,9 +90,15 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step10.title')}</Text>
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>
+            {isFriendsPool
+              ? t('discover.mode.friendsPoolTitle')
+              : t('auth.step10.title')}
+          </Text>
           <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
-            {t('auth.step10.description')}
+            {isFriendsPool
+              ? t('discover.mode.friendsPoolDescription')
+              : t('auth.step10.description')}
           </Text>
         </View>
 

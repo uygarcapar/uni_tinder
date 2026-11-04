@@ -16,6 +16,7 @@ import ModeChoiceCard from "@/features/discover/components/ModeChoiceCard";
 // olsaydı iki liste ayrışabilirdi (wire değerleri PascalCase string).
 import { APP_MODES, type AppMode } from "@/features/discover/modeTheme";
 import { MODE_STEP_NUMBER } from "@/features/auth/registrationFlow";
+import { useAsksFriendsPool } from "@/features/auth/useAsksFriendsPool";
 import { colors } from "../../../shared/theme/colors";
 
 /**
@@ -24,7 +25,8 @@ import { colors } from "../../../shared/theme/colors";
  * AKIŞTAKİ YERİ BAĞLAYICI: temel adımlardan (ad, doğum tarihi, cinsiyet, boy)
  * hemen sonra, kendinden sonraki üç adımdan ÖNCE — çünkü üçünü de o üç adım
  * bu cevaba göre şekilleniyor:
- *   • Step10 (kiminle ilgileniyorsun) yalnız Flört'te gösteriliyor
+ *   • Step10 (kiminle ilgileniyorsun) Flört'te her zaman, Arkadaş'ta yalnız
+ *     Non-Binary kullanıcıda gösteriliyor (orada soru havuz sorusu oluyor)
  *   • Step17 (prompt'lar) kataloğu seçilen modla süzülüyor
  *   • Step14 (niyet) Flört'te tek seçim ilişki niyeti, Arkadaş'ta çoklu seçim
  *     arkadaşlık niyeti soruyor
@@ -50,6 +52,11 @@ export default function RegisterStepModeScreen({
   const selected = useAppSelector(
     (s) => ((s as any).auth?.registrationForm?.mode as string) || "",
   );
+  // Arkadaş'ta Step10'un gösterilip gösterilmeyeceği buradan: Non-Binary
+  // kullanıcıda ekran "arkadaş modunda kimleri görmek istersin" sorusu olarak
+  // kalıyor. Seçim `pick` ile redux'a yazıldığı için "Devam"a basıldığında
+  // hook güncel modu okuyor.
+  const asksFriendsPool = useAsksFriendsPool();
 
   const pick = useCallback(
     (mode: AppMode) => {
@@ -69,12 +76,27 @@ export default function RegisterStepModeScreen({
       });
       return;
     }
-    // ⚠️ DALLANMA. Flört'te sıradaki adım InterestedIn; Arkadaş'ta o adım
-    // akışta YOK (sunucu InterestedInFlags'i varsayılan bırakıyor) ve doğrudan
-    // hobilere geçiliyor. Geri tuşu doğal çalışıyor: atlanan ekran yığına hiç
-    // itilmediği için Step13'ten geri bu ekrana düşüyor.
-    navigation.navigate(selected === "Friends" ? "RegisterStep13" : "RegisterStep10");
-  }, [navigation, selected, t]);
+    // ⚠️ DALLANMA. Flört'te sıradaki adım InterestedIn. Arkadaş'ta o adım
+    // KOŞULLU: Non-Binary kullanıcıda "arkadaş modunda kimleri görmek
+    // istersin" sorusu olarak kalıyor, diğerlerinde atlanıyor çünkü değeri
+    // sunucu kendi cinsiyetinden türetip kilitliyor.
+    //
+    // Geri tuşu doğal çalışıyor: atlanan ekran yığına hiç itilmediği için
+    // Step13'ten geri bu ekrana düşüyor.
+    //
+    // Türetme redux'a YAZILIYOR: ilerleme çubuğu paydayı oradan okuyor ve
+    // kataloğu (React Query) kayıt akışının her ekranına taşımak zorunda
+    // kalmıyor. Her geçişte yeniden yazılıyor — kullanıcı geri dönüp
+    // cinsiyetini ya da modunu değiştirirse değer bayat kalmasın.
+    dispatch(
+      updateRegistrationField({
+        field: "asksFriendsPool",
+        value: asksFriendsPool,
+      }),
+    );
+    const skipInterestedIn = selected === "Friends" && !asksFriendsPool;
+    navigation.navigate(skipInterestedIn ? "RegisterStep13" : "RegisterStep10");
+  }, [asksFriendsPool, dispatch, navigation, selected, t]);
 
   return (
     <View testID="reg-stepmode-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>

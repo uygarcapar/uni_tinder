@@ -242,3 +242,65 @@ describe('authSlice.registrationForm.referralCode', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * NON-BINARY DALI — "Friends'te InterestedIn adımı hep elenir" ARTIK DOĞRU DEĞİL.
+ *
+ * Friends'te eşleşme kuralı aynı cinsiyet ve değeri ikili kategorilerde sunucu
+ * türetip kilitliyor; o kullanıcılarda adım hâlâ elenmeli. Ama Non-Binary
+ * kullanıcıda "yalnız Non-Binary gör" kampüs ölçeğinde boş deste demek, o
+ * yüzden havuzu soruyoruz — ve soru bu adımın kendisi.
+ *
+ * Karar istemcide TÜRETİLMİYOR: çağıran `isNonBinaryOnlyGender(...)` sonucunu
+ * geçiyor. Katalog yüklenmemişken o fonksiyon `false` döndüğü için adım
+ * gösterilmez ve sunucunun türetmesi geçerli kalır — yanlış tarafa düşmektense
+ * soruyu hiç sormamak.
+ *
+ * İlerleme çubuğunun paydası (stepNumbersForMode) ile resume yığını AYNI
+ * kaynaktan okumalı: ayrışırsa Arkadaş kullanıcısının barı takılır ya da geri
+ * tuşu ona ait olmayan bir soruya düşer.
+ */
+describe('Friends + Non-Binary havuz adımı', () => {
+  it('havuz sorusu YOKken RegisterStep10 eleniyor', () => {
+    expect(stepsForMode('Friends')).not.toContain('RegisterStep10');
+    expect(stepsForMode('Friends', false)).not.toContain('RegisterStep10');
+  });
+
+  it('havuz sorusu VARken RegisterStep10 akışta kalıyor', () => {
+    const steps = stepsForMode('Friends', true);
+    expect(steps).toContain('RegisterStep10');
+    expect(steps).toHaveLength(REGISTRATION_FLOW.length);
+  });
+
+  it('Dating her hâlde RegisterStep10 taşıyor', () => {
+    expect(stepsForMode('Dating', false)).toContain('RegisterStep10');
+    expect(stepsForMode('Dating', true)).toContain('RegisterStep10');
+    expect(stepsForMode(null, false)).toContain('RegisterStep10');
+  });
+
+  it('barın paydası akışla aynı kaynaktan okuyor', () => {
+    expect(stepNumbersForMode('Friends', true)).toHaveLength(
+      stepsForMode('Friends', true).length,
+    );
+    expect(stepNumbersForMode('Friends', false)).toHaveLength(
+      stepsForMode('Friends', false).length,
+    );
+    // Havuz sorusu açıkken payda Arkadaş'ta da tam akış kadar.
+    expect(stepNumbersForMode('Friends', true)).toEqual(
+      stepNumbersForMode('Dating'),
+    );
+  });
+
+  it('resume yığını da aynı kaynaktan okuyor', () => {
+    expect(
+      registrationResumeStack('RegisterStep13', 'Friends', true),
+    ).toContain('RegisterStep10');
+    expect(
+      registrationResumeStack('RegisterStep13', 'Friends', false),
+    ).not.toContain('RegisterStep10');
+    // Üçüncü parametre verilmezse bugünkü davranış: Arkadaş'ta eleniyor.
+    expect(registrationResumeStack('RegisterStep13', 'Friends')).not.toContain(
+      'RegisterStep10',
+    );
+  });
+});
