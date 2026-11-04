@@ -15,6 +15,12 @@ export type MessageToastProps = {
    * içeriği hakkında söylenebilecek tek şey ne kadar sürdüğü.
    */
   voiceDuration?: string | null;
+  /**
+   * Konuşmanın modu o anki seçili moddan FARKLIYSA dolu (karar
+   * showMessageToast'ta, metin `discover.mode.title.*`ten). Köşeli parantezi
+   * burası basar: `[Arkadaş] Ayşe`. Boş → bugünkü çizim birebir.
+   */
+  modeLabel?: string | null;
 };
 
 /**
@@ -42,6 +48,7 @@ export default function MessageToast({
   photoUrl,
   preview,
   voiceDuration,
+  modeLabel,
 }: MessageToastProps) {
   return (
     <ToastShell>
@@ -79,6 +86,7 @@ export default function MessageToast({
             style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}
             numberOfLines={1}
           >
+            {modeLabel ? `[${modeLabel}] ` : ''}
             {senderName}
           </Text>
           {voiceDuration ? (
