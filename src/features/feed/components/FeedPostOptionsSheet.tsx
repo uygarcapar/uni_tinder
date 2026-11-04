@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, useWindowDimensions } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Clock, Flag, Trash2 } from "@/shared/icons";
+import { Flag, Trash2 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import { colors } from "@/shared/theme/colors";
@@ -25,46 +25,32 @@ import type { FeedPostDto } from "../feedTypes";
  */
 
 /**
- * Tarih satırı — ProfileOptionsSheet'teki Section açıklama satırının düzeni
- * (row, gap 8, 14 punto ikincil gri) ama ikonu bilgi değil SAAT: satır bir
- * uyarı değil, gönderinin damgası.
+ * Tarih — AKSİYONUN ALTINDA, ikonsuz footer (istek: "saat ikonunu kaldır ve
+ * butonların en altına koy"). İlk sürümde üstte saat ikonlu bir satırdı;
+ * ortalı küçük gri metin, kapsül butonun altında imza gibi okunuyor.
  */
-function TimestampRow({ createdAt }: { createdAt: string | null | undefined }) {
+function TimestampFooter({
+  createdAt,
+}: {
+  createdAt: string | null | undefined;
+}) {
   const { t } = useTranslation();
   const label = toDisplayLowercase(
     formatPostTimestamp(createdAt, t, getDateLocale()),
   );
   if (!label) return null;
   return (
-    <View
+    <Text
       style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingRight: 16,
-        marginTop: 4,
-        marginBottom: 14,
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: "400",
+        textAlign: "center",
+        marginTop: 14,
       }}
     >
-      <SFIcon
-        name="clock"
-        fallback={Clock}
-        size={16}
-        color={colors.textSecondary}
-        strokeWidth={2}
-        weight="semibold"
-      />
-      <Text
-        style={{
-          color: colors.textSecondary,
-          fontSize: 14,
-          fontWeight: "400",
-          flex: 1,
-        }}
-      >
-        {label}
-      </Text>
-    </View>
+      {label}
+    </Text>
   );
 }
 
@@ -150,7 +136,6 @@ export default function FeedPostOptionsSheet({
       closeButton={false}
       contentContainerStyle={{ paddingTop: 36, paddingBottom: 48 }}
     >
-      <TimestampRow createdAt={post?.createdAt} />
       {post?.isMine ? (
         <ActionRow
           icon={
@@ -189,6 +174,7 @@ export default function FeedPostOptionsSheet({
           }}
         />
       )}
+      <TimestampFooter createdAt={post?.createdAt} />
     </AppModal>
   );
 }
