@@ -58,8 +58,8 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import {
-  pickAndCropPhotos,
-  captureAndCropPhoto,
+  pickAndPreviewPhotos,
+  captureAndPreviewPhoto,
 } from "../../../shared/utils/photoPicker";
 import { photoExists, pruneOrphanPhotos } from "@/shared/utils/photoStore";
 import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
@@ -269,7 +269,11 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
   // Seçim + sıralı kırpma uzun sürebiliyor (iCloud indirmesi, 6 fotoğraf):
   // bu arada ikinci bir tur başlarsa kalan slot hesabı bayat kalır.
-  const pickingRef = useRef(false);
+  // NEDEN İKİ MANDAL: tek mandal kamerayla galeriyi paylaşıyordu; kamera akışı
+  // bir kez sonuçlanmadan kalırsa SONRAKİ her galeri dokunuşu sessizce
+  // yutuluyordu. Artık her yolun kendi mandalı var, biri takılsa da diğeri çalışır.
+  const galleryPickingRef = useRef(false);
+  const cameraPickingRef = useRef(false);
   const positions = useSharedValue({});
 
   const { handleSubmit, setValue, watch, formState: { errors } } = useForm<PhotosForm>({
@@ -400,37 +404,42 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     // iCloud'dan indirme + sıralı kırpma uzun sürebiliyor; bu arada ekle
     // butonuna tekrar basılırsa slot hesabı bayat kalırdı.
     //
-    // ⚠️ TEŞHİS KANCASI (galeri "hiçbir şey yapmıyor" raporu): bu mandal
-    // KAMERAYLA PAYLAŞILIYOR ve sessizce dönüyor. Kamera akışı bir kez
-    // sonuçlanmadan kalırsa (çekim promise'i askıda) mandal açık kalıyor ve
-    // ondan SONRAKİ her galeri dokunuşu ölü oluyor — ekranda hiçbir iz
-    // bırakmadan. ProfileScreen'de böyle bir mandal yok; "profilde çalışıyor,
-    // kayıtta çalışmıyor" ayrımının açıklayabileceği tek fark bu.
-    if (pickingRef.current) {
+    // ⚠️ TEŞHİS KANCASI (galeri "hiçbir şey yapmıyor" raporu): mandal artık
+    // KAMERAYLA PAYLAŞILMIYOR; kamera akışı askıda kalsa bile buraya sızmaz.
+    // Yine de GALERİ mandalı bir şekilde açık kalırsa dokunuş sessizce
+    // dönüyor — bu log o durumu ekranda iz bırakmadan kaybetmemek için duruyor.
+    if (galleryPickingRef.current) {
       devLog('📷 [RegisterStep15] galeri YUTULDU — mandal hâlâ açık');
       return;
     }
-    pickingRef.current = true;
+    galleryPickingRef.current = true;
     try {
-      const newCroppedPhotos = await pickAndCropPhotos(remainingSlots);
-      appendPhotos(newCroppedPhotos.map((p) => p.uri));
+      const newPhotos = await pickAndPreviewPhotos(remainingSlots, {
+        failedMessage: t('common.cropper.failed'),
+        commitLabel: t('common.add'),
+      });
+      appendPhotos(newPhotos.map((p) => p.uri));
     } catch (error: any) {
       devLog("Galeri seçimi hatası:", error);
     } finally {
-      pickingRef.current = false;
+      galleryPickingRef.current = false;
     }
   };
 
   const addFromCamera = async () => {
-    if (pickingRef.current) return;
-    pickingRef.current = true;
+    if (cameraPickingRef.current) return;
+    cameraPickingRef.current = true;
     try {
       // ÖN KAMERAYLA AÇILIYOR: kayıtta eklenen kare neredeyse daima kişinin
       // kendi fotoğrafı. Kullanıcı yine çevirebiliyor; bu yalnız açılış
       // kamerası (bkz. cameraBridge > `facing`). Varsayılan hâlâ arka —
       // profil düzenlemede kıyafet/ortam karesi de giriyor, o yüzden kapı
       // çağıranda, kamerada değil.
-      const taken = await captureAndCropPhoto({ facing: "front" });
+      const taken = await captureAndPreviewPhoto({
+        facing: "front",
+        failedMessage: t('common.cropper.failed'),
+        commitLabel: t('common.add'),
+      });
       if (taken) appendPhotos([taken.uri]);
     } catch (error: any) {
       if (error?.code === "E_NO_CAMERA_PERMISSION") {
@@ -439,7 +448,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       }
       devLog("Kamera çekimi hatası:", error);
     } finally {
-      pickingRef.current = false;
+      cameraPickingRef.current = false;
     }
   };
 

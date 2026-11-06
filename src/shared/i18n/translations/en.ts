@@ -33,6 +33,7 @@ const en = {
     offline: 'No internet connection',
     back: 'Back',
     save: 'Save',
+    add: 'Add',
     error: 'Error',
     info: 'Info',
     no: 'No',
