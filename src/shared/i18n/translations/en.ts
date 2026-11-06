@@ -8,6 +8,11 @@ const en = {
       save: 'Save',
       reset: 'Reset',
       failed: 'The photo could not be processed, please try again.',
+      // The camera screen's IN-PLACE crop mode (see CameraCaptureOverlay):
+      // `hint` is the only visible text, in the window's bottom band; `apply`
+      // is the ✓ button's screen-reader label.
+      hint: 'Pinch to zoom · drag',
+      apply: 'Save crop',
     },
     // In-app camera. These labels are for screen readers only — the chrome has
     // no text (round glass buttons + shutter), same as the cropper.
