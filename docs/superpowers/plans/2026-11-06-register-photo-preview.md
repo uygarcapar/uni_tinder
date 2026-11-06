@@ -689,7 +689,12 @@ bu görev doğrulanamaz.
    metni, kırpma butonu YOK.
 6. Önizlemede görülen kadraj, ızgaraya eklenen küçük resmin kadrajıyla aynı.
 
-- [ ] **Step 4: Adımı 2 başarısızsa z-sırasını düzelt**
+- [x] **Step 4: Adımı 2 başarısızsa z-sırasını düzelt**
+
+> Final düzeltme dalgasında KOŞULSUZ yapıldı: `CropperOverlay`in kökünde zIndex
+> yokmuş (`:1000`deki `zIndex: 1` kaydet düğmesinin iskeleti), yani cihazı
+> beklemeden sıra yanlıştı. `<CameraCaptureOverlay />` artık `<CropperOverlay />`den
+> önce mount ediliyor.
 
 Kırpıcı önizlemenin ALTINDA kalıyorsa `App.tsx`te `<CameraCaptureOverlay />`i
 `<CropperOverlay />`in ÖNÜNE al ve satır 215-219'daki yorumu kodun yeni hâline

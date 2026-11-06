@@ -68,10 +68,12 @@ geliyor.
 3. **`GlassView` tuzağı:** ata zincirinde `opacity < 1` veya `transform` varsa cam
    efekti sessizce düşüyor. Ekranın kayması bu yüzden `top` ile yapılıyor; yeni
    hiçbir gizleme/animasyon opaklıkla ya da transform'la yapılmamalı.
-4. **Kırpıcı, önizlemenin ÜSTÜNDE açılmak zorunda.** `App.tsx`te
-   `<CropperOverlay />` (satır 211) `<CameraCaptureOverlay />`den (satır 220)
-   ÖNCE render ediliyor, yani kardeş sırası kamerayı üste koyardı; kırpıcının
-   kökündeki `zIndex: 1` (`CropperOverlay.tsx:1000`) bunu şu an telafi ediyor.
+4. **Kırpıcı, önizlemenin ÜSTÜNDE açılmak zorunda.** `App.tsx`te kardeşlerden
+   SONRAKİ üste boyanıyor ve `CropperOverlay`in kökünde zIndex YOK
+   (`CropperOverlay.tsx:785`; `:1000`deki `zIndex: 1` kaydet düğmesinin
+   iskeletine ait). Yani üstte kalmayı yalnız kardeş sırası belirliyor; ilk
+   taslak buraya yanlışlıkla köke ait bir zIndex varsaymıştı. Bu branch
+   `<CameraCaptureOverlay />`i `<CropperOverlay />`den ÖNCE mount ediyor.
    Bugüne kadar hiç test edilmedi çünkü iki ekran hiç aynı anda açık olmadı.
 5. **`pickingRef` mandalı kamera ile galeri arasında paylaşılıyor**
    (`RegisterStep15Screen.tsx:272`) ve "kayıtta galeri çalışmıyor" raporunun en
@@ -215,10 +217,11 @@ yanlış okunuyor. Ekranda yazı olarak görünmüyor.
 
 ### `App.tsx`
 
-Mount sırası olduğu gibi bırakılır; kırpıcının `zIndex: 1`i onu üstte tutuyor
-(kısıt 4). **Cihazda doğrulanmalı** — önizleme açıkken kırpma butonuna basıldığında
-kırpıcı görünmüyorsa çözüm `<CameraCaptureOverlay />`i `<CropperOverlay />`in
-ÖNÜNE almak; `App.tsx:215-219`teki yorum zaten bu niyeti yazıyor.
+Kırpıcının kökünde zIndex yok; üstte kalmasını yalnız kardeş sırası belirliyor
+(kısıt 4). Bu yüzden `<CameraCaptureOverlay />` `<CropperOverlay />`in ÖNÜNE
+alındı (kamera önce mount, kırpıcı sonra → kırpıcı üstte); `PinchZoomOverlay`
+ikisinden önce, `SelfieVerificationOverlay` ikisinden sonra kalıyor, hepsi
+`BottomSheetModalProvider`ın dışında. Yorumlar bu gerekçeyle yeniden yazıldı.
 
 ---
 
