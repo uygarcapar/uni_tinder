@@ -60,3 +60,6 @@ assets/fourstack/*.mov
 e2e/.env.e2e
 e2e/.artifacts/
 e2e/.appium/
+
+# Superpowers skill çalışma alanı (SDD ledger, brainstorm taslakları)
+.superpowers/
