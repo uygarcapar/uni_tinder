@@ -54,3 +54,38 @@ export function modePhotosOf(profile: unknown, mode: AppMode): any[] {
   if (!Array.isArray(list)) return [];
   return [...list].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
 }
+
+/**
+ * `photoId` eşleşen kaydı HER İKİ listede yamalar; isabet olmayan liste (ve
+ * isabet hiç yoksa profilin kendisi) AYNI referansla döner.
+ *
+ * Moderasyon kararı DOSYAYA ait (kütüphane modeli): aynı `photoId` iki modda
+ * birden slot taşıyabilir ve karar değişince ikisi de güncellenmeli — tek
+ * listeyi yamalamak öbür modun yüzeylerinde bayat rozet/karartma bırakır.
+ * Referans korunumu gereksiz re-render'ı önlüyor (feedQueries >
+ * patchPostInCaches'teki aynı gerekçe).
+ */
+export function patchPhotoInBothLists(
+  profile: any,
+  photoId: string,
+  patch: (photo: any) => any,
+): any {
+  if (profile == null || typeof profile !== "object") return profile;
+  let changed = false;
+  const next = { ...profile };
+  for (const key of ["photosList", "friendsPhotosList"] as const) {
+    const list = profile[key];
+    if (!Array.isArray(list)) continue;
+    let hit = false;
+    const patched = list.map((p) => {
+      if (String(p?.photoId) !== photoId) return p;
+      hit = true;
+      return patch(p);
+    });
+    if (hit) {
+      next[key] = patched;
+      changed = true;
+    }
+  }
+  return changed ? next : profile;
+}

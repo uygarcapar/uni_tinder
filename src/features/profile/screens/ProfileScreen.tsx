@@ -100,11 +100,21 @@ import SelfieVerifiedBadge from "@/features/profile/components/SelfieVerifiedBad
 import SelfieVerificationRow from "@/features/profile/components/SelfieVerificationRow";
 import { resolveSelfieVerified } from "@/features/profile/selfie/selfieVerification";
 import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
+import { resolveEditMode } from "@/features/profile/editMode";
+import {
+  modePhotoFields,
+  modePhotosOf,
+  patchPhotoInBothLists,
+} from "@/features/profile/modePhotoFields";
 // Mod halkası + avatara basılı tutunca açılan seçici. Mod durumunun tek
 // kaynağı Keşif tarafı (useAppMode) — bu ekran onu OKUYOR, kendi kopyasını
 // tutmuyor.
 import { useAppMode } from "@/features/discover/useAppMode";
-import { modeFireGradient, type AppMode } from "@/features/discover/modeTheme";
+import {
+  modeFireGradient,
+  modeFireNameKey,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 import ModeSelectorSheet from "@/features/discover/components/ModeSelectorSheet";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -1424,8 +1434,8 @@ export default function ProfileScreen() {
 
   const buildPreviewProfile = () => {
     if (!myProfile) return null;
-    const photos = [...(myProfile.photosList || [])]
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    // "Karşı taraf ne görüyor" önizlemesi — düzenlenen MODUN kartı.
+    const photos = modePhotosOf(myProfile, editMode)
       .map(resolvePhotoUri)
       .filter(Boolean);
     return {
@@ -1624,10 +1634,35 @@ export default function ProfileScreen() {
     }
   };
 
-  // Keşif havuzunda mıyız — foto silme tabanı ve kapının metni buradan okunuyor.
+  /**
+   * ── DÜZENLENEN MOD + foto alan adları ──────────────────────────────────────
+   * Foto boru hattı MODA BAĞLI (mod başına fotoğraf, 2026-11-06): okuma
+   * `photosList`/`friendsPhotosList`, yazma `NewPhotos`/`FriendsNewPhotos` vb.
+   * Hangi mod: aktif uygulama modu; kapalıysa açık olana düşer — editörle
+   * (EditProfileForm) AYNI çözücü, iki yüzey farklı modu düzenlerse yazma
+   * sessizce yanlış profile gider.
+   */
+  const friendsOpen = (myProfile as any)?.modes?.friends !== false;
+  const datingOpen = (myProfile as any)?.modes?.dating !== false;
+  const editMode = resolveEditMode(mode, datingOpen, friendsOpen);
+  const photoFields = modePhotoFields(editMode);
+  /** Düzenlenen modun foto listesi, sıralı. */
+  const modePhotos = useMemo(
+    () => modePhotosOf(myProfile, editMode),
+    [myProfile, editMode],
+  );
+
+  // Keşif havuzunda mıyız — foto silme tabanı ve kapının metni buradan
+  // okunuyor. MOD BAŞINA: Friends düzenlenirken `friendsProfileVisibility`
+  // (normalizer `profileVisibility` alanını okuyor, o yüzden shim).
   const profileVisibility = useMemo(
-    () => normalizeProfileVisibility(myProfile),
-    [myProfile],
+    () =>
+      normalizeProfileVisibility(
+        editMode === "Friends"
+          ? { profileVisibility: (myProfile as any)?.friendsProfileVisibility }
+          : myProfile,
+      ),
+    [myProfile, editMode],
   );
 
   /** Foto/profil akışına özel UT kodu → gösterilecek metin (yoksa null). */
@@ -1657,7 +1692,8 @@ export default function ProfileScreen() {
       // kişininki Review'a düşer ama istek yine 200 döner — bu yüzden başarı
       // yolunda da sonucu okuyup kullanıcıya durumu söylüyoruz.
       const { photos } = await profileService.updateProfile({
-        NewPhotos: [file],
+        // Düzenlenen MODUN alanı — yanlış anahtar öbür modun profiline yazar.
+        [photoFields.newPhotosKey]: [file],
       });
       await refreshPhotos();
       // Kararı listeye ANINDA işliyoruz: rozet + karartma aşağıdaki uyarıyla
@@ -1729,7 +1765,7 @@ export default function ProfileScreen() {
     // 6 tavanı bu uçta backend'de KONTROL EDİLMİYOR (bkz. MAX_PROFILE_PHOTOS):
     // istek 200 döner, profil 7 fotoğrafa çıkar ve sıralama kaydetme
     // NewOrder Range(1,6) doğrulamasına takılıp bozulur. Tek savunma burası.
-    if ((myProfile?.photosList?.length ?? 0) >= MAX_PROFILE_PHOTOS) {
+    if (modePhotos.length >= MAX_PROFILE_PHOTOS) {
       Alert.alert(
         t('profile.photos.limitTitle'),
         t('profile.photos.limitMessage', { max: MAX_PROFILE_PHOTOS }),
@@ -1753,17 +1789,14 @@ export default function ProfileScreen() {
    * GERİ getiriyor ve ikinci basışta 409 üretiyordu.
    */
   const patchPhotoModeration = (photoId, patch) => {
-    setMyProfile((prev) => {
-      if (!prev?.photosList) return prev;
-      return {
-        ...prev,
-        photosList: prev.photosList.map((p) =>
-          p?.photoId === photoId
-            ? { ...p, moderation: { ...normalizePhotoModeration(p), ...patch } }
-            : p,
-        ),
-      };
-    });
+    // Karar DOSYAYA ait: aynı photoId iki modun listesinde birden olabilir,
+    // tek listeyi yamalamak öbür modda bayat rozet bırakır.
+    setMyProfile((prev) =>
+      patchPhotoInBothLists(prev, String(photoId), (p) => ({
+        ...p,
+        moderation: { ...normalizePhotoModeration(p), ...patch },
+      })),
+    );
   };
 
   /**
@@ -1782,16 +1815,19 @@ export default function ProfileScreen() {
         .map((p) => [String(p.photoId), p]),
     );
     if (byId.size === 0) return;
+    // İki listeyi birden tara (patchPhotoModeration'daki aynı gerekçe).
     setMyProfile((prev) => {
-      if (!prev?.photosList) return prev;
-      return {
-        ...prev,
-        photosList: prev.photosList.map((p) => {
-          const fresh = byId.get(String(p?.photoId));
-          if (!fresh) return p;
-          return { ...p, moderation: { ...normalizePhotoModeration(p), ...fresh } };
-        }),
-      };
+      let next = prev;
+      for (const id of byId.keys()) {
+        next = patchPhotoInBothLists(next, id, (p) => ({
+          ...p,
+          moderation: {
+            ...normalizePhotoModeration(p),
+            ...byId.get(String(p?.photoId ?? id)),
+          },
+        }));
+      }
+      return next;
     });
   };
 
@@ -1945,7 +1981,7 @@ export default function ProfileScreen() {
     // Taban artık SABİT DEĞİL: sunucunun `requiredPhotoCount`'u. Kural
     // değişirse istemci kendiliğinden doğru davranır.
     const minPhotos = resolveRequiredPhotoCount(profileVisibility);
-    if ((myProfile?.photosList?.length ?? 0) <= minPhotos) {
+    if (modePhotos.length <= minPhotos) {
       Alert.alert(
         t('profile.photos.minTitle'),
         t('profile.photos.minMessage', { min: minPhotos }),
@@ -1954,14 +1990,16 @@ export default function ProfileScreen() {
     }
     // Ana fotoğrafı silmek başka bir fotoğrafı otomatik ana yapıyor → rozet
     // düşer. Yan fotoğrafı silmek etkilemez, orada uyarı çıkmıyor.
-    const deletingMain = myProfile?.photosList?.some(
+    const deletingMain = modePhotos.some(
       (p) => String(p?.photoId) === String(photoId) && p?.isMainPhoto,
     );
     if (deletingMain && !(await confirmMainPhotoChange(myProfile))) return;
     setSavingPhoto(true);
     try {
+      // "Bu moddan çıkar" — dosya öbür modda slot taşıyorsa yaşamaya
+      // devam eder (kütüphane modeli).
       await profileService.updateProfile({
-        PhotoIdsToDelete: [photoId],
+        [photoFields.photoIdsToDeleteKey]: [photoId],
       });
       await refreshPhotos();
     } catch (e) {
@@ -1995,11 +2033,14 @@ export default function ProfileScreen() {
       return;
 
     const updates: any = {
-      PhotoOrders: next.map((p, i) => ({ photoId: p.photoId, newOrder: i + 1 })),
+      [photoFields.photoOrdersKey]: next.map((p, i) => ({
+        photoId: p.photoId,
+        newOrder: i + 1,
+      })),
     };
     if (wasMain) {
       if (!normalizePhotoModeration(added).isVisibleToOthers) return;
-      updates.NewMainPhotoId = added.photoId;
+      updates[photoFields.newMainPhotoIdKey] = added.photoId;
     }
 
     try {
@@ -2026,7 +2067,7 @@ export default function ProfileScreen() {
     const uri = resolvePhotoUri(photo);
     if (!uri) return;
 
-    const list = myProfile?.photosList ?? [];
+    const list = modePhotos;
     const slot = list.findIndex(
       (p) => String(p?.photoId) === String(photo.photoId),
     );
@@ -2048,10 +2089,10 @@ export default function ProfileScreen() {
 
     try {
       const { photos } = await profileService.updateProfile({
-        NewPhotos: [
+        [photoFields.newPhotosKey]: [
           { uri: picked.uri, type: picked.mime, name: picked.fileName },
         ],
-        PhotoIdsToDelete: [photo.photoId],
+        [photoFields.photoIdsToDeleteKey]: [photo.photoId],
       });
 
       const fresh = await profileService.getMyProfile(true);
@@ -2059,11 +2100,10 @@ export default function ProfileScreen() {
 
       // Yeni photoId yanıtta gelmiyor: taze listede ÖNCEDEN OLMAYAN kayıt o.
       const known = new Set(list.map((p) => String(p?.photoId)));
-      const added = (fresh?.photosList ?? []).find(
-        (p) => !known.has(String(p?.photoId)),
-      );
+      const freshList = modePhotosOf(fresh, editMode);
+      const added = freshList.find((p) => !known.has(String(p?.photoId)));
       if (added && slot >= 0) {
-        await restorePhotoSlot(fresh.photosList, added, slot, wasMain);
+        await restorePhotoSlot(freshList, added, slot, wasMain);
       }
       await refreshPhotos();
 
@@ -2192,7 +2232,7 @@ export default function ProfileScreen() {
       key: "photos",
       title: t('profile.completion.photos'),
       icon: { sf: "camera" as SFSymbol, lucide: Camera },
-      current: myProfile?.photosList?.length || 0,
+      current: modePhotos.length || 0,
       max: 6,
       desc: t('profile.completion.photosDescription'),
     },
@@ -2592,9 +2632,8 @@ export default function ProfileScreen() {
                     OKUMUYOR, aşağıdaki upsell'le AYNI koşulun iki yüzü — ikisi
                     ayrı kaynaktan okursa aktivasyon penceresinde ikisi birden
                     (ya da hiçbiri) çıkar. */}
-                {/* Mod yalnız plus kartının zeminine gidiyor: Arkadaş modunda
-                    şeridin solundaki kart Spark yeşiline dönüyor, yanındaki
-                    Fire/Not kartlarıyla aynı dilde kalsın. */}
+                {/* Mod iki şeye gidiyor: plus kartının zemini (Arkadaş'ta Spark
+                    yeşili) ve Fire/Spark kartının başlığındaki ürün adı. */}
                 <ShopCardsRow
                   showPlusCard={showMembershipCard}
                   mode={mode}
@@ -2732,7 +2771,12 @@ export default function ProfileScreen() {
                               }`}
                             >
                               <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.onMedia }}>
-                                {t(premiumBenefitLabelKey(key))}
+                                {/* `fire` maddesi bugün ilk dörtte değil ama
+                                    sıra premiumBenefits.ts'te değişebilir —
+                                    parametre o güne hazır, fazlası zararsız. */}
+                                {t(premiumBenefitLabelKey(key), {
+                                  fire: t(modeFireNameKey(mode)),
+                                })}
                               </Text>
                               <View className="flex-row items-center gap-4">
                                 <View className="w-16 items-center">
@@ -3003,6 +3047,7 @@ export default function ProfileScreen() {
             yerden geliyor (kart, bildirim yönlendirmesi, görünürlük sheet'inin
             CTA'sı) ve üçü de bu ekrana ulaşabilmeli. */}
         <ReferralSheet
+          mode={mode}
           visible={referralSheetVisible}
           onClose={() => setReferralSheetVisible(false)}
         />

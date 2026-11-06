@@ -10,6 +10,7 @@
 import {
   modePhotoFields,
   modePhotosOf,
+  patchPhotoInBothLists,
 } from "@/features/profile/modePhotoFields";
 
 describe("modePhotoFields", () => {
@@ -66,5 +67,45 @@ describe("modePhotosOf", () => {
   it("order alanı eksikse 0 sayılır, sıralama yine deterministik", () => {
     const p = { photosList: [{ photoId: "b", order: 1 }, { photoId: "a" }] };
     expect(modePhotosOf(p, "Dating").map((x) => x.photoId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("patchPhotoInBothLists", () => {
+  // Moderasyon kararı DOSYAYA ait (kütüphane modeli): aynı photoId iki
+  // listede birden olabilir ve karar değiştiğinde İKİSİ de güncellenmeli —
+  // tek listeyi yamalamak öbür modun kartında bayat rozet bırakır.
+  const profile = () => ({
+    photosList: [
+      { photoId: "shared", status: "Pending" },
+      { photoId: "d-only", status: "Approved" },
+    ],
+    friendsPhotosList: [
+      { photoId: "shared", status: "Pending" },
+      { photoId: "f-only", status: "Approved" },
+    ],
+  });
+
+  it("aynı photoId iki listedeyken ikisi de yamalanır", () => {
+    const next = patchPhotoInBothLists(profile(), "shared", (p) => ({
+      ...p,
+      status: "Approved",
+    }));
+    expect(next.photosList[0].status).toBe("Approved");
+    expect(next.friendsPhotosList[0].status).toBe("Approved");
+  });
+
+  it("tek listedeyken öbür listeye dokunulmaz (referans korunur)", () => {
+    const input = profile();
+    const next = patchPhotoInBothLists(input, "d-only", (p) => ({
+      ...p,
+      status: "Rejected",
+    }));
+    expect(next.photosList[1].status).toBe("Rejected");
+    expect(next.friendsPhotosList).toBe(input.friendsPhotosList);
+  });
+
+  it("isabet yoksa aynı referans döner", () => {
+    const input = profile();
+    expect(patchPhotoInBothLists(input, "yok", (p) => ({ ...p }))).toBe(input);
   });
 });

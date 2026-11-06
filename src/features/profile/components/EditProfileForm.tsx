@@ -105,6 +105,10 @@ import {
 // mod kopyasını tutmuyor, segment de yok (bkz. resolveEditMode).
 import { useAppMode } from "@/features/discover/useAppMode";
 import { resolveEditMode } from "@/features/profile/editMode";
+import {
+  modePhotoFields,
+  modePhotosOf,
+} from "@/features/profile/modePhotoFields";
 import { useFriendshipIntents } from "@/shared/queries/commonQueries";
 import { sanitizePrompts } from "@/features/profile/promptPayload";
 import {
@@ -1068,12 +1072,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   // objesiyle değiştirilir — URL değişmişse eski URL ekranda kalmasın.
   useEffect(() => {
     if (stage < 2) return;
-    const serverPhotos = myProfile?.photosList;
-    if (!serverPhotos) return;
-
-    const sortedPhotos = [...serverPhotos].sort(
-      (a, b) => (a.order ?? 0) - (b.order ?? 0),
-    );
+    // Düzenlenen MODUN listesi (mod başına fotoğraf) — modePhotosOf zaten
+    // order'a göre sıralı kopya döndürüyor.
+    const sortedPhotos = modePhotosOf(myProfile, editMode);
+    if (sortedPhotos.length === 0 && !(myProfile as any)?.photosList) return;
 
     let nextOrder = sortedPhotos;
     if (photoOrderDirty) {
@@ -1106,7 +1108,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       newPositions[photo.photoId] = i;
     });
     positions.value = newPositions;
-  }, [stage, myProfile?.photosList, photoOrderDirty, positions]);
+  }, [stage, myProfile, editMode, photoOrderDirty, positions]);
 
   // ── Toggle callbacks ────────────────────────────────────────────────────
   const toggleHobby = useCallback((id) => {
@@ -1487,11 +1489,15 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       const orderToSave = draftPhotoOrderRef.current;
       if (photoOrderDirtyRef.current && orderToSave.length > 0) {
-        updates.PhotoOrders = orderToSave.map((p, i) => ({
+        // Düzenlenen MODUN alanları — yanlış anahtar öbür modun sırasını ezer.
+        const photoFields = modePhotoFields(editMode);
+        updates[photoFields.photoOrdersKey] = orderToSave.map((p, i) => ({
           photoId: p.photoId,
           newOrder: i + 1,
         }));
-        const originalMain = myProfile?.photosList?.find((p) => p.isMainPhoto);
+        const originalMain = modePhotosOf(myProfile, editMode).find(
+          (p) => p.isMainPhoto,
+        );
         if (orderToSave[0]?.photoId !== originalMain?.photoId) {
           // İlk sıradaki foto ana foto olur. Yayında OLMAYAN bir fotoğraf ana
           // yapılırsa profil kartı boş görünür — sıralamayı kaydetmeyi kesip
@@ -1520,7 +1526,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           if (!(await confirmMainPhotoChange(myProfile))) {
             return; // finally bloğu setSavingProfile(false) yapıyor
           }
-          updates.NewMainPhotoId = orderToSave[0].photoId;
+          updates[photoFields.newMainPhotoIdKey] = orderToSave[0].photoId;
         }
       }
 
@@ -1538,8 +1544,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       // 200 döner: modal kapanır, kullanıcı ana fotoğrafın neden değişmediğini
       // hiç öğrenemez. Yanıt foto listesi taşıyorsa doğruluyoruz; TAŞIMIYORSA
       // sessizce geçiyoruz — bilinmeyeni ihlal saymak yanlış alarm olurdu.
-      const requestedMainId = updates.NewMainPhotoId;
-      const savedPhotos = savedProfile?.photosList;
+      const requestedMainId =
+        updates.NewMainPhotoId ?? updates.FriendsNewMainPhotoId;
+      const savedPhotos = savedProfile
+        ? modePhotosOf(savedProfile, editMode)
+        : null;
       if (requestedMainId != null && Array.isArray(savedPhotos) && savedPhotos.length > 0) {
         const appliedMain = savedPhotos.find((p: any) => p?.isMainPhoto);
         if (
