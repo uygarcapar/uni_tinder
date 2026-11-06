@@ -8,6 +8,17 @@ import {
   Easing,
 } from "react-native";
 import { useTranslation } from "react-i18next";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
+import {
+  DRAG_IDLE,
+  DRAG_RELEASED,
+  DRAG_TRACKING,
+  MENU_LONG_PRESS_MS,
+  menuDragPhase,
+  menuDragX,
+  menuDragY,
+} from "@/features/chat/messageMenuDrag";
 import { Check, CheckCheck, Clock, AlertCircle, RefreshCw } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import ReplyPreview, {
@@ -18,6 +29,7 @@ import {
   BUBBLE_MAX_WIDTH,
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
+  BUBBLE_PRESS_SCALE,
   BUBBLE_RADIUS,
   reactionChipBorder,
   bubbleCorners,
@@ -31,6 +43,7 @@ import {
 } from "@/features/chat/components/messageHighlight";
 import { messageContentEqual } from "@/features/chat/messageEquality";
 import { consumeMessageEntering } from "@/features/chat/enterAnimation";
+import { claimChatListTap } from "@/features/chat/listTapGuard";
 import { parseUtc } from "@/shared/utils/dateUtc";
 import { colors } from "../../../shared/theme/colors";
 
@@ -109,6 +122,9 @@ function MessageBubble({
   onLongPress,
   onReplyTap,
   onRetryTap,
+  // Tepki kapsülüne dokunma → ReactionDetailsSheet. memo karşılaştırması
+  // callback'leri SAYMIYOR: çağıran bunu STABİL vermeli (mesajı argüman alır).
+  onReactionTap,
   i18nResolver,
   // Sohbetin modu — yalnız KENDİ balonumun dolgusunu seçiyor (ownBubbleFill).
   // Ekranın seçili modu DEĞİL: Arkadaş sohbeti Keşif Dating'teyken de açılabilir.
@@ -324,6 +340,8 @@ function MessageBubble({
         width,
         height,
         radius: BUBBLE_RADIUS,
+        // Klon bu ölçekten doğar — gerçek balon şu an bu kadar küçülmüş.
+        pressScale: BUBBLE_PRESS_SCALE,
         setHidden: setHiddenForMenu,
         // remeasure: kapanışta klonun döneceği konum taze ölçülür — menü
         // açılırken klavye kapandığından liste kayıyor, basış anındaki y bayat.
@@ -344,6 +362,48 @@ function MessageBubble({
       });
     });
   };
+
+  // ── Uzun basış = RNGH pan'i (Pressable.onLongPress DEĞİL) ────────────────
+  // Menü açıldıktan sonra parmak kalkmadan menüde gezip bırakarak seçebilsin
+  // diye (sistem menüsü / WhatsApp). Pressable'ın uzun basışı parmağın sonraki
+  // hareketini vermiyor; bu pan ise uzun basışla AKTİFLEŞİP parmak kalkana
+  // kadar konum yayınlamaya devam ediyor (bkz. messageMenuDrag.ts).
+  //
+  // Jest yarışı: activateAfterLongPress süresinden önce parmak ~10pt oynarsa
+  // pan FAIL eder (RNPanHandler shouldFailUnderCustomCriteria) → kaydırma,
+  // yanıt çekişi, saat reveal'i eskisi gibi kazanır. Süre dolup aktifleşince
+  // de onlar artık başlayamaz (RNGH yerel scroll tanıyıcısıyla eşzamanlılığa
+  // izin vermiyor) → menüde gezerken liste altta kaymaz.
+  //
+  // Jest nesnesi mesaja BAĞLI DEĞİL (recycle'da yeniden kurulmasın): güncel
+  // handleLongPress ref'ten okunur.
+  const longPressRef = useRef(handleLongPress);
+  longPressRef.current = handleLongPress;
+  const hasLongPress = !!onLongPress;
+  const menuGesture = useMemo(() => {
+    const fire = () => longPressRef.current();
+    return Gesture.Pan()
+      .enabled(hasLongPress)
+      .activateAfterLongPress(MENU_LONG_PRESS_MS)
+      .onStart((e) => {
+        "worklet";
+        menuDragX.value = e.absoluteX;
+        menuDragY.value = e.absoluteY;
+        menuDragPhase.value = DRAG_TRACKING;
+        runOnJS(fire)();
+      })
+      .onUpdate((e) => {
+        "worklet";
+        menuDragX.value = e.absoluteX;
+        menuDragY.value = e.absoluteY;
+      })
+      .onEnd((_e, success) => {
+        "worklet";
+        // İptal (sistem kesintisi vb.) seçim SAYILMAZ: menü açık kalır,
+        // kullanıcı dokunarak seçer.
+        menuDragPhase.value = success ? DRAG_RELEASED : DRAG_IDLE;
+      });
+  }, [hasLongPress]);
 
   // System mesajı — ortada gri kapsül (ekran alanında ortala: reveal şeridini sayma)
   if (message.isSystemMessage) {
@@ -446,13 +506,12 @@ function MessageBubble({
               balondan geniş olduğunda dış sütunun sağ kenarı balonunkinden
               ayrılıyor, kapsül balonun dışına kayıyordu. */}
           <View style={{ position: "relative", maxWidth: BUBBLE_MAX_WIDTH }}>
+            <GestureDetector gesture={menuGesture}>
             <Pressable
-              onLongPress={handleLongPress}
               // Yeniden gönderme balona DOKUNARAK değil, sağdaki yuvarlak
               // butondan yapılır (aşağıya bak): balonun tamamı dokunma hedefiyken
               // yanlışlıkla yeniden göndermek çok kolaydı.
               onPressOut={() => setPressed(false)}
-              delayLongPress={300}
               style={{
                 backgroundColor: bubbleBg,
                 // Gönderen tarafın üst köşesi dar (bkz. bubbleCorners).
@@ -477,7 +536,7 @@ function MessageBubble({
                 position: "relative",
                 // Uzun basış feedback'i: anlık hafif shrink (animasyonsuz).
                 // onPressIn'de DEĞİL — normal dokunuşta scale istenmiyor.
-                transform: [{ scale: pressed ? 0.97 : 1 }],
+                transform: [{ scale: pressed ? BUBBLE_PRESS_SCALE : 1 }],
               }}
             >
               {isVoice && (
@@ -537,6 +596,7 @@ function MessageBubble({
                 />
               )}
             </Pressable>
+            </GestureDetector>
 
             {/* TEK kapsül: farklı kullanıcıların farklı emoji'leri ayrı kutucuk
                 değil, aynı kapsülün içinde yan yana durur (MessageActionSheet
@@ -559,16 +619,30 @@ function MessageBubble({
                   transform: chipReveal.transform,
                 }}
               >
-                {message.reactions.map((r: any) => (
-                  <View key={r.emoji} className="flex-row items-center">
-                    <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
-                    {r.count > 1 && (
-                      <Text className="text-[10px] ml-1" style={{ color: colors.neutral200 }}>
-                        {r.count}
-                      </Text>
-                    )}
-                  </View>
-                ))}
+                {/* Kapsülün TAMAMI tek dokunma hedefi (sheet tüm tepkileri
+                    gösteriyor). Kapsül balonun altına taşıyor; Fabric taşan
+                    çocuğa dokunuş veriyor (overflowInset), hitSlop küçük
+                    kapsülü parmağa büyütür. claimChatListTap: liste-tap jesti
+                    klavyeyi kapatmasın (listTapGuard sözleşmesi). */}
+                <Pressable
+                  onPressIn={claimChatListTap}
+                  onPress={() => onReactionTap?.(message)}
+                  disabled={!onReactionTap}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                >
+                  {message.reactions.map((r: any) => (
+                    <View key={r.emoji} className="flex-row items-center">
+                      <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
+                      {r.count > 1 && (
+                        <Text className="text-[10px] ml-1" style={{ color: colors.neutral200 }}>
+                          {r.count}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </Pressable>
               </Animated.View>
             )}
           </View>

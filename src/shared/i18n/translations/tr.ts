@@ -170,7 +170,7 @@ const tr = {
   deactivateAccount: {
     alertTitle: 'Hesabını dondur',
     alertMsg:
-      'Profilin kimseye gösterilmez ve bildirim almazsın. Verilerin durur — tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
+      'Profilin kimseye gösterilmez ve bildirim almazsın. Verilerin durur, tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
     cancel: 'Vazgeç',
     confirm: 'Dondur',
     successTitle: 'Hesabın donduruldu',
@@ -206,7 +206,7 @@ const tr = {
       // hareket uygulamayı tamamen kapatıp açmak.
       storeLockedTitle: 'Oturum bilgilerine ulaşılamadı',
       storeLockedMessage:
-        'Bu açılışta cihaz kilidi yüzünden oturumun okunamadı. Tekrar giriş yapmana gerek yok — uygulamayı tamamen kapatıp yeniden aç.',
+        'Bu açılışta cihaz kilidi yüzünden oturumun okunamadı. Tekrar giriş yapmana gerek yok, uygulamayı tamamen kapatıp yeniden aç.',
     },
     // Ban / askı / silme ekranı. Gövde metni backend'den (`message`) gelir —
     // buradaki fallback'ler yalnız gövde boş dönerse kullanılır.
@@ -486,9 +486,9 @@ const tr = {
         Bu veriler yalnızca açık rızanızla işlenir. Rızanızı dilediğiniz zaman geri çekebilirsiniz; bu durumda ilgili özellik (eşleşme önerileri veya fotoğraf doğrulaması) çalışmaz.
       `,
 
-      sectionTitle4: 'Fotoğraf Doğrulama — Biyometrik Verinize İlişkin Açık Rıza',
+      sectionTitle4: 'Fotoğraf Doğrulama: Biyometrik Verinize İlişkin Açık Rıza',
       section4Content: `
-        lit'te **isteğe bağlı** bir fotoğraf doğrulama özelliği vardır: kameranızla sizden istenen iki küçük hareketi yaparken çekilen kareler, profilinizdeki ana fotoğrafla otomatik olarak karşılaştırılır. Amaç tektir — profildeki fotoğrafın gerçekten size ait olduğunu göstermek, yani başkasının fotoğraflarıyla sahte profil açılmasını zorlaştırmak.
+        lit'te **isteğe bağlı** bir fotoğraf doğrulama özelliği vardır: kameranızla sizden istenen iki küçük hareketi yaparken çekilen kareler, profilinizdeki ana fotoğrafla otomatik olarak karşılaştırılır. Amaç tektir: profildeki fotoğrafın gerçekten size ait olduğunu göstermek, yani başkasının fotoğraflarıyla sahte profil açılmasını zorlaştırmak.
 
         Bu karşılaştırma yüz verinizi, yani KVKK'nın 6. maddesi anlamında **özel nitelikli kişisel veriyi** işlemeyi gerektirir. Bu tür veriler yalnızca **açık rızanızla** işlenebilir (m. 6/2-a); başka hiçbir hukuki sebebe (meşru menfaat, sözleşmenin ifası vb.) dayanılmaz.
 
@@ -503,7 +503,7 @@ const tr = {
         **Rozetin anlamı sınırlıdır.** Doğrulama, uygulamayı kullanan kişinin profildeki fotoğraftaki kişi olduğunu makul ölçüde gösterir; bir kimlik doğrulaması değildir. Adınızın, yaşınızın veya öğrenci olduğunuzun kanıtı sayılmaz. Bu yüzden rozet "fotoğraf doğrulandı" der, "kimlik doğrulandı" demez.
       `,
 
-      sectionTitle5: 'Fotoğraf Doğrulama — Yurt Dışına Aktarıma İlişkin Açık Rıza',
+      sectionTitle5: 'Fotoğraf Doğrulama: Yurt Dışına Aktarıma İlişkin Açık Rıza',
       section5Content: `
         Yukarıdaki karşılaştırmayı yapan görüntü işleme hizmeti Türkiye'de değil, Amerika Birleşik Devletleri'nde bulunan sunucularda (Amazon Web Services Rekognition, ABD us-east-1 bölgesi) çalışır. Karelerin oraya gönderilmesi KVKK'nın 9. maddesi anlamında **yurt dışına aktarım**dır ve bunun için ayrı bir **açık rıza** gerekir. Bu nedenle fotoğraf doğrulamayı kullanabilmek için hem 4. bölümdeki biyometrik veri rızasının hem de bu rızanın verilmiş olması gerekir; biri eksikse doğrulama hiç başlatılmaz.
 
@@ -702,7 +702,7 @@ const tr = {
       description: 'Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.',
       allowButton: 'Konumuma İzin Ver',
       retryButton: 'Tekrar Dene',
-      privacyNote: 'Tam adresin kimseyle paylaşılmaz — profilinde yalnızca şehir ve ilçen görünür.',
+      privacyNote: 'Tam adresin kimseyle paylaşılmaz, profilinde yalnızca şehir ve ilçen görünür.',
       deniedTitle: 'Konum izni gerekli',
       deniedDescription: 'Eşleşme için konumuna ihtiyacımız var. Ayarlar\'dan konum iznini açıp geri dönebilirsin.',
       openSettings: 'Ayarlar\'a Git',
@@ -728,7 +728,7 @@ const tr = {
     },
     step17: {
       title: 'Kendini anlat.',
-      description: 'En az bir soruyu cevapla. Kartında en çok okunan bölüm burası — istersen üçe kadar çıkabilirsin.',
+      description: 'En az bir soruyu cevapla. Kartında en çok okunan bölüm burası, istersen üçe kadar çıkabilirsin.',
     },
     stepMode: {
       // Başlık HEADER'DA (hobiler adımıyla aynı yapı) ve geri butonuyla aynı
@@ -802,7 +802,7 @@ const tr = {
       // "Yalnız olma" kuralı yalnızca ana fotoğrafa uygulanıyor; cümlenin ikinci
       // yarısı olmazsa kullanıcı grup fotoğraflarını hiç yüklemiyor.
       description:
-        'Sıralamayı değiştirmek için fotoğrafları birbirinin üzerine sürükle. İlk sıradaki ana profil fotoğrafın — ana fotoğrafta yalnız olmalısın, diğerlerinde şart değil.',
+        'Sıralamayı değiştirmek için fotoğrafları birbirinin üzerine sürükle. İlk sıradaki ana profil fotoğrafın. Ana fotoğrafta yalnız olmalısın, diğerlerinde şart değil.',
       maxPhotosError: 'En fazla 6 fotoğraf ekleyebilirsiniz',
       submitButton: 'Profili Tamamla',
       submitError: 'Kayıt tamamlanamadı. Lütfen tekrar dene.',
@@ -817,7 +817,7 @@ const tr = {
       // fotoğraf da aynı kuyruğa girer, tek doğru davranış beklemek.
       photosUnderReviewTitle: 'Fotoğrafların inceleniyor',
       photosUnderReviewMessage:
-        '{{count}} fotoğrafın hâlâ inceleniyor. Kaydını tamamlamak için birkaç dakika sonra tekrar dene — yeniden fotoğraf yüklemene gerek yok.',
+        '{{count}} fotoğrafın hâlâ inceleniyor. Kaydını tamamlamak için birkaç dakika sonra tekrar dene, yeniden fotoğraf yüklemene gerek yok.',
       photosMissingTitle: 'Bazı fotoğraflar bulunamadı',
       photosMissing:
         'Telefonun geçici dosyaları temizlediği için bazı fotoğrafların silinmiş. Devam etmek için yeniden ekleyebilirsin.',
@@ -831,7 +831,7 @@ const tr = {
       // süreyi Profil > Üyelik kartı anlatıyor.
       premiumGiftTitle: 'Plus+ hediyen hazır',
       premiumGiftMessage:
-        'Ön kayıt olduğun için Plus+ hediyeni tanımladık — tüm Plus+ özellikleri artık senin.',
+        'Ön kayıt olduğun için Plus+ hediyeni tanımladık, tüm Plus+ özellikleri artık senin.',
       premiumGiftCta: 'Harika',
     },
   },
@@ -904,7 +904,7 @@ const tr = {
       // Pencere damgası elimizde yokken (liste DTO'su taşımıyor / uygulama yeniden
       // açıldı): süre vaat etmeden denemeyi sunuyoruz.
       restoreMessageUnknown: 'Bu sohbet kapatıldı. Geri almayı deneyebilirsin.',
-      restoreUnavailable: 'Bu eşleşme kalıcı olarak kapandı — geri alma penceresi yok.',
+      restoreUnavailable: 'Bu eşleşme kalıcı olarak kapandı, geri alma penceresi yok.',
       restoreWindowHint: 'Geri almak için {{time}} kaldı.',
       restoreButton: 'Geri Al',
       restoreError: 'Geri alınamadı',
@@ -971,13 +971,17 @@ const tr = {
       deleteForMe: 'Sadece benden sil',
       deleteForEveryone: 'Herkes için sil',
     },
+    reactions: {
+      title: 'Tepkiler',
+      remove: 'Tepkiyi kaldır',
+    },
     editing: {
       label: 'Mesajı düzenliyorsun',
     },
     input: {
       placeholder: 'Mesaj...',
       closed: 'Bu sohbet kapatıldı',
-      quotaReached: "Mesaj hakkın bitti — Plus+'a geç",
+      quotaReached: "Mesaj hakkın bitti, Plus+'a geç",
       send: 'Gönder',
       voice: 'Sesli mesaj',
     },
@@ -1104,8 +1108,8 @@ const tr = {
       // zaten bir moddadır ve yaptığı şey geçiş.
       pickerTitle: 'Modu değiştir',
       description: {
-        Dating: 'Flört için tanış — karşılıklı beğeniyle eşleşin.',
-        Friends: 'Kampüsten arkadaş bul — yalnız aynı cinsiyetten kişiler.',
+        Dating: 'Flört için tanış, karşılıklı beğeniyle eşleşin.',
+        Friends: 'Kampüsten arkadaş bul. Yalnız aynı cinsiyetten kişiler.',
       },
       // Profili açılmamış mod satırı: CTA + mini kurulum akışı.
       openCta: 'Profili aç',
@@ -1122,7 +1126,7 @@ const tr = {
         // ama kimseye görünmez; eşiği burada söylüyoruz.
         minHint: 'Profilinin görünmesi için en az 2 fotoğraf gerekiyor.',
         // Kurulum açılırken profil çekilemedi → devralma seçeneği çizilemiyor.
-        sourceLoadFailed: 'Mevcut fotoğrafların yüklenemedi — yeni fotoğraf ekleyebilirsin.',
+        sourceLoadFailed: 'Mevcut fotoğrafların yüklenemedi, yeni fotoğraf ekleyebilirsin.',
       },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
@@ -1131,8 +1135,8 @@ const tr = {
       // sayısı. 9'da tavan → `max`. Sayı kodda seçiliyor (one/other/max),
       // i18next çoğul eki kullanılmıyor.
       likeCount: {
-        one: '1 beğeni',
-        other: '{{count}} beğeni',
+        one: '+1 beğeni',
+        other: '+{{count}} beğeni',
         max: '9+ beğeni',
       },
       switchTo: {
@@ -1224,7 +1228,7 @@ const tr = {
       // Süre GÖMÜLEMEZ: Fire döngüsü 2026-08-22'den beri tier'a bağlı
       // (haftalık 7, aylık 30, yıllık 365 gün). "7 günlük döngü" yazmak aylık
       // ve yıllık abonelere yanlış vaat oluyordu; gerçek süre `{{time}}`.
-      fireCooldownMessage: 'Abonelik döngün yenilendiğinde hakların da yenilenecek — {{time}}.',
+      fireCooldownMessage: 'Abonelik döngün yenilendiğinde hakların da yenilenecek: {{time}}.',
       // Eşiğin ALTINDA gösterilen hâli: jest henüz tamamlanmadı, yapılacak
       // şey çekmeye devam etmek. Eşikte yerini `fireReleaseHint` alıyor —
       // iki metin de kendi anında DOĞRU, bu yüzden ipucu çekişin başından
@@ -1278,7 +1282,7 @@ const tr = {
       // Başlık tabloya sığacak kadar kısa, "bu ne işe yarıyor" cevabı burada.
       benefitDetails: {
         unlimitedLikes:
-          'Ücretsiz üyelikte günlük beğeni hakkın sınırlıdır — dolduğunda deste durur ve ertesi günü beklersin. Plus ile günlük sınır tamamen kalkar.',
+          'Ücretsiz üyelikte günlük beğeni hakkın sınırlıdır, dolduğunda deste durur ve ertesi günü beklersin. Plus ile günlük sınır tamamen kalkar.',
         seeLikes:
           'Seni beğenenler listesi ücretsiz üyelikte bulanık gelir: birinin seni beğendiğini bilirsin ama kim olduğunu göremezsin. Plus ile liste netleşir, beğenenleri görüp doğrudan eşleşebilirsin.',
         unlimitedMessages:
@@ -1286,17 +1290,17 @@ const tr = {
         unlimitedUndo:
           'Yanlışlıkla geçtiğin profili destenin başına geri getirir. Geri alma ücretsiz üyelikte tamamen kapalıdır; Plus ile istediğin kadar kullanırsın.',
         fire:
-          '{{fire}}, beğenini karşı tarafa öne çıkararak iletir — listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
+          '{{fire}}, beğenini karşı tarafa öne çıkararak iletir: listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
         advancedFilters:
           'Üniversite, bölüm, sınıf, boy, burç, konuşulan diller, alışkanlıklar ve daha fazlası: kimlerin karşına çıkacağını ayrıntılı seçersin. Bu filtreler ücretsiz üyelikte kapalıdır.',
         widerDistance:
           'Mesafe filtresinin üst sınırı üyeliğe bağlı. Plus ile menzili çok daha uzağa çekip komşu şehirlerdeki profilleri de destene katabilirsin.',
         missedMatchRecovery:
-          'Geçtiğin ama aslında seni beğenmiş olan birini geri getirir — kaçırdığın eşleşmeye ikinci bir şans. Plus ile günlük kurtarma hakkın belirgin şekilde artar.',
+          'Geçtiğin ama aslında seni beğenmiş olan birini geri getirir: kaçırdığın eşleşmeye ikinci bir şans. Plus ile günlük kurtarma hakkın belirgin şekilde artar.',
         discoveryPriority:
           'Profilin diğer kullanıcıların destesinde daha üst sıralarda gösterilir. Aynı kişilere daha erken görünür, daha çok beğeni alırsın.',
         premiumBadge:
-          'Kartında ve profilinde Plus alevi görünür. İstersen Ayarlar\'dan gizleyebilirsin — rozeti kapatmak Plus+ haklarının hiçbirini etkilemez.',
+          'Kartında ve profilinde Plus alevi görünür. İstersen Ayarlar\'dan gizleyebilirsin, rozeti kapatmak Plus+ haklarının hiçbirini etkilemez.',
       },
       // Upsell kartında listenin devamı. Kartın gövdesi zaten paywall'ı açıyor,
       // bu satır ayrı bir dokunma hedefi değil.
@@ -1377,7 +1381,7 @@ const tr = {
         description: 'Aradığın kişiyi daralt. Bir filtrenin anahtarını açarsan aday tükense bile o filtre gevşemez.',
         // Premium bitince filtreler silinmiyor, yalnız uygulanmıyor — şerit bunu
         // söylüyor ki kullanıcı "filtrelerim uçmuş" sanmasın.
-        paused: 'Plus+ filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Plus+\'a dönersen kaldığı yerden devam eder.',
+        paused: 'Plus+ filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor. Plus+\'a dönersen kaldığı yerden devam eder.',
       },
       dealbreaker: {
         // TEK metin, anahtarın durumuna göre DEĞİŞMEZ: metin değişince kullanıcı
@@ -1683,6 +1687,7 @@ const tr = {
     notePill: 'Sana not bıraktı',
     noteOpen: 'Notu aç',
     noteTag: 'Not',
+    noteYouSaid: 'Profilinde şunu dedin',
     noteAccept: 'Kabul et',
     noteReject: 'Reddet',
     emptyFire: 'Henüz {{fire}} yok.',
@@ -1726,7 +1731,7 @@ const tr = {
     // yanındaki pill'den geliyor (viewLikersAction).
     recoverUnlimited: 'Kurtarma hakkın sınırsız.',
     recoverSuccessTitle: 'Eşleşme kurtarıldı 💞',
-    recoverSuccessMessage: 'Zaten seni beğenmişti — sohbet birazdan açılacak.',
+    recoverSuccessMessage: 'Zaten seni beğenmişti, sohbet birazdan açılacak.',
     recoverFailed: 'Kurtarılamadı.',
   },
   notifications: {
@@ -1780,7 +1785,7 @@ const tr = {
   // sayısı ya da iki farklı ödül adı görmek en hızlı güven kaybı.
   referral: {
     // Kayıt biterken, `LoginResponseDto.referralApplied` doğruysa (Step15).
-    welcomeGift: 'Davet kodun işlendi — 1 not hediyen hesabında.',
+    welcomeGift: 'Davet kodun işlendi, 1 not hediyen hesabında.',
     copied: 'Davet kodun kopyalandı.',
     // Mesaj kodu VE indirme adresini birlikte taşıyor; adres Faz 2'de
     // /invite/:code universal link'ine dönecek (shared/constants/links.ts).
@@ -1951,7 +1956,7 @@ const tr = {
       },
       reason: {
         main_photo_multiple_faces:
-          'Ana fotoğrafında birden fazla kişi var. Ana fotoğrafta yalnız olmalısın — diğer fotoğraflarında arkadaşlarınla olabilirsin.',
+          'Ana fotoğrafında birden fazla kişi var. Ana fotoğrafta yalnız olmalısın, diğer fotoğraflarında arkadaşlarınla olabilirsin.',
         main_photo_no_face:
           'Ana fotoğrafında yüzün görünmüyor. Yüzünün net göründüğü bir fotoğraf seç.',
         explicit_content:
@@ -1991,7 +1996,7 @@ const tr = {
         rejected:
           '{{count}} fotoğrafın topluluk kurallarımıza uymadığı için yayınlanamadı. Yerine başka bir fotoğraf ekleyebilirsin.',
         pending:
-          '{{count}} fotoğrafın inceleniyor. Onaylandığında profilinde kendiliğinden görünecek — yeniden yüklemene gerek yok.',
+          '{{count}} fotoğrafın inceleniyor. Onaylandığında profilinde kendiliğinden görünecek, yeniden yüklemene gerek yok.',
       },
       replace: 'Değiştir',
       chooseAnotherMain: 'Başka fotoğrafı ana yap',
@@ -2072,7 +2077,7 @@ const tr = {
         description:
           'Ön kameranla iki kısa hareket yapacaksın. Her hareket için tek bir kare çekilir ve ana fotoğrafınla karşılaştırılır.',
         bullet1: 'Hangi hareketlerin isteneceğine biz karar veririz, her seferinde değişir.',
-        bullet2: 'Yalnızca iki kare gönderilir — video kaydı yapılmaz.',
+        bullet2: 'Yalnızca iki kare gönderilir, video kaydı yapılmaz.',
         bullet3: 'Yüzün çerçeveye sığsın, ortam aydınlık olsun ve karede yalnız ol.',
         // Sheet'te gösterilen TEK metin (madde işaretleri ve tire yok).
         summary:
@@ -2112,7 +2117,7 @@ const tr = {
         // (EvaluateBoolSignal) `challenge_too_much` diye bir sonuç üretmiyor, yani
         // gülümsemeyi/ağzı "fazla" açmak diye bir başarısızlık yok. Orada abartmayı
         // önermek kullanıcıyı `challenge_too_weak`e iterdi.
-        hintPose: 'Hareketi belirgin yap ama abartma — yumuşak bir hareket yeterli.',
+        hintPose: 'Hareketi belirgin yap ama abartma, yumuşak bir hareket yeterli.',
         hintExpression: 'Belirgin olsun ki kamera görebilsin.',
         // Önizleme adımının metni (bkz. SelfieCameraStep: çek → önizle → onayla).
         reviewHint: 'Yüzün net ve hareket belirgin mi? Değilse yeniden çek.',
@@ -2141,10 +2146,10 @@ const tr = {
         // SAYISINI ("20 derece daha") sızdırmıyorlar — saldırgana eşiği kalibre
         // etme imkânı verirdi. "Biraz daha belirgin" güvenli, kullanıcı zaten ne
         // istendiğini biliyor.
-        challenge_too_weak: 'Neredeyse oldu — hareketi biraz daha belirgin yapar mısın?',
+        challenge_too_weak: 'Neredeyse oldu, hareketi biraz daha belirgin yapar mısın?',
         challenge_wrong_move:
           'İstenen hareketi göremedik. Yönergeyi okuyup tekrar dener misin?',
-        challenge_too_much: 'Biraz fazla oldu — daha yumuşak bir hareket yeterli.',
+        challenge_too_much: 'Biraz fazla oldu, daha yumuşak bir hareket yeterli.',
         no_face: 'Yüzünü göremedik. Yüzün net ve aydınlık görünsün.',
         multiple_faces: 'Karede birden fazla kişi var. Doğrularken yalnız olmalısın.',
         face_occluded: 'Yüzün kapalı görünüyor. Maske, şapka veya gözlüğü çıkarıp dene.',
@@ -2286,7 +2291,7 @@ const tr = {
       profileIncompleteTitle: 'Profilin tamamlanmamış',
       profileIncompleteError: 'Hesabının profil kaydı eksik görünüyor, bu yüzden değişiklik kaydedilemiyor. Bunu senin adına düzeltmemiz gerekiyor.',
       contactSupport: 'Destek\'e Yaz',
-      supportSubject: 'Profil tamamlanmamış — düzenleme kaydedilemiyor',
+      supportSubject: 'Profil tamamlanmamış: düzenleme kaydedilemiyor',
       validationError: 'Girdiğin bilgilerden biri geçersiz. İsim ve sınıf alanlarını kontrol et.',
       // 429: `photo` rate limit'i, fotoğraf yüklemeyle ORTAK kota.
       rateLimitError: 'Çok fazla değişiklik gönderdin. Biraz bekleyip tekrar dene.',
@@ -2299,7 +2304,7 @@ const tr = {
       bioTitle: 'Biyografi',
       bioDesc: 'Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler yaptığından bahset.',
       photosTitle: 'Fotoğraflar',
-      photosHint: 'Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana fotoğrafın olur — ana fotoğrafta yalnız olmalısın, diğerlerinde arkadaşlarınla olabilirsin.',
+      photosHint: 'Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana fotoğrafın olur. Ana fotoğrafta yalnız olmalısın, diğerlerinde arkadaşlarınla olabilirsin.',
       smokingTitle: 'Sigara Kullanımı',
       smokingDesc: 'Sigara kullanım durumunu seç.',
       alcoholTitle: 'Alkol Kullanımı',
@@ -2508,7 +2513,7 @@ const tr = {
   firePurchase: {
     title: '{{fire}} Satın Al',
     description:
-      '{{fire}}\'lar 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
+      '{{fire}}\'lar 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür, üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
     packLabel: '{{count}}x {{fire}}',
     cta: 'Satın Al',
     ctaWithPrice: '{{price}} · Satın Al',
@@ -2548,9 +2553,9 @@ const tr = {
     // (`replyingToPhoto` gönderenin composer'ındaki karşılığı).
     // "Bu" YOK: hedefin önizlemesi satırın hemen yanında duruyor, işaret zamiri
     // orada olmayan bir şeye işaret ediyormuş gibi okunuyordu.
-    leftNoteOnPhoto: 'Fotoğrafına not bıraktı',
-    leftNoteOnPrompt: 'Cevabına not bıraktı',
-    leftNoteOnPost: 'Gönderine not bıraktı',
+    leftNoteOnPhoto: 'Fotoğrafına not bırakıldı',
+    leftNoteOnPrompt: 'Cevabına not bırakıldı',
+    leftNoteOnPost: 'Gönderine not bırakıldı',
     // Gönderi silinmiş/kaldırılmış — not yine okunuyor, bağlamı yok.
     postRemoved: 'Gönderi kaldırıldı',
     sentTitle: 'Not\'un gönderildi',
@@ -2577,7 +2582,7 @@ const tr = {
   notePurchase: {
     title: 'Not Satın Al',
     description:
-      'Not, bir fotoğrafına ya da soru cevabına yazdığın beğeni. Karşı taraf kartını beğenilerinde bulanıklaşmadan görür — yazdığın cümle ve hangi içeriğe yazdığın da yanında. Hakların süresiz, istediğin zaman kullanırsın.',
+      'Not, bir fotoğrafına ya da soru cevabına yazdığın beğeni. Karşı taraf kartını beğenilerinde bulanıklaşmadan görür. Yazdığın cümle ve hangi içeriğe yazdığın da yanında. Hakların süresiz, istediğin zaman kullanırsın.',
     packLabel: '{{count}}x Not',
     cta: 'Satın Al',
     ctaWithPrice: '{{price}} · Satın Al',
@@ -2804,8 +2809,8 @@ const tr = {
     support: {
       title: 'Yanında olmak isteriz',
       body: 'Zor bir dönemden geçiyorsan konuşabileceğin yerler var.',
-      emergency: 'Acil çağrı — 112',
-      helpline: 'Psikososyal destek hattı — 182',
+      emergency: 'Acil çağrı: 112',
+      helpline: 'Psikososyal destek hattı: 182',
     },
 
     report: {
@@ -2941,7 +2946,7 @@ const tr = {
     postedJustNow: 'şimdi',
     empty: {
       title: 'Bugün kampüste kimse paylaşmamış',
-      bodyInside: 'İlk anı sen paylaş — 24 saat boyunca kampüsteki herkes görür.',
+      bodyInside: 'İlk anı sen paylaş. 24 saat boyunca kampüsteki herkes görür.',
       bodyOutside: 'Kampüse geldiğinde sen de paylaşabilirsin.',
         cta: 'İlk anı sen paylaş',
     },
@@ -2964,7 +2969,7 @@ const tr = {
       allow: 'Her zaman izin ver',
       later: 'Şimdilik hayır',
       openSettings: 'Ayarlar\'ı aç',
-      deniedBody: 'İzni Ayarlar\'dan "Her zaman"a alabilirsin. Vermezsen de kampüsteyken paylaşabilirsin — yalnızca bildirim gelmez.',
+      deniedBody: 'İzni Ayarlar\'dan "Her zaman"a alabilirsin. Vermezsen de kampüsteyken paylaşabilirsin, yalnızca bildirim gelmez.',
     },
     // Hata kodları — sunucu mesajı boş gelirse devreye giriyor.
     codes: {
@@ -3022,7 +3027,7 @@ const tr = {
       successTitle: 'Şikayet alındı',
       successMessage: 'Ekibimiz en kısa sürede inceleyecek. Güvende kalman önemli.',
       successBlockedMessage:
-        'Ekibimiz en kısa sürede inceleyecek. Bu kişiyi engelledik — Ayarlar → Engellenenler üzerinden istediğin zaman geri alabilirsin.',
+        'Ekibimiz en kısa sürede inceleyecek. Bu kişiyi engelledik. Ayarlar → Engellenenler üzerinden istediğin zaman geri alabilirsin.',
       alreadyReported: 'Bu kullanıcıyı son 24 saatte zaten şikayet ettin.',
       error: 'Şikayet gönderilemedi.',
       // Şikayet tek başına hiçbir şeyi gizlemiyor; kutu İŞARETSİZ gelir (2026-11-06).
@@ -3086,7 +3091,7 @@ const tr = {
       maintenance: 'Kısa bir bakım',
     },
     fallback: {
-      soft: "Lit'in yeni sürümü hazır — iyileştirmeler ve hata düzeltmeleri var.",
+      soft: "Lit'in yeni sürümü hazır: iyileştirmeler ve hata düzeltmeleri var.",
       force: 'Bu sürüm artık desteklenmiyor. Devam etmek için uygulamayı güncelle.',
       maintenance: 'Kısa bir bakım yapıyoruz. Birkaç dakika sonra tekrar dene.',
     },

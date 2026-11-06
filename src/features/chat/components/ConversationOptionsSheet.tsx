@@ -280,7 +280,7 @@ export default function ConversationOptionsSheet({
         description={t("chat.options.sectionSafetyDescription")}
       />
       <ActionRow
-        icon={<SFIcon name="flag.fill" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
+        icon={<SFIcon name="flag" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
         label={t("chat.options.report")}
         onPress={() => {
           onClose();

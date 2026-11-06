@@ -40,6 +40,13 @@ export function bubbleCorners(isOwn: boolean) {
 }
 
 // Balonun iç boşluğu.
+/**
+ * Uzun basışta gerçek balonun küçüldüğü ölçek. MessageActionSheet klonu TAM bu
+ * ölçekten doğup büyüyor ("kalkış"); ayrışırsa menü açılırken balon bir kare
+ * zıplar.
+ */
+export const BUBBLE_PRESS_SCALE = 0.97;
+
 export const BUBBLE_PAD_H = 14;
 export const BUBBLE_PAD_V = 12;
 

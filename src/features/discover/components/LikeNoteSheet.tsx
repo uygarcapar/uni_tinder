@@ -52,7 +52,6 @@ import {
 import { Check, Pen, X, type LucideIcon } from "@/shared/icons";
 import AppModal from "@/shared/components/AppModal";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
-import NoteGlyph from "@/shared/components/NoteGlyph";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { colors } from "@/shared/theme/colors";
 import {
@@ -77,10 +76,9 @@ const TARGET_PHOTO_H = 128;
 // 19 → 21 (istek: "bir tık büyüt"); tırnak da oranıyla büyüdü.
 const NOTE_TEXT_SIZE = 21;
 const NOTE_TEXT_LINE = 28;
-// "Not" etiketi ve glifi — bir kademe büyüdü (istek).
+// "Not" etiketi — bir kademe büyüdü (istek). Glif modaldan kaldırıldı (istek).
 const NOTE_TAG_SIZE = 15;
-const NOTE_TAG_ICON = 20;
-// "Not" etiketi + glifinin mürekkebi — `textSecondary`ten (#8E8E93) bir tık
+// "Not" etiketinin (ve prompt kartının üstündeki "Sen dedin" etiketinin) mürekkebi — `textSecondary`ten (#8E8E93) bir tık
 // AÇIK gri (istek). İki modda aynı: iOS systemGray2.
 const NOTE_TAG_INK = "#AEAEB2";
 // Notun başındaki açılış tırnağı — SwipeCard'daki prompt cevabıyla aynı işaret
@@ -234,21 +232,17 @@ export default function LikeNoteSheet({
   // fotoğrafın SAĞINDA, ona göre dikeyde ortalı; diğerlerinde tam genişlik.
   const noteBlock = (
     <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-        <NoteGlyph size={NOTE_TAG_ICON} color={NOTE_TAG_INK} />
-        <Text
-          numberOfLines={1}
-          style={{
-            flexShrink: 1,
-            color: NOTE_TAG_INK,
-            fontSize: NOTE_TAG_SIZE,
-            lineHeight: 20,
-            fontWeight: "600",
-          }}
-        >
-          {noteTagLabel}
-        </Text>
-      </View>
+      <Text
+        numberOfLines={1}
+        style={{
+          color: NOTE_TAG_INK,
+          fontSize: NOTE_TAG_SIZE,
+          lineHeight: 20,
+          fontWeight: "600",
+        }}
+      >
+        {noteTagLabel}
+      </Text>
       <View
         style={{
           flexDirection: "row",
@@ -316,7 +310,14 @@ export default function LikeNoteSheet({
             }}
           />
         )}
-        <View style={{ flex: 1, minWidth: 0, marginLeft: AVATAR_GAP, marginRight: 12 }}>
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            marginLeft: AVATAR_GAP,
+            marginRight: 12,
+          }}
+        >
           <Text
             numberOfLines={1}
             style={{
@@ -345,9 +346,7 @@ export default function LikeNoteSheet({
           Hedefsiz not: yalnız not. Zemin YOK — not doğrudan sheet'in üstünde. */}
       <View style={{ marginTop: 20 }}>
         {hasPhoto ? (
-          <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 16 }}
-          >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
             <Image
               source={{ uri: view.photoUrl }}
               style={{
@@ -366,35 +365,57 @@ export default function LikeNoteSheet({
         ) : (
           <View style={{ gap: 16 }}>
             {hasQuote && (
-              <View
-                style={{
-                  alignSelf: "flex-start",
-                  maxWidth: "100%",
-                  borderRadius: 18,
-                  borderCurve: "continuous",
-                  paddingVertical: 12,
-                  paddingHorizontal: 14,
-                  backgroundColor: colors.surface3,
-                  gap: 3,
-                }}
-              >
-                {!!promptQuestion && (
-                  <Text
-                    style={{ color: secondaryInk, fontSize: 13, lineHeight: 17 }}
-                  >
-                    {promptQuestion}
-                  </Text>
-                )}
+              <View style={{ gap: 6 }}>
+                {/* "Sen dedin" — gri kartın DIŞINDA, üst solda: kartın senin
+                  cevabın olduğunu söylüyor (istek). */}
                 <Text
+                  numberOfLines={1}
                   style={{
-                    color: colors.text,
-                    fontSize: 16,
-                    lineHeight: 21,
+                    color: NOTE_TAG_INK,
+                    fontSize: NOTE_TAG_SIZE,
+                    lineHeight: 20,
                     fontWeight: "600",
                   }}
                 >
-                  {view.quote}
+                  {t("likes.noteYouSaid")}
                 </Text>
+                <View
+                  style={{
+                    // Tam genişlik (istek) — eskiden içeriğe sarılıyordu.
+                    alignSelf: "stretch",
+                    borderRadius: 18,
+                    borderCurve: "continuous",
+                    paddingVertical: 12,
+                    paddingHorizontal: 14,
+                    backgroundColor: colors.surface3,
+                    gap: 3,
+                  }}
+                >
+                  {!!promptQuestion && (
+                    <Text
+                      style={{
+                        color: secondaryInk,
+                        fontSize: 13,
+                        lineHeight: 17,
+                        // Soru başlığı kalın (istek): cevabın neye ait olduğu
+                        // ilk bakışta seçilsin.
+                        fontWeight: "600",
+                      }}
+                    >
+                      {promptQuestion}
+                    </Text>
+                  )}
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 16,
+                      lineHeight: 21,
+                      fontWeight: "600",
+                    }}
+                  >
+                    {view.quote}
+                  </Text>
+                </View>
               </View>
             )}
             {noteBlock}

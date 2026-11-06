@@ -872,9 +872,12 @@ export default function FeedScreen() {
                   : "feed.composer.sent",
               ),
             });
-            // "Gönderilerim"e geç: kullanıcı gönderisinin nerede olduğunu
-            // görsün (PendingReview ise orada "inceleniyor" rozetiyle duruyor).
-            handleTabChange("mine", FEED_PAGE_INDEX.mine);
+            // ⚠️ SEKME DEĞİŞMİYOR (istek): eskiden burada "Gönderilerim"e
+            // geçiliyordu; kullanıcı hangi sekmedeyse orada kalıyor.
+            // Gönderilerim'e yeni gönderi zaten useCreatePost'ta önden
+            // ekleniyor. Akış ise pull-to-refresh'in yaptığının aynısıyla
+            // tazeleniyor — Published gönderi çekmeye gerek kalmadan düşsün.
+            postsQuery.refetch?.();
           },
           onError: (e) => {
             const code = feedErrorCode(e);
@@ -952,7 +955,7 @@ export default function FeedScreen() {
         },
       );
     },
-    [createPost, t, handleTabChange, meQuery, openPaywall],
+    [createPost, t, postsQuery, meQuery, openPaywall],
   );
 
   // YANIT VERME YOLU KALDIRILDI (iki modlu yapı): composer, kota kapısı,

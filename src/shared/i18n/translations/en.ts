@@ -164,7 +164,7 @@ const en = {
   deactivateAccount: {
     alertTitle: 'Deactivate your account',
     alertMsg:
-      'Your profile is hidden from everyone and you stop receiving notifications. Your data stays — logging back in reactivates your account.',
+      'Your profile is hidden from everyone and you stop receiving notifications. Your data stays. Logging back in reactivates your account.',
     cancel: 'Cancel',
     confirm: 'Deactivate',
     successTitle: 'Account deactivated',
@@ -200,7 +200,7 @@ const en = {
       // disk. The right move is a full app restart.
       storeLockedTitle: "Couldn't read your session",
       storeLockedMessage:
-        "Your session couldn't be read this launch because of the device lock. No need to sign in again — fully close the app and reopen it.",
+        "Your session couldn't be read this launch because of the device lock. No need to sign in again. Fully close the app and reopen it.",
     },
     // Ban / suspension / deletion screen. The body text comes from the backend
     // (`message`); these fallbacks are only used when that body is empty.
@@ -244,7 +244,7 @@ const en = {
           'Lit is only for people who are at least 18 years old and have a student e-mail address at a supported university. Each person may hold one account; you may not transfer, sell or share it. If your student verification stops being valid, your access may be restricted.',
         sectionTitle2: 'Your Account and Its Security',
         section2Content:
-          'You are responsible for keeping the information on your profile accurate and up to date. Never share your password — everything done from your account is attributed to you. If you believe someone else has accessed your account, change your password and contact support.',
+          'You are responsible for keeping the information on your profile accurate and up to date. Never share your password. Everything done from your account is attributed to you. If you believe someone else has accessed your account, change your password and contact support.',
         sectionTitle3: 'Community Rules',
         section3Content:
           'Harassment, threats, hate speech, sexual or nude content, content involving minors, fake profiles, using someone else\'s photos, spam, advertising and commercial use, requests for money and any attempt at fraud are prohibited. We may remove content and close accounts that break these rules.',
@@ -332,7 +332,7 @@ const en = {
       errors: {
         currentPasswordWrong: 'That password is incorrect, please try again.',
         codeInvalid: 'That code is wrong or has expired. Request a new one.',
-        codeBurned: 'You entered the code incorrectly too many times. It has been cancelled for your security — request a new one.',
+        codeBurned: 'You entered the code incorrectly too many times. It has been cancelled for your security. Request a new one.',
         policy: 'Your new password does not meet the password rules.',
         sameAsCurrent: 'Your new password must be different from your current one.',
         rateLimited: 'Too many attempts. Try again in {{seconds}} seconds.',
@@ -481,9 +481,9 @@ const en = {
         This data is processed only with your explicit consent. You may withdraw your consent at any time; in that case the related feature (match suggestions or photo verification) will not work.
       `,
 
-      sectionTitle4: 'Photo Verification — Explicit Consent for Your Biometric Data',
+      sectionTitle4: 'Photo Verification: Explicit Consent for Your Biometric Data',
       section4Content: `
-        lit has an **optional** photo verification feature: the frames captured while you perform two small movements in front of your camera are automatically compared with the main photo on your profile. There is a single purpose — to show that the photo on the profile really belongs to you, making it harder to open fake profiles with someone else's photos.
+        lit has an **optional** photo verification feature: the frames captured while you perform two small movements in front of your camera are automatically compared with the main photo on your profile. There is a single purpose: to show that the photo on the profile really belongs to you, making it harder to open fake profiles with someone else's photos.
 
         That comparison requires processing your facial data, which is a **special category of personal data** within the meaning of Article 6 of KVKK. Such data may only be processed **with your explicit consent** (art. 6/2-a); no other legal basis (legitimate interest, performance of a contract, etc.) is relied upon.
 
@@ -498,7 +498,7 @@ const en = {
         **The badge means something limited.** Verification reasonably shows that the person using the app is the person in the profile photo; it is not an identity check. It is not proof of your name, your age or your student status. That is why the badge says "photo verified", not "identity verified".
       `,
 
-      sectionTitle5: 'Photo Verification — Explicit Consent for Transfer Abroad',
+      sectionTitle5: 'Photo Verification: Explicit Consent for Transfer Abroad',
       section5Content: `
         The image processing service that performs the comparison above does not run in Türkiye, but on servers located in the United States (Amazon Web Services Rekognition, US us-east-1 region). Sending the frames there is a **transfer abroad** within the meaning of Article 9 of KVKK, and it requires a separate **explicit consent**. For this reason, using photo verification requires both the biometric data consent in section 4 and this consent; if either is missing, verification is never started.
 
@@ -614,7 +614,7 @@ const en = {
       description: ' Enter the 6-digit code sent to',
       descriptionPending: ' A code was previously sent to your address. Check your email.',
       resendSuccess: 'Code sent successfully!',
-      resendPending: 'We just sent the code — try again in {{seconds}}s.',
+      resendPending: 'We just sent the code. Try again in {{seconds}}s.',
       resendButton: 'Resend',
       resendCountdown: 'Resend ({{countdown}}s)',
       verifyButton: 'Verify',
@@ -634,7 +634,7 @@ const en = {
       validTitle: 'Invite code accepted',
       valid: 'You get 1 free note once you finish signing up.',
       invalidTitle: 'Code not found',
-      invalid: 'We could not find this code — it may be a typo.',
+      invalid: 'We could not find this code. It may be a typo.',
       skip: 'Skip',
       continue: 'Continue',
     },
@@ -695,7 +695,7 @@ const en = {
       description: 'We need your location to show your city and the people near you.',
       allowButton: 'Allow Location Access',
       retryButton: 'Try Again',
-      privacyNote: 'Your exact address is never shared — only your city and district appear on your profile.',
+      privacyNote: 'Your exact address is never shared. Only your city and district appear on your profile.',
       deniedTitle: 'Location permission required',
       deniedDescription: 'We need your location to find matches. Enable location access in Settings and come back.',
       openSettings: 'Open Settings',
@@ -721,7 +721,7 @@ const en = {
     },
     step17: {
       title: 'Tell us about you.',
-      description: 'Answer at least one prompt. This is the most-read part of your card — add up to three if you like.',
+      description: 'Answer at least one prompt. This is the most-read part of your card. Add up to three if you like.',
     },
     stepMode: {
       // Short because it lives in the header row next to the back button
@@ -793,7 +793,7 @@ const en = {
       // "Yalnız olma" kuralı yalnızca ana fotoğrafa uygulanıyor; cümlenin ikinci
       // yarısı olmazsa kullanıcı grup fotoğraflarını hiç yüklemiyor.
       description:
-        'Drag photos on top of each other to reorder them. The first photo is your main profile photo — you need to be alone in it, but not in the others.',
+        'Drag photos on top of each other to reorder them. The first photo is your main profile photo. You need to be alone in it, but not in the others.',
       maxPhotosError: 'You can add up to 6 photos',
       submitButton: 'Complete Profile',
       submitError: 'Registration could not be completed. Please try again.',
@@ -808,7 +808,7 @@ const en = {
       // fotoğraf da aynı kuyruğa girer, tek doğru davranış beklemek.
       photosUnderReviewTitle: 'Your photos are being reviewed',
       photosUnderReviewMessage:
-        "{{count}} of your photos are still being reviewed. Try again in a few minutes to finish signing up — you don't need to upload them again.",
+        "{{count}} of your photos are still being reviewed. Try again in a few minutes to finish signing up. You don't need to upload them again.",
       photosMissingTitle: 'Some photos are missing',
       photosMissing:
         'Your phone cleared its temporary files, so some of your photos are gone. Add them again to continue.',
@@ -822,7 +822,7 @@ const en = {
       // süreyi Profil > Üyelik kartı anlatıyor.
       premiumGiftTitle: 'Your Plus+ gift is ready',
       premiumGiftMessage:
-        'Because you pre-registered, your Plus+ gift is now active — every Plus+ feature is yours.',
+        'Because you pre-registered, your Plus+ gift is now active. Every Plus+ feature is yours.',
       premiumGiftCta: 'Nice',
     },
   },
@@ -894,7 +894,7 @@ const en = {
       // When the window timestamp is not available (list DTO omits it / app
       // relaunched): offer the attempt without promising a duration.
       restoreMessageUnknown: 'This chat was closed. You can try to restore it.',
-      restoreUnavailable: 'This match is permanently closed — there is no restore window.',
+      restoreUnavailable: 'This match is permanently closed. There is no restore window.',
       restoreWindowHint: '{{time}} left to restore.',
       restoreButton: 'Restore',
       restoreError: 'Could not restore',
@@ -961,13 +961,17 @@ const en = {
       deleteForMe: 'Delete for me',
       deleteForEveryone: 'Delete for everyone',
     },
+    reactions: {
+      title: 'Reactions',
+      remove: 'Remove reaction',
+    },
     editing: {
       label: 'Editing message',
     },
     input: {
       placeholder: 'Message...',
       closed: 'This chat is closed',
-      quotaReached: 'Out of messages — get Plus+',
+      quotaReached: 'Out of messages. Get Plus+',
       send: 'Send',
       voice: 'Voice message',
     },
@@ -1094,8 +1098,8 @@ const en = {
       // yapılıyor; burada kullanıcı zaten bir moddadır ve yaptığı şey geçiş.
       pickerTitle: 'Switch mode',
       description: {
-        Dating: 'Meet for dating — match when you both like each other.',
-        Friends: 'Find friends on campus — same gender only.',
+        Dating: 'Meet for dating. Match when you both like each other.',
+        Friends: 'Find friends on campus. Same gender only.',
       },
       openCta: 'Open profile',
       // Kurulum sheet'inin FOTOĞRAF bölümü — gerekçeler tr.ts'te.
@@ -1107,15 +1111,15 @@ const en = {
         mainBadge: 'Main',
         remove: 'Remove photo',
         minHint: 'Your profile needs at least 2 photos to be visible.',
-        sourceLoadFailed: "Couldn't load your current photos — you can add new ones.",
+        sourceLoadFailed: "Couldn't load your current photos. You can add new ones.",
       },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
       // açıklama satırı ve hedefi adıyla söylüyor — kullanıcı neye geçtiğini
       // kartın üstünde okuyor.
       likeCount: {
-        one: '1 like',
-        other: '{{count}} likes',
+        one: '+1 like',
+        other: '+{{count}} likes',
         max: '9+ likes',
       },
       switchTo: {
@@ -1204,7 +1208,7 @@ const en = {
       // The period can't be hardcoded: since 2026-08-22 the Fire cycle is
       // tier-based (7/30/365 days). "7-day cycle" was a wrong promise for
       // monthly and yearly subscribers; the real figure is `{{time}}`.
-      fireCooldownMessage: 'Your quota refills when your billing cycle renews — {{time}}.',
+      fireCooldownMessage: 'Your quota refills when your billing cycle renews: {{time}}.',
       // The below-threshold half: the gesture is not complete yet, the thing
       // to do is keep pulling. At the threshold `fireReleaseHint` takes
       // over — both lines are true at their own moment, which is why the hint
@@ -1257,7 +1261,7 @@ const en = {
       // short enough for the table; the "what is this" answer lives here.
       benefitDetails: {
         unlimitedLikes:
-          'Free membership caps how many likes you can send each day — once you hit it, the deck stops until tomorrow. Plus removes the daily cap entirely.',
+          'Free membership caps how many likes you can send each day. Once you hit it, the deck stops until tomorrow. Plus removes the daily cap entirely.',
         seeLikes:
           'On a free membership the likes list comes in blurred: you know someone liked you, but not who. Plus unblurs it so you can see them and match right away.',
         unlimitedMessages:
@@ -1265,17 +1269,17 @@ const en = {
         unlimitedUndo:
           'Brings back a profile you passed by mistake. Rewind is completely off on a free membership; with Plus you can use it as often as you like.',
         fire:
-          'A {{fire}} delivers your like up front — it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
+          'A {{fire}} delivers your like up front: it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
         advancedFilters:
           'University, department, class year, height, star sign, languages, habits and more: choose exactly who shows up in your deck. These filters are locked on a free membership.',
         widerDistance:
           'Your maximum distance is capped by membership. Plus pushes the slider much further out, bringing in profiles from neighbouring cities.',
         missedMatchRecovery:
-          'Brings back someone you passed who had actually liked you — a second chance at a match you missed. Plus gives you noticeably more recoveries per day.',
+          'Brings back someone you passed who had actually liked you: a second chance at a match you missed. Plus gives you noticeably more recoveries per day.',
         discoveryPriority:
           'Your profile is placed higher in other people\'s decks. You get seen sooner, which means more likes coming in.',
         premiumBadge:
-          'The Plus flame appears on your card and profile. You can hide it from Settings — turning the badge off does not affect any of your Plus+ features.',
+          'The Plus flame appears on your card and profile. You can hide it from Settings. Turning the badge off does not affect any of your Plus+ features.',
       },
       // Rest of the list in the upsell card. The card body already opens the
       // paywall, so this line is not a separate tap target.
@@ -1357,7 +1361,7 @@ const en = {
         description: 'Narrow down who you are looking for. Turn on a filter\'s switch and it will not relax even when candidates run out.',
         // Premium filters are not deleted when the subscription lapses, just not
         // applied — say so, otherwise it reads as "my filters are gone".
-        paused: 'Your Plus+ filters are paused. Your selections are kept but not applied to the deck — get Plus+ again and they pick up where they left off.',
+        paused: 'Your Plus+ filters are paused. Your selections are kept but not applied to the deck. Get Plus+ again and they pick up where they left off.',
       },
       dealbreaker: {
         // One string, does NOT change with the switch state — see tr.ts.
@@ -1366,7 +1370,7 @@ const en = {
         label: 'Dealbreaker',
         // Sheet body: says what BOTH switch states do. The cost of turning it
         // on (an empty deck) is stated, not hidden.
-        info: 'When this is on, nobody outside this filter is ever shown to you — if matching people run out, your Discover screen goes empty. When it is off, the filter stays a preference: it relaxes on its own once your deck empties, so you keep seeing people.',
+        info: 'When this is on, nobody outside this filter is ever shown to you. If matching people run out, your Discover screen goes empty. When it is off, the filter stays a preference: it relaxes on its own once your deck empties, so you keep seeing people.',
       },
       enumLoading: 'Loading options…',
       enumUnavailable: 'List could not be loaded right now.',
@@ -1416,7 +1420,7 @@ const en = {
         // This filter cuts deeper than the others: the field is optional and
         // people who picked "Prefer not to say" drop out too. The second
         // sentence points at the way out — with the switch off it self-relaxes.
-        hiddenNote: 'While this filter is on, profiles that have not set their religious views — and those who picked "Prefer not to say" — are hidden. Leave the switch off and the filter relaxes automatically when candidates run out.',
+        hiddenNote: 'While this filter is on, profiles that have not set their religious views, and those who picked "Prefer not to say", are hidden. Leave the switch off and the filter relaxes automatically when candidates run out.',
       },
       pets: {
         title: 'Pets',
@@ -1485,7 +1489,7 @@ const en = {
         //
         // This one describes a real effect: the rule is a hard filter, you drop
         // out of those decks entirely.
-        reachWarning: 'With this on, fewer people can see you — so you may get fewer matches.',
+        reachWarning: 'With this on, fewer people can see you, so you may get fewer matches.',
         // Switching modes clears the other list — there is no undo, the user
         // would have to build the list again from scratch.
         modeChangeTitle: 'Your selection will be cleared',
@@ -1500,8 +1504,8 @@ const en = {
         // thing twice and weakened the CTA. "no Premium needed" stays in the
         // sentence — a bare "30 days free" left it unclear what exactly was
         // free (Premium, or this setting?).
-        inviteCta: 'Invite 3 friends and use this setting free for 30 days — no Plus+ needed',
-        premiumExpiryNote: 'This rule stops when your Plus+ ends — the universities on the list can see you again.',
+        inviteCta: 'Invite 3 friends and use this setting free for 30 days, no Plus+ needed',
+        premiumExpiryNote: 'This rule stops when your Plus+ ends. The universities on the list can see you again.',
         // For a user whose Premium HAS ended: the future-tense note would be
         // misleading, the rule is already inactive. The record is kept, so we
         // do not say it was deleted either.
@@ -1633,6 +1637,7 @@ const en = {
     notePill: 'Left you a note',
     noteOpen: 'Open note',
     noteTag: 'Note',
+    noteYouSaid: 'You said this on your profile',
     noteAccept: 'Accept',
     noteReject: 'Decline',
     emptyFire: 'No {{fire}}s yet.',
@@ -1674,7 +1679,7 @@ const en = {
     // to the heading instead (viewLikersAction).
     recoverUnlimited: 'Recoveries are unlimited.',
     recoverSuccessTitle: 'Match recovered 💞',
-    recoverSuccessMessage: 'They already liked you — the chat will open shortly.',
+    recoverSuccessMessage: 'They already liked you. The chat will open shortly.',
     recoverFailed: 'Could not recover.',
   },
   notifications: {
@@ -1728,7 +1733,7 @@ const en = {
   // different reward names on one screen is the fastest way to lose trust.
   referral: {
     // Shown at the end of registration when `LoginResponseDto.referralApplied`.
-    welcomeGift: 'Invite code applied — 1 free note is in your account.',
+    welcomeGift: 'Invite code applied. 1 free note is in your account.',
     copied: 'Invite code copied.',
     // The message carries the code AND the download address; in phase 2 the
     // address becomes the /invite/:code universal link (shared/constants/links.ts).
@@ -1896,7 +1901,7 @@ const en = {
       },
       reason: {
         main_photo_multiple_faces:
-          'There is more than one person in your main photo. You need to be alone in your main photo — your other photos can include your friends.',
+          'There is more than one person in your main photo. You need to be alone in your main photo. Your other photos can include your friends.',
         main_photo_no_face:
           'We can\'t see your face in your main photo. Please pick a photo where your face is clearly visible.',
         explicit_content:
@@ -1936,7 +1941,7 @@ const en = {
         rejected:
           '{{count}} of your photos couldn\'t be published because they don\'t meet our community guidelines. You can add different photos instead.',
         pending:
-          '{{count}} of your photos are under review. They\'ll appear on your profile automatically once approved — no need to upload them again.',
+          '{{count}} of your photos are under review. They\'ll appear on your profile automatically once approved. No need to upload them again.',
       },
       replace: 'Replace',
       chooseAnotherMain: 'Set another photo as main',
@@ -1973,7 +1978,7 @@ const en = {
       'UT-6302':
         "We couldn't see a clear face in your main photo. Pick a shot where your face is visible and well lit.",
       'UT-6307':
-        "If you delete this, the next photo becomes your main one — but your face isn't clearly visible there. Move a photo where your face shows to the front first, then delete this one.",
+        "If you delete this, the next photo becomes your main one, but your face isn't clearly visible there. Move a photo where your face shows to the front first, then delete this one.",
       'UT-6303': 'You can add at most {{max}} photos. Delete one first.',
       'UT-6304':
         'You need at least {{min}} photos. Add a new one before deleting this.',
@@ -2013,7 +2018,7 @@ const en = {
         description:
           "You'll make two short movements with your front camera. We take a single frame for each one and compare it with your main photo.",
         bullet1: 'We pick the movements, and they change every time.',
-        bullet2: 'Only two frames are sent — nothing is recorded.',
+        bullet2: 'Only two frames are sent. Nothing is recorded.',
         bullet3: 'Fit your face in the frame, find good light, and be alone in the shot.',
         // The ONLY text shown in the sheet (no bullets, no dashes).
         summary:
@@ -2052,7 +2057,7 @@ const en = {
         // 🔴 "Don't overdo it" applies to POSE only: the backend's expression
         // check never returns `challenge_too_much`, so suggesting restraint there
         // would push users into `challenge_too_weak`.
-        hintPose: "Make it clear but don't overdo it — a gentle movement is enough.",
+        hintPose: "Make it clear but don't overdo it. A gentle movement is enough.",
         hintExpression: 'Make it clear enough for the camera to see.',
         // Review step copy (see SelfieCameraStep: capture → review → confirm).
         reviewHint: 'Is your face clear and the movement obvious? If not, retake it.',
@@ -2082,10 +2087,10 @@ const en = {
         // forbidden) — that would let an attacker calibrate by trial and error.
         // "A bit more pronounced" is safe: the user already knows the prompt.
         challenge_too_weak:
-          'Almost there — could you make the movement a bit more pronounced?',
+          'Almost there, could you make the movement a bit more pronounced?',
         challenge_wrong_move:
           "We didn't see the movement. Mind reading the prompt and trying again?",
-        challenge_too_much: 'That was a bit much — a gentler movement is enough.',
+        challenge_too_much: 'That was a bit much. A gentler movement is enough.',
         no_face: "We couldn't see your face. Make sure it's clear and well lit.",
         multiple_faces: 'There is more than one person in the frame. You need to be alone.',
         face_occluded: 'Your face looks covered. Remove a mask, hat or glasses and try again.',
@@ -2129,7 +2134,7 @@ const en = {
         // decision can be changed.
         'UT-6501Title': 'Photo verification consent required',
         'UT-6501':
-          'We do not see your explicit consent for photo verification. You can give it — or withdraw it — under Settings > Privacy.',
+          'We do not see your explicit consent for photo verification. You can give it, or withdraw it, under Settings > Privacy.',
         'UT-6502':
           'You need an approved main photo before verifying. Add your main photo first.',
         'UT-6502Title': 'You need a main photo first',
@@ -2175,7 +2180,7 @@ const en = {
       // and it can happen while the profile is still in discovery. Which photo
       // and why lives in the grid badges; the strip only carries the count.
       rejectedTitle: "{{count}} of your photos couldn't be published",
-      rejectedBody: "They don't meet our guidelines — add another instead.",
+      rejectedBody: "They don't meet our guidelines. Add another instead.",
       addPhoto: 'Add photo',
     },
     // Informational sheet shown when the profile drops out of the discovery
@@ -2225,7 +2230,7 @@ const en = {
       profileIncompleteTitle: 'Your profile is incomplete',
       profileIncompleteError: "Your account's profile record looks incomplete, so changes can't be saved. We need to fix this for you.",
       contactSupport: 'Contact Support',
-      supportSubject: 'Incomplete profile — cannot save edits',
+      supportSubject: 'Incomplete profile: cannot save edits',
       validationError: 'One of the values is invalid. Check your name and year of study.',
       // 429: the `photo` rate limit, SHARED with photo uploads.
       rateLimitError: 'Too many changes sent. Wait a moment and try again.',
@@ -2238,7 +2243,7 @@ const en = {
       bioTitle: 'Bio',
       bioDesc: "Write a short bio to introduce yourself. Share what you're up to.",
       photosTitle: 'Photos',
-      photosHint: 'Long-press and drag to reorder. Your first photo becomes your main photo — you need to be alone in it, but your other photos can include your friends.',
+      photosHint: 'Long-press and drag to reorder. Your first photo becomes your main photo. You need to be alone in it, but your other photos can include your friends.',
       smokingTitle: 'Smoking',
       smokingDesc: 'Select your smoking status.',
       alcoholTitle: 'Drinking',
@@ -2291,7 +2296,7 @@ const en = {
       cancelledDescriptionNoDate: 'Your subscription is cancelled. All features stay unlocked until the end of the period.',
       resubscribeButton: 'Resume Subscription',
       billingIssueBadge: 'Payment issue',
-      billingIssueDescription: "We couldn't take your last payment. You keep access until {{date}} — please update your payment method.",
+      billingIssueDescription: "We couldn't take your last payment. You keep access until {{date}}. Please update your payment method.",
       billingIssueDescriptionNoDate: "We couldn't take your last payment. Update your payment method to keep your access.",
       fixPaymentButton: 'Update Payment Method',
       pendingBadge: 'Activating',
@@ -2388,9 +2393,9 @@ const en = {
     // `/plans` returns no copy (displayName / highlight / sortOrder only), so
     // the wording lives here.
     planDesc: {
-      weekly: 'Best for a short try — cancel any time.',
+      weekly: 'Best for a short try. Cancel any time.',
       monthly: 'Renews monthly, no long commitment.',
-      yearly: 'Lowest weekly cost — pay once, stay Plus all year.',
+      yearly: 'Lowest weekly cost. Pay once, stay Plus all year.',
     },
     // Red discount pill at the bottom-left of the card. The percentage is
     // computed outside i18n (computeSavings) against the weekly plan. Keep it
@@ -2433,7 +2438,7 @@ const en = {
   firePurchase: {
     title: 'Buy {{fire}}s',
     description:
-      '{{fire}}s get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. {{fire}}s never expire, so use them whenever you want.',
+      '{{fire}}s get 3x more matches. They see your card unblurred at the top of their likes, even on a free account. {{fire}}s never expire, so use them whenever you want.',
     packLabel: '{{count}}x {{fire}}',
     cta: 'Buy',
     ctaWithPrice: 'Buy · {{price}}',
@@ -2472,9 +2477,9 @@ const en = {
     // (`replyingToPhoto` is the sender-side counterpart in the composer).
     // No "this": the target's preview sits right next to the line, so the
     // demonstrative read as pointing at something that wasn't there.
-    leftNoteOnPhoto: 'Left a note on your photo',
-    leftNoteOnPrompt: 'Left a note on your answer',
-    leftNoteOnPost: 'Left a note on your post',
+    leftNoteOnPhoto: 'A note was left on your photo',
+    leftNoteOnPrompt: 'A note was left on your answer',
+    leftNoteOnPost: 'A note was left on your post',
     postRemoved: 'Post removed',
     sentTitle: 'Note sent',
     sentMessage: '{{name}} will see your note in their likes.',
@@ -2495,7 +2500,7 @@ const en = {
   notePurchase: {
     title: 'Buy Notes',
     description:
-      'A note is a like you write on one of their photos or prompt answers. They see your card unblurred in their likes — along with your line and the content you wrote it on. Notes never expire, so use them whenever you want.',
+      'A note is a like you write on one of their photos or prompt answers. They see your card unblurred in their likes, along with your line and the content you wrote it on. Notes never expire, so use them whenever you want.',
     packLabel: '{{count}}x Note',
     cta: 'Buy',
     ctaWithPrice: '{{price}} · Buy',
@@ -2644,7 +2649,7 @@ const en = {
         PendingReview: 'Under review',
         SupportHold: 'Not published',
         HiddenByReports: 'Hidden due to reports',
-        Rejected: 'Not published — community guidelines',
+        Rejected: 'Not published: community guidelines',
       },
       delete: 'Delete post',
       deleteConfirmTitle: 'Delete this post?',
@@ -2693,8 +2698,8 @@ const en = {
       title: 'We would like to help',
       body: 'If you are going through something hard, there are people you can talk to.',
       // Numbers are Turkey-wide (the app's only market today).
-      emergency: 'Emergency — 112',
-      helpline: 'Psychosocial support line — 182',
+      emergency: 'Emergency: 112',
+      helpline: 'Psychosocial support line: 182',
     },
 
     report: {
@@ -2803,7 +2808,7 @@ const en = {
     postedJustNow: 'now',
     empty: {
       title: 'Nobody has posted on campus today',
-      bodyInside: 'Be the first — everyone on campus sees it for 24 hours.',
+      bodyInside: 'Be the first. Everyone on campus sees it for 24 hours.',
       bodyOutside: 'You can post once you are on campus.',
         cta: 'Share the first moment',
     },
@@ -2826,7 +2831,7 @@ const en = {
       allow: 'Always allow',
       later: 'Not now',
       openSettings: 'Open Settings',
-      deniedBody: 'You can switch it to "Always" in Settings. Even without it you can post while on campus — you just will not get a heads-up.',
+      deniedBody: 'You can switch it to "Always" in Settings. Even without it you can post while on campus, you just will not get a heads-up.',
     },
     codes: {
       generic: 'Something went wrong. Try again in a moment.',
@@ -2883,7 +2888,7 @@ const en = {
       successTitle: 'Report received',
       successMessage: 'Our team will review it as soon as possible. Staying safe is important.',
       successBlockedMessage:
-        'Our team will review it as soon as possible. We blocked this person — you can undo it anytime in Settings → Blocked Users.',
+        'Our team will review it as soon as possible. We blocked this person. You can undo it anytime in Settings → Blocked Users.',
       alreadyReported: 'You have already reported this user in the last 24 hours.',
       error: 'Report could not be sent.',
       // A report alone hides nothing; the box is UNCHECKED by default (2026-11-06).

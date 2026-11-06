@@ -53,6 +53,7 @@ export default function MediaChromeIconButton({
   onPress,
   disabled,
   active,
+  activeColor,
 }: {
   systemImage: SFSymbol;
   fallbackIcon: any;
@@ -61,13 +62,18 @@ export default function MediaChromeIconButton({
   disabled?: boolean;
   /** Açık/kapalı bir kipi temsil eden buton (Kırp, flaş) — açıkken glif turuncu. */
   active?: boolean;
+  /**
+   * Açık hâldeki glif rengi — verilmezse turuncu. Profil/kayıt önizlemesindeki
+   * Kırp, kipi modun vurgusuyla gösteriyor (altındaki ✓ ile aynı renk).
+   */
+  activeColor?: string;
   /** e2e seçicisi — SwiftUI'da accessibilityIdentifier, fallback'te testID. */
   testID?: string;
 }) {
   const ink = disabled
     ? onMediaAt(0.45)
     : active
-      ? colors.accentOrange
+      ? (activeColor ?? colors.accentOrange)
       : colors.onMedia;
 
   if (Platform.OS === "ios") {

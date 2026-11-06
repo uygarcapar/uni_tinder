@@ -392,7 +392,7 @@ export default function ModeChoiceCard({
         {/* BEĞENİ PİLİ — sağ üstte, yalnız "switch" ve sayı > 0 iken. Görünüşü
             Beğeniler başlığındaki "Beğenenleri gör" pill'inin BİREBİR aynısı
             (bkz. LikesScreen > LikesListHeader): tam kapsül, modun vurgusu
-            (`modeAccent`) dolgu, `onMediaInverse` 13/700 yazı, 12×6 pay.
+            (`modeAccent`) dolgu, `onMediaInverse` 13/700 yazı, 12×3 pay (dikey pay o pill'den bilerek ince).
             Dokunulabilir DEĞİL — dokunuş kartın tamamına ait.
             Perdenin ÜSTÜNDE: sönük kartta da sayı tam renginde okunmalı —
             öbür modda bekleyen beğeni tam da o moda geçme sebebi.
@@ -409,7 +409,7 @@ export default function ModeChoiceCard({
               borderCurve: "continuous",
               backgroundColor: modeAccent(mode),
               paddingHorizontal: 12,
-              paddingVertical: 6,
+              paddingVertical: 3,
             }}
           >
             <Text

@@ -6010,8 +6010,8 @@ export default function SwipeCard({
           bir girişi vardı; beğen ise açık kartta en çok istenen aksiyon ve
           şerit onu bir ekran boyu yukarıda sunuyor.
 
-          Mod artık bu yuvada hiç okunmuyor — renk de moda dönmüyor; buton
-          kapaktaki tik/X/üç nokta ile tek malzeme, tek mürekkep.
+          Kabuk kapaktaki tikle aynı: modun aksiyon rengine boyalı cam, glif
+          beyaz (bkz. aşağıdaki `surfaceTint`).
 
           KABUK: `CardChromeGlassButton` — satırın sol ucundaki yukarı okla
           (CardScrollTopGlassButton) ve kapak kolonunun daireleriyle BİREBİR
@@ -6071,8 +6071,12 @@ export default function SwipeCard({
               fallback={Check}
               size={DISCOVER_GLASS_BUTTON_SIZE}
               // Şerit açık kartta da KOYU rampanın üstünde duruyor (bkz.
-              // CardStickyHeader) — glif iki temada da beyaz.
+              // CardStickyHeader).
               onMedia
+              // RENKLİ TİK (istek 2026-11-06): KABUK modun aksiyon rengine
+              // boyalı liquid glass (Flört kırmızı / Arkadaş yeşil), glif
+              // beyaz — kapak kolonundaki boyalı tikin aynısı.
+              surfaceTint={modeFireTint(mode ?? DEFAULT_APP_MODE)}
             />
           </Animated.View>
         )}

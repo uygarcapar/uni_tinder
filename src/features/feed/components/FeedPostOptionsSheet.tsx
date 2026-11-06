@@ -163,7 +163,7 @@ export default function FeedPostOptionsSheet({
           <ActionRow
             icon={
               <SFIcon
-                name="flag.fill"
+                name="flag"
                 fallback={Flag}
                 size={18}
                 color={colors.text}

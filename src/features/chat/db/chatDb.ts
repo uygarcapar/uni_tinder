@@ -138,7 +138,21 @@ export function isFtsAvailable(): boolean {
  */
 export function openChatDb(): ChatDbDriver {
   if (driver) return driver;
-  const db = SQLite.openDatabaseSync(CHAT_DB_NAME);
+  // ⚠️🔴 finalizeUnusedStatementsBeforeClosing: false ŞART — kapatırken native
+  // çökmesin diye. expo-sqlite (57.0.4) close'da varsayılan olarak
+  // `sqlite3_next_stmt` ile bağlantıdaki TÜM statement'ları finalize ediyor;
+  // buna FTS5'in kendi içinde önbelleğe aldığı statement'lar da giriyor. Hemen
+  // ardından `sqlite3_close` → `disconnectAllVtab` → fts5 aynı pointer'ları
+  // İKİNCİ kez finalize ediyor → SIGSEGV. Bu kapanma yolu dev-client reload'da
+  // (modülün OnDestroy'u açık DB'leri kapatıyor) ve logout'ta (destroyChatDb)
+  // çalışıyor. Bayrak kapalıyken sqlite3_close sanal tabloları önce kendisi
+  // düzgünce koparıyor. Bunun güvenli olması için JS tarafında açık statement
+  // KALMAMALI: sürücü yalnız *Sync kısayollarını kullanıyor, onlar da kendi
+  // statement'larını finally içinde finalize ediyor. Buraya prepareSync
+  // eklersen finalize'ını da kendin yap.
+  const db = SQLite.openDatabaseSync(CHAT_DB_NAME, {
+    finalizeUnusedStatementsBeforeClosing: false,
+  });
   const next = createExpoDriver(db);
   next.exec(
     'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;',
