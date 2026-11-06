@@ -8,6 +8,7 @@
  */
 
 import {
+  modeMainPhotoOf,
   modePhotoFields,
   modePhotosOf,
   patchPhotoInBothLists,
@@ -67,6 +68,45 @@ describe("modePhotosOf", () => {
   it("order alanı eksikse 0 sayılır, sıralama yine deterministik", () => {
     const p = { photosList: [{ photoId: "b", order: 1 }, { photoId: "a" }] };
     expect(modePhotosOf(p, "Dating").map((x) => x.photoId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("modeMainPhotoOf", () => {
+  // AKTİF modun ana fotosu — tab bar avatarı ve profil hero'su gibi "kimlik"
+  // yüzeyleri bunu okumalı: mod başına fotoğrafta aktif modun yüzü başka,
+  // sabit `photosList` okuyan eski yol Arkadaş'ta Flört'ün yüzünü gösteriyordu.
+  const profile = {
+    modes: { dating: true, friends: true },
+    photosList: [
+      { photoId: "d1", order: 1 },
+      { photoId: "d2", order: 2, isMainPhoto: true },
+    ],
+    friendsPhotosList: [{ photoId: "f1", order: 1, isMainPhoto: true }],
+  };
+
+  it("aktif modun isMainPhoto karesini döner", () => {
+    expect(modeMainPhotoOf(profile, "Dating")?.photoId).toBe("d2");
+    expect(modeMainPhotoOf(profile, "Friends")?.photoId).toBe("f1");
+  });
+
+  it("ana işaretli kare yoksa ilk kareye düşer", () => {
+    const p = { ...profile, friendsPhotosList: [{ photoId: "f9", order: 1 }] };
+    expect(modeMainPhotoOf(p, "Friends")?.photoId).toBe("f9");
+  });
+
+  it("aktif mod KAPALIYSA açık modun anasına düşer (resolveEditMode kuralı)", () => {
+    const p = { ...profile, modes: { dating: true, friends: false } };
+    expect(modeMainPhotoOf(p, "Friends")?.photoId).toBe("d2");
+  });
+
+  it("modun listesi boşsa ve profil de boşsa null", () => {
+    expect(modeMainPhotoOf({ modes: { dating: true, friends: true } }, "Friends")).toBeNull();
+    expect(modeMainPhotoOf(null, "Dating")).toBeNull();
+  });
+
+  it("aktif modun listesi boşsa öbür modun anasına düşer (yüz hiç boş kalmasın)", () => {
+    const p = { ...profile, friendsPhotosList: [] };
+    expect(modeMainPhotoOf(p, "Friends")?.photoId).toBe("d2");
   });
 });
 

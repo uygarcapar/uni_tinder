@@ -10,8 +10,10 @@ import {
 } from "@shopify/react-native-skia";
 import { Directory, File, Paths } from "expo-file-system";
 import profileService from "@/features/profile/profileService";
+import { modeMainPhotoOf } from "@/features/profile/modePhotoFields";
+import { useAppMode } from "@/features/discover/useAppMode";
 import uiBus from "@/shared/services/uiBus";
-import { resolveMainPhotoUri } from "@/shared/utils/photoUri";
+import { resolvePhotoUri } from "@/shared/utils/photoUri";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
@@ -248,12 +250,20 @@ const toIcon = (uri: string) => ({
  * zaten yapıyor, buradaki çağrı ona binir, ikinci ağ isteği olmaz.
  * `profileDirty` (ProfileScreen kaydetti / moderasyon değişti) ikonu tazeler.
  *
+ * FOTO AKTİF MODUN ANASI (mod başına fotoğraf, 2026-11-06): sabit
+ * `resolveMainPhotoUri` Arkadaş modunda Flört'ün yüzünü gösteriyordu ve mod
+ * değişiminde ikon "eskisinde kalıyor"du. `useAppMode` aboneliği sayesinde
+ * mod değişir değişmez effect yeniden koşuyor — profil TTL cache'ten geldiği
+ * için ağ turu yok; aynı kare devralındıysa rasterize cache'i (hash'li dosya
+ * adı) zaten isabet ediyor, çizim de yok.
+ *
  * ANDROID: native tab bar orada image ikonlara `tabBarItemIconColor` tint'ini
  * uyguluyor — foto tek renk lekeye döner. Cihazda doğrulanana kadar Android
  * material `person` ikonunda kalıyor.
  */
 export function useProfileTabAvatarIcon(idleColor: string, activeColor: string) {
   const [uris, setUris] = useState<{ idle: string; active: string } | null>(null);
+  const { mode } = useAppMode();
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -264,7 +274,7 @@ export function useProfileTabAvatarIcon(idleColor: string, activeColor: string) 
         .getMyProfile()
         .then(async (profile: any) => {
           if (cancelled) return;
-          const photo = resolveMainPhotoUri(profile);
+          const photo = resolvePhotoUri(modeMainPhotoOf(profile, mode));
           if (!photo) {
             setUris(null);
             return;
@@ -286,7 +296,7 @@ export function useProfileTabAvatarIcon(idleColor: string, activeColor: string) 
       cancelled = true;
       unsub();
     };
-  }, [idleColor, activeColor]);
+  }, [idleColor, activeColor, mode]);
 
   return useMemo(() => {
     if (!uris) return null;

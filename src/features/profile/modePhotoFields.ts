@@ -1,4 +1,5 @@
 import type { AppMode } from "@/features/discover/modeTheme";
+import { resolveEditMode } from "./editMode";
 
 /**
  * Mod başına foto ALAN ADLARININ tek çözücüsü.
@@ -53,6 +54,31 @@ export function modePhotosOf(profile: unknown, mode: AppMode): any[] {
   const list = (profile as any)[modePhotoFields(mode).listKey];
   if (!Array.isArray(list)) return [];
   return [...list].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+}
+
+/**
+ * AKTİF modun ANA fotoğrafı — "kimlik" yüzeylerinin (tab bar avatarı, profil
+ * hero'su) tek okuma yolu. Sabit `photosList` okuyan eski yol mod başına
+ * fotoğrafla yalan söylemeye başladı: Arkadaş modunda Flört'ün yüzü çiziliyor
+ * ve mod değişince görünüm "eskisinde kalıyor"du.
+ *
+ * Düşüş zinciri, kullanıcının yüzü hiç boş kalmasın diye:
+ *   aktif modun anası → aktif modun ilk karesi → (aktif mod kapalı ya da
+ *   listesi boşsa) resolveEditMode'un seçtiği/öbür modun aynı zinciri → null.
+ */
+export function modeMainPhotoOf(profile: unknown, active: AppMode): any | null {
+  if (profile == null || typeof profile !== "object") return null;
+  const p = profile as any;
+  const friendsOpen = p?.modes?.friends !== false;
+  const datingOpen = p?.modes?.dating !== false;
+  const resolved = resolveEditMode(active, datingOpen, friendsOpen);
+  const other: AppMode = resolved === "Friends" ? "Dating" : "Friends";
+  for (const mode of [resolved, other]) {
+    const list = modePhotosOf(p, mode);
+    const main = list.find((photo) => photo?.isMainPhoto) ?? list[0];
+    if (main) return main;
+  }
+  return null;
 }
 
 /**

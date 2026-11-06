@@ -33,7 +33,7 @@ import {
 import { forgetPhoto } from "@/shared/utils/photoStore";
 import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
 import { devLog } from "@/shared/utils/devLog";
-import { resolveMainPhotoUri, resolvePhotoUri } from "@/shared/utils/photoUri";
+import { resolvePhotoUri } from "@/shared/utils/photoUri";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import {
@@ -102,6 +102,7 @@ import { resolveSelfieVerified } from "@/features/profile/selfie/selfieVerificat
 import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
 import { resolveEditMode } from "@/features/profile/editMode";
 import {
+  modeMainPhotoOf,
   modePhotoFields,
   modePhotosOf,
   patchPhotoInBothLists,
@@ -1611,7 +1612,7 @@ export default function ProfileScreen() {
       // aday havuzunu invalidate ediyor ama react-query kendi cache'ini tutuyor
       // (staleTime 60sn + infinite query sayfaları) → deste elle tazelenmezse
       // eski hâliyle kalıyor.
-      qc.invalidateQueries({ queryKey: swipeKeys.matches });
+      qc.invalidateQueries({ queryKey: swipeKeys.deckRoot });
       closeEditProfile();
     },
     // refreshPhotos aşağıda tanımlı; deps'te yok — closure stale olmaz çünkü
@@ -2224,13 +2225,11 @@ export default function ProfileScreen() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  // Büyük avatar DÜZENLENEN MODUN anası: halka zaten mod renginde çiziliyor
+  // Büyük avatar AKTİF MODUN anası: halka zaten mod renginde çiziliyor
   // (HeroAvatar > modeFireGradient) — içindeki foto başka modunki olursa aynı
-  // ekranda iki profil anlatılır (final review Important #5).
-  // `resolveMainPhotoUri(myProfile)` sabit `photosList` okuyordu.
-  const mainPhoto = resolvePhotoUri(
-    modePhotos.find((p) => p?.isMainPhoto) ?? modePhotos[0],
-  );
+  // ekranda iki profil anlatılır. Seçici ORTAK (tab bar avatarı da aynı yolu
+  // okuyor): modun listesi boşsa öbür modun anasına düşer, yüz boş kalmaz.
+  const mainPhoto = resolvePhotoUri(modeMainPhotoOf(myProfile, mode));
 
   const completionPct =
     myProfile?.profileCompletionPercentage ??
