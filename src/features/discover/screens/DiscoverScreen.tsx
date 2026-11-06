@@ -106,7 +106,12 @@ import ModeTitle from "../components/ModeTitle";
 import ModeSelectorSheet from "../components/ModeSelectorSheet";
 import ModeSetupSheet from "../components/ModeSetupSheet";
 import { useAppMode } from "../useAppMode";
-import { APP_MODES, modeAccent, type AppMode } from "../modeTheme";
+import {
+  APP_MODES,
+  modeAccent,
+  modeFireNameKey,
+  type AppMode,
+} from "../modeTheme";
 import { peekAppMode } from "../modePrefs";
 import profileService from "@/features/profile/profileService";
 import {
@@ -217,22 +222,27 @@ const COVER_WAIT_BUDGET_MS = 1200;
  */
 
 /**
- * Geç/beğen/Fire butonlarının art arda basışa kapalı kaldığı süre.
+ * Butonların art arda basışa kapalı kaldığı süre — İKİ SAYI, ÇÜNKÜ İKİ ÇIKIŞ
+ * MODELİ VAR (bkz. SwipeWrapper'ın başındaki not).
  *
- * ÜÇÜ AYNI SAYI (2026-10-13): üç yönün de kartı yerinde tutup değişimi alevin
- * altında yaptığı modelde (bkz. SwipeWrapper > commitExit) buton basıştan
- * ~800 ms sonra iş görüyor. Fire zaten 1300'de bekliyordu; geç/beğen 120'de
- * kalınca butonlar kart hâlâ dururken canlanıyor ve ikinci tap yutulmuş gibi
- * görünüyordu.
+ * Kilit "kart hâlâ ekrandayken ikinci tap'i yut" demek, o yüzden süresi kartın
+ * ne kadar kaldığına bağlı:
+ *   • Fire — kart yerinde duruyor ve alev örtene kadar ~800 ms geçiyor.
+ *     1300 o modele göre ayarlı.
+ *   • Geç/beğen — kart uçuyor ve 120-180 ms'de ekranı terk ediyor (bkz.
+ *     exitFlight). 1300'de bırakmak butonu kart gideli bir saniye olmuşken
+ *     ölü tutardı; 250 = uçuşun tavanı + pay.
  *
- * Tarihçe: 300 ms'den 120'ye indirilmişti, çünkü deste kartın UÇUŞU ekranı
- * terk eder etmez (~65 ms) ilerliyordu ve kalan kilit boş beklemeydi. Uçuş
- * kalktı, gerekçe tersine döndü.
+ * Tarihçe: üçü bir dönem AYNI sayıdaydı (2026-10-13 — uçuş kalkmış, üç yön de
+ * alev modeline geçmişti). Uçuş 2026-11-06'da beğen/geç için geri gelince
+ * ayrıldılar. Daha öncesinde geç/beğen 120'deydi, çünkü deste uçuşun ~65.
+ * ms'sinde ilerliyordu; bugün uçuşun SONUNDA ilerliyor, yani 120 erken kalır.
  *
  * Çift tetiklemeye karşı asıl güvence SwipeWrapper'daki `exitPending` kilidi;
  * bu yalnız butonun görünür durumu.
  */
-const BUTTON_SWIPE_LOCK_MS = 1300;
+const FIRE_BUTTON_LOCK_MS = 1300;
+const SWIPE_BUTTON_LOCK_MS = 250;
 
 // NOT — kart açılırken tab bar'ı `display:"none"` ile gizlemek DENENDİ ve
 // vazgeçildi: bu gizleme animasyona açılmıyor. react-native-screens
@@ -1311,11 +1321,13 @@ export default function DiscoverScreen() {
     const resetText = statsQuery.data?.isPremium
       ? formatResetTime(statsQuery.data?.superLikeResetInSeconds, t)
       : null;
+    // Ürün adı moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
+    const fire = t(modeFireNameKey(mode));
     // resetText null → backend "asla resetlenmez" (-1) dedi; cooldown metni
     // yerine tükendi metnine düşüyoruz, yoksa yanlış vaat veriyoruz.
     if (resetText) {
       showInfoToast({
-        title: t('discover.swipe.fireCooldownTitle'),
+        title: t('discover.swipe.fireCooldownTitle', { fire }),
         message: t('discover.swipe.fireCooldownMessage', {
           time: resetText,
         }),
@@ -1323,8 +1335,8 @@ export default function DiscoverScreen() {
       });
     } else {
       showInfoToast({
-        title: t('discover.swipe.fireExhaustedTitle'),
-        message: t('discover.swipe.fireExhaustedMessage'),
+        title: t('discover.swipe.fireExhaustedTitle', { fire }),
+        message: t('discover.swipe.fireExhaustedMessage', { fire }),
         icon: 'fire',
       });
     }
@@ -2504,19 +2516,27 @@ export default function DiscoverScreen() {
     /**
      * DESTENİN İLERLEMESİ — ya şimdi ya PERDENİN ALTINDA.
      *
-     * Çağrıldığı an zaten örtülü oluyor: geç/beğen/Fire'da kart alevin ekranı
-     * tam kapattığı karede buraya geliyor (bkz. SwipeWrapper >
-     * runCoveredExit), yani burada beklenecek bir şey yok.
+     * Çağrıldığı an kart zaten gözden çıkmış oluyor: beğen/geç'te uçup ekranı
+     * terk etmiş (bkz. SwipeWrapper > flyOut), Fire'da alev ekranı tam
+     * kapatmış (runCoveredExit). İkisinde de burada beklenecek bir şey yok.
      *
-     * TEK İSTİSNA `matching`: o dalda alev süpürmesi hiç oynamıyor (kutlama
-     * MatchModal'ın perdesi) ve perde ancak aşağıdaki isteğin eşleşme
-     * bildirimi dönünce açılıyor. İstek ŞİMDİ gidiyor, index ise perdenin
-     * ekranı kapladığı anı bekliyor (bkz. flameSweep > runMatchCurtain) —
-     * yoksa "önce kart değişiyor, sonra alev modalı geliyor" oluyordu.
+     * TEK İSTİSNA `matching` — VE ARTIK YALNIZ FIRE'DAN GELİYOR. O dalda alev
+     * süpürmesi hiç oynamıyor (kutlama MatchModal'ın perdesi), kart da
+     * uçmuyor, yani deste ilerlerse değişim ÖRTÜSÜZ görünürdü. İstek ŞİMDİ
+     * gidiyor, index ise perdenin ekranı kapladığı anı bekliyor (bkz.
+     * flameSweep > runMatchCurtain).
+     *
+     * ⚠️ BEĞENİ BU DALA ARTIK GİRMİYOR (istek, 2026-11-06). 2026-10-13'te
+     * kullanıcı "önce kart değişiyor, sonra alev modalı geliyor; ilk o gelsin,
+     * kart arkasında değişsin" demişti ve beğeni de perdeyi bekliyordu. Uçuş
+     * geri gelince aynı soru tekrar soruldu ve karar DEĞİŞTİ: "kart uçsun
+     * sonra modal gelsin." Beğenide kart kendi hareketiyle gidiyor, perde
+     * arkadan açılıyor. Kural Fire'da aynen duruyor — orada kartı götüren bir
+     * hareket yok.
      *
      * Kart o pencerede ekranda duruyor ama kilitli: SwipeWrapper'ın
-     * `exitPending` bayrağı ikinci kararı yutuyor, buton kilidi de (1300 ms)
-     * aynı pencereyi örtüyor.
+     * `exitPending` bayrağı ikinci kararı yutuyor, Fire'ın buton kilidi de
+     * (FIRE_BUTTON_LOCK_MS) aynı pencereyi örtüyor.
      */
     const advanceDeck = () => {
       // Perde altında ilerliyorsa expand değerleri DE burada sıfırlanmalı —
@@ -2694,7 +2714,7 @@ export default function DiscoverScreen() {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     setIsSwiping(true);
     programmaticSwipe.value = 1;
-    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
+    setTimeout(() => setIsSwiping(false), SWIPE_BUTTON_LOCK_MS);
   });
 
   const handleLikeButton = useEvent(() => {
@@ -2708,7 +2728,7 @@ export default function DiscoverScreen() {
     }
     setIsSwiping(true);
     programmaticSwipe.value = 2;
-    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
+    setTimeout(() => setIsSwiping(false), SWIPE_BUTTON_LOCK_MS);
   });
 
   const handleFireButton = useEvent(() => {
@@ -2719,10 +2739,10 @@ export default function DiscoverScreen() {
     }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
-    // Diğer iki butonla AYNI süre: üçünde de kart hemen gitmiyor, deste alev
+    // Diğer iki butondan UZUN, bilerek: burada kart hemen gitmiyor, deste alev
     // ekranı kapatınca (~800 ms, ilk kutlamada lazy chunk payıyla biraz daha)
-    // ilerliyor — bkz. BUTTON_SWIPE_LOCK_MS.
-    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
+    // ilerliyor — bkz. FIRE_BUTTON_LOCK_MS.
+    setTimeout(() => setIsSwiping(false), FIRE_BUTTON_LOCK_MS);
   });
 
   // ── Moderasyon (expanded kartın altındaki ikonlar) ───────────────────────
@@ -3271,7 +3291,7 @@ export default function DiscoverScreen() {
 
                 `topInset`: perde ekranın 0'ından başlıyor ama ipucu yazısı
                 durum çubuğunun altında kalmalı (bkz. oradaki prop notu). */}
-            <FirePullHint topInset={insets.top} />
+            <FirePullHint topInset={insets.top} mode={mode} />
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
