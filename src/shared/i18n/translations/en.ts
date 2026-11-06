@@ -1100,6 +1100,7 @@ const en = {
         mainBadge: 'Main',
         remove: 'Remove photo',
         minHint: 'Your profile needs at least 2 photos to be visible.',
+        sourceLoadFailed: "Couldn't load your current photos — you can add new ones.",
       },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın

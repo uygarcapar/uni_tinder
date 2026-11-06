@@ -128,12 +128,22 @@ class ProfileService {
     const formData = new FormData();
     Object.entries(updates).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        if (key === 'NewPhotos' && Array.isArray(value)) {
-          value.forEach((file) => formData.append('NewPhotos', file as any));
-        } else if (key === 'PhotoOrders' && Array.isArray(value)) {
+        // ⚠️ Dosya ve indeksli desenler ANAHTAR-ÖZEL ve mod başına fotoğrafın
+        // `Friends*` kardeş anahtarları da BU dallardan geçmek zorunda:
+        // jenerik dizi dalı öğeyi String(item) ile "[object Object]"e ezer ve
+        // Friends foto ekleme/sıralama sunucuya hiç ulaşmaz (sessiz kayıp).
+        if (
+          (key === 'NewPhotos' || key === 'FriendsNewPhotos') &&
+          Array.isArray(value)
+        ) {
+          value.forEach((file) => formData.append(key, file as any));
+        } else if (
+          (key === 'PhotoOrders' || key === 'FriendsPhotoOrders') &&
+          Array.isArray(value)
+        ) {
           (value as PhotoOrder[]).forEach((item, i) => {
-            formData.append(`PhotoOrders[${i}].PhotoId`, String(item.photoId));
-            formData.append(`PhotoOrders[${i}].NewOrder`, String(item.newOrder));
+            formData.append(`${key}[${i}].PhotoId`, String(item.photoId));
+            formData.append(`${key}[${i}].NewOrder`, String(item.newOrder));
           });
         } else if (key === 'Prompts' && Array.isArray(value)) {
           // PhotoOrders ile aynı indeksli desen. Tekrar eden anahtar (Hobbies

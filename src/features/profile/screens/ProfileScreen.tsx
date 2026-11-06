@@ -1964,7 +1964,11 @@ export default function ProfileScreen() {
     if (!(await confirmMainPhotoChange(myProfile))) return;
     setSavingPhoto(true);
     try {
-      await profileService.updateProfile({ NewMainPhotoId: photoId });
+      // Düzenlenen MODUN anası — sabit anahtar Friends modunda FLÖRT'ün
+      // anasını değiştirirdi (final review Critical #3).
+      await profileService.updateProfile({
+        [photoFields.newMainPhotoIdKey]: photoId,
+      });
       await refreshPhotos();
     } catch {
       Alert.alert(t('common.error'), t('profile.photos.setMainError'));
@@ -2220,7 +2224,13 @@ export default function ProfileScreen() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const mainPhoto = resolveMainPhotoUri(myProfile);
+  // Büyük avatar DÜZENLENEN MODUN anası: halka zaten mod renginde çiziliyor
+  // (HeroAvatar > modeFireGradient) — içindeki foto başka modunki olursa aynı
+  // ekranda iki profil anlatılır (final review Important #5).
+  // `resolveMainPhotoUri(myProfile)` sabit `photosList` okuyordu.
+  const mainPhoto = resolvePhotoUri(
+    modePhotos.find((p) => p?.isMainPhoto) ?? modePhotos[0],
+  );
 
   const completionPct =
     myProfile?.profileCompletionPercentage ??

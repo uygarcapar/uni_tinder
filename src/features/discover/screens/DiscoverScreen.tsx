@@ -1340,12 +1340,14 @@ export default function DiscoverScreen() {
           time: resetText,
         }),
         icon: 'fire',
+        mode,
       });
     } else {
       showInfoToast({
         title: t('discover.swipe.fireExhaustedTitle', { fire }),
         message: t('discover.swipe.fireExhaustedMessage', { fire }),
         icon: 'fire',
+        mode,
       });
     }
     setFirePurchaseVisible(true);
@@ -1633,7 +1635,10 @@ export default function DiscoverScreen() {
           mainPhotoId: main ? String(main.photoId) : "",
         };
       } catch {
-        // yukarıdaki güvenli taraf
+        // Güvenli taraf (yalnız yeni-kare yolu) ama SESSİZ DEĞİL: kullanıcı
+        // fotoğrafları duruyorken devralma seçeneğinin neden olmadığını
+        // bilmeli (final review Important #6'nın hata kolu).
+        showInfoToast({ message: t("discover.mode.photos.sourceLoadFailed") });
       }
       // SIRA: foto verisi sheet görünür olmadan önce yazılmalı — sheet'in
       // reset effect'i varsayılan seçimi açılış ANINDA hesaplıyor.

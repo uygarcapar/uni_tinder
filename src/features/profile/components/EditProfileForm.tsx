@@ -2045,11 +2045,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             (fotoğraf kutuları) yan yana kalsın diye bu bölümde duruyor; kutuların
             üstünde başlık ile grid'in arasına giriyordu. Yatay margin 0 — form
             gövdesinin kendi padding'i var. */}
+        {/* Sayaçlar da MOD LİSTESİNDEN (shim): photoModeration sayaçları
+            `photosList` okuyor, Friends düzenlenirken Flört'ün inceleme/red
+            sayıları şeride sızıyordu (final review Important #4) —
+            `visibility` prop'uyla aynı mod, aynı kaynak. */}
         <ProfileVisibilityBanner
           visibility={profileVisibility}
-          awaitingReview={hasPhotosAwaitingReview(myProfile)}
-          reviewCount={countPhotosAwaitingReview(myProfile)}
-          rejectedCount={countRejectedPhotos(myProfile)}
+          awaitingReview={hasPhotosAwaitingReview({
+            photosList: modePhotosOf(myProfile, editMode),
+          })}
+          reviewCount={countPhotosAwaitingReview({
+            photosList: modePhotosOf(myProfile, editMode),
+          })}
+          rejectedCount={countRejectedPhotos({
+            photosList: modePhotosOf(myProfile, editMode),
+          })}
           onAddPhoto={onAddPhoto}
           style={{
             marginHorizontal: 0,

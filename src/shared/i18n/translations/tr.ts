@@ -1114,6 +1114,8 @@ const tr = {
         // Sunucu görünürlük eşiği mod başına 2 — daha azıyla profil açılır
         // ama kimseye görünmez; eşiği burada söylüyoruz.
         minHint: 'Profilinin görünmesi için en az 2 fotoğraf gerekiyor.',
+        // Kurulum açılırken profil çekilemedi → devralma seçeneği çizilemiyor.
+        sourceLoadFailed: 'Mevcut fotoğrafların yüklenemedi — yeni fotoğraf ekleyebilirsin.',
       },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
