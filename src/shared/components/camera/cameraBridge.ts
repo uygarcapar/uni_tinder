@@ -74,10 +74,11 @@ export type CameraRequest = {
   /**
    * Pencere şekli. Verilmezse 'fill' — kampüsün bugünkü tam kanama penceresi.
    *
-   * NEDEN: kayıtta önizleme yüklenen karenin birebir aynısı olmalı; aksi
-   * halde kullanıcının ekranda gördüğü kadraj ile yüklenen fotoğraf
-   * birbirinden farklı olur. Şekil `cameraLayout`ta tek yerde tanımlı, burada
-   * yalnız seçiliyor.
+   * `'photo'` = aynı tepeden 3:4: önizlenen kare yüklenen karenin birebir
+   * aynısı. Kayıt yolu onunla başladı, sonra kampüsle aynı `'fill'`e döndü
+   * (istek: görüntü deklanşöre kadar uzansın) — şu an çağıranı yok, gerekçe
+   * `cameraLayout`ın başında. Şekil orada tek yerde tanımlı, burada yalnız
+   * seçiliyor.
    */
   frame?: PreviewFrame;
   /**

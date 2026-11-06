@@ -108,7 +108,17 @@ konur ve zamanla ayrışırlar (hedef 2'nin ihlali).
 
 ## Kararlar
 
-### Pencere: 3:4, kampüs penceresiyle AYNI TEPEDEN (üste dayalı)
+### Pencere: kampüsün tam penceresi (`fill`) — 3:4 kararı GERİ ALINDI
+
+> **Revizyon 2 (2026-11-06, cihaz geri bildirimi):** "foto çekerken çok kare gibi
+> oluyor, görüntü gözüken yer çekme tuşuna kadar uzansın eskisi gibi". Kayıt
+> yolu (kamera VE galeri) artık kampüsle birebir aynı `fill` penceresini
+> kullanıyor. **Hedef 5 bilerek gevşetildi:** pencere ekran oranında, kare 3:4 —
+> önizleme iki yandan dar, yüklenen kare yanlarda biraz geniş (kampüs anlarının
+> toleransı). Kırpılmış çıktı da bu pencerede yanlardan kesik görünür. Aşağıdaki
+> 3:4 tasarımı `previewWindow`ın `photo` dalı olarak, çağıransız duruyor.
+
+#### (Geçmiş) 3:4, kampüs penceresiyle AYNI TEPEDEN (üste dayalı)
 
 > **Revizyon (2026-11-06, cihaz geri bildirimi):** ilk karar pencereyi kırpıcıyla
 > çakışsın diye ekranın ORTASINA oturtuyordu. İstek: "kampüsteki gibi üst tarafa

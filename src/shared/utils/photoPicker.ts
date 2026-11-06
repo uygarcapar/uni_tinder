@@ -53,7 +53,7 @@ export type PickedPhoto = {
  *                           `fitPhotoForUpload`.
  *
  * ── İKİ ÖNİZLEME YOLU (kayıt fotoğraf adımı) ───────────────────────────────
- *   `captureAndPreviewPhoto` → çek + ÖNİZLEME (3:4 pencere) + isteğe bağlı
+ *   `captureAndPreviewPhoto` → çek + ÖNİZLEME (kampüsün tam penceresi) + isteğe bağlı
  *                           kırpma. Kırpıcı kendiliğinden AÇILMAZ; kullanıcı
  *                           kırp düğmesine basarsa devreye girer.
  *   `pickAndPreviewPhotos`   → galeriden seç + her fotoğraf SIRAYLA aynı
@@ -638,7 +638,7 @@ const createPreviewSession = (failedMessage: string) => {
 };
 
 /**
- * Kamerayla çek, aynı ekranda önizle (3:4 pencere), istenirse kırp, onayla.
+ * Kamerayla çek, aynı ekranda önizle (kampüsün tam penceresi), istenirse kırp, onayla.
  * Kırpıcı KENDİLİĞİNDEN açılmaz — `captureAndCropPhoto`dan farkı bu.
  *
  * `commitHint` bilerek GEÇİLMİYOR: sol alttaki yazı bu yüzden çizilmiyor.
@@ -656,7 +656,12 @@ export const captureAndPreviewPhoto = async (options: {
   const session = createPreviewSession(options.failedMessage);
   const outcome = await presentCameraCapture({
     facing: options.facing,
-    frame: 'photo',
+    // KAMPÜSÜN TAM PENCERESİ (deklanşöre kadar) — 3:4 kutu DEĞİL. İstek
+    // birebir: "çok kare gibi oluyor, görüntü çekme tuşuna kadar uzansın".
+    // Bedeli bilerek kabul edildi: pencere ekran oranında, kare 3:4; önizleme
+    // iki yandan dar, yüklenen kare (`fitPhotoForUpload` / kırpıcı çıktısı)
+    // görülenden yanlarda biraz GENİŞ — kampüs anlarıyla aynı tolerans.
+    frame: 'fill',
     commitLabel: options.commitLabel,
     crop: session.crop,
     commit: session.commit,
@@ -716,7 +721,9 @@ export const pickAndPreviewPhotos = async (
 
     const session = createPreviewSession(options.failedMessage);
     const outcome = await presentCameraCapture({
-      frame: 'photo',
+      // Kamerayla AYNI pencere (gerekçe `captureAndPreviewPhoto`da) — iki yol
+      // aynı ekran, fotoğraf aynı yerde.
+      frame: 'fill',
       source: { uri: asset.uri, width: size.width, height: size.height },
       commitLabel: options.commitLabel,
       crop: session.crop,

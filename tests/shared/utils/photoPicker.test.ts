@@ -361,11 +361,11 @@ const runSession = (run: (req: CameraRequest) => Promise<CameraOutcome>) =>
 const shot = (uri: string, width = 3000, height = 4000) => ({ uri, width, height });
 
 describe('captureAndPreviewPhoto', () => {
-  it('3:4 pencere, kırpma kancası ve commit ile açar; kırpıcı KENDİLİĞİNDEN açılmaz', async () => {
+  it('kampüsle aynı tam pencere (deklanşöre kadar), kırpma kancası ve commit ile açar; kırpıcı KENDİLİĞİNDEN açılmaz', async () => {
     mockShoot.mockResolvedValue({ status: 'committed' });
     await captureAndPreviewPhoto({ facing: 'front', failedMessage: 'x' });
     const req = mockShoot.mock.calls[0][0];
-    expect(req.frame).toBe('photo');
+    expect(req.frame).toBe('fill');
     expect(req.facing).toBe('front');
     expect(typeof req.crop).toBe('function');
     expect(typeof req.commit).toBe('function');
@@ -458,8 +458,8 @@ describe('pickAndPreviewPhotos', () => {
       'file:///b.jpg',
       'file:///c.jpg',
     ]);
-    // Her oturum 3:4 pencere ve kırpma kancasıyla açılıyor, sol alt yazısız.
-    expect(mockShoot.mock.calls[0][0].frame).toBe('photo');
+    // Her oturum kampüsün tam penceresi ve kırpma kancasıyla açılıyor, sol alt yazısız.
+    expect(mockShoot.mock.calls[0][0].frame).toBe('fill');
     expect(mockShoot.mock.calls[0][0].commitHint).toBeUndefined();
     // ✕lenen b'yi overlay unutuyor; burada yalnızca onaylananların ham kaynağı.
     expect(mockForget).not.toHaveBeenCalledWith('file:///b.jpg');

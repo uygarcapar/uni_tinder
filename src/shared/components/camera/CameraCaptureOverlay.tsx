@@ -602,9 +602,10 @@ export default function CameraCaptureOverlay() {
      */
     /**
      * PENCERENİN KENDİSİ `previewWindow`da — yukarıdaki sözleşme onun `fill`
-     * dalı (birebir aynı hesap). `photo` dalı kayıt yolunun 3:4 kadrajı:
-     * orada önizlenen kare YÜKLENEN karenin ta kendisi olmak zorunda, yani
-     * yukarıdaki "görülen ⊆ çekilen" toleransı o yolda kabul edilemez.
+     * dalı (birebir aynı hesap) ve kayıt fotoğraf adımı da ARTIK onu
+     * kullanıyor — yukarıdaki "görülen ⊆ çekilen" toleransı orada da bilerek
+     * kabul edildi. `photo` dalı (3:4, önizleme = yüklenen kare) şu an
+     * çağıransız; gerekçe `cameraLayout`ın başında.
      *
      * İKİSİ DE AYNI TEPEDEN (`insets.top`) başlıyor — `photo` ekranın ortasına
      * OTURMUYOR (istek: "kampüsteki gibi üst tarafa dayalı gelsin"). Fark yalnız

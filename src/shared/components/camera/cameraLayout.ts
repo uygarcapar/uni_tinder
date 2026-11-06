@@ -1,10 +1,14 @@
 /**
  * Kamera ekranı yerleşimi ve chrome kararı — SAF fonksiyonlar, RN import'u yok.
  *
- * Çekim sonrası önizleme iki yoldan geliyor: canlı kamera (`fill`, bugünkü
- * tam ekran kutu) ve galeri/kamera fotoğrafı (`photo`, 3:4 kadraj). İkisi aynı
- * ekranda çizilir; bu dosya yalnız "hangi kutu" ve "hangi düğme" sorusunu
- * cevaplar, çizim bileşene aittir.
+ * İki pencere şekli: `fill` (güvenli alanın altından deklanşöre kadar — kampüs
+ * anları VE kayıt fotoğraf adımı) ve `photo` (aynı tepeden 3:4). Bu dosya yalnız
+ * "hangi kutu" ve "hangi düğme" sorusunu cevaplar, çizim bileşene aittir.
+ *
+ * ⚠️ `photo`yu ŞU AN HİÇBİR ÇAĞIRAN KULLANMIYOR. Kayıt yolu onunla başladı
+ * (önizleme = yüklenen kare, birebir), cihazda "çok kare gibi oluyor, görüntü
+ * çekme tuşuna kadar uzansın" denince 2026-11-06'da `fill`e döndü. Seçenek
+ * testleriyle duruyor: geri dönmek tek satır (`photoPicker`daki `frame`).
  */
 
 export type PreviewFrame = 'fill' | 'photo';
