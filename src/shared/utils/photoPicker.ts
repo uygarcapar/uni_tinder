@@ -52,6 +52,15 @@ export type PickedPhoto = {
  *                           anları (istek). Ölçekleme ayrı ve sonradan:
  *                           `fitPhotoForUpload`.
  *
+ * ── İKİ ÖNİZLEME YOLU (kayıt fotoğraf adımı) ───────────────────────────────
+ *   `captureAndPreviewPhoto` → çek + ÖNİZLEME (3:4 pencere) + isteğe bağlı
+ *                           kırpma. Kırpıcı kendiliğinden AÇILMAZ; kullanıcı
+ *                           kırp düğmesine basarsa devreye girer.
+ *   `pickAndPreviewPhotos`   → galeriden seç + her fotoğraf SIRAYLA aynı
+ *                           önizleme ekranında (kamerasız, `source` ile).
+ *   İkisi de onayda `fitPhotoForUpload` (ham kare) ya da kırpıcının nihai
+ *   çıktısını (olduğu gibi) döner. Overlay yoksa eski kırpıcı yollarına düşer.
+ *
  * İptal HATA DEĞİLDİR: iptal edilen fotoğraf atlanır, hiç seçim kalmazsa boş
  * dizi döner. Kamera izni reddi çağırana fırlar.
  */
@@ -138,9 +147,12 @@ const cropSequentially = async (assets: ImagePickerAsset[]): Promise<PickedPhoto
   return cropped;
 };
 
-export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]> => {
-  const limit = Math.max(1, maxFiles);
-
+/**
+ * Galeriyi açar ve seçimi döner (iptal/boş → null). İKİ galeri yolunun
+ * (`pickAndCropPhotos`, `pickAndPreviewPhotos`) ORTAK kapısı: picker
+ * seçenekleri TEK yerde durur.
+ */
+const openLibrary = async (limit: number): Promise<ImagePickerAsset[] | null> => {
   // ⚠️ TEŞHİS KANCALARI (galeri "hiçbir şey yapmıyor" raporu, kayıt akışı).
   // Bu yolun HER SESSİZ ÇIKIŞI bir log bırakıyor, çünkü üçü de kullanıcıya
   // birebir aynı görünüyor: picker hiç açılmadı / açıldı ama iptal edildi /
@@ -173,10 +185,18 @@ export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]
     assets: result.assets?.length ?? 0,
   });
 
-  if (result.canceled || !result.assets?.length) return [];
-  const picked = await cropSequentially(result.assets.slice(0, limit));
+  if (result.canceled || !result.assets?.length) return null;
+  return result.assets.slice(0, limit);
+};
+
+export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]> => {
+  const limit = Math.max(1, maxFiles);
+  const assets = await openLibrary(limit);
+  if (!assets) return [];
+
+  const picked = await cropSequentially(assets);
   devLog('📷 [photoPicker] kırpmadan dönen', {
-    secilen: result.assets.length,
+    secilen: assets.length,
     kirpilan: picked.length,
   });
   return picked;
@@ -551,6 +571,173 @@ export const fitPhotoForUpload = async (
     ref?.release?.();
     context.release?.();
   }
+};
+
+/**
+ * Önizleme oturumunun `crop` + `commit` kancaları ve sonucu.
+ *
+ * DOSYA SAHİPLİĞİ (overlay ile pazarlık, testler sabitliyor):
+ *  - ✕ (cancelled): overlay ekrandaki karenin dosyasını KENDİSİ unutuyor —
+ *    kamerasız modda galeri cache kopyası, kırpmadan sonra ise BİZİM son kırpma
+ *    çıktımız. Bu yüzden `cancelled`da burada HİÇBİR ŞEY unutulmaz.
+ *  - Kırpma başarılıysa ekrandan düşen ÖNCEKİ kare (ham kaynak ya da bir önceki
+ *    kırpma) burada unutulur; overlay kırpma etrafında `forgetPhoto` çağırmaz.
+ *  - Onayda ham kare, `fitPhotoForUpload` YENİ dosyayı yazdıktan SONRA unutulur
+ *    (önce unutursak ölçekleme patladığında kullanıcı yeniden denemek için
+ *    elinde dosya bulamaz). Kırpma çıktısı ise NİHAİ dosyadır — asla unutulmaz.
+ */
+const createPreviewSession = (failedMessage: string) => {
+  // Kırpıcıdan çıkmış, ekranda hâlâ duran nihai fotoğraflar (uri → foto).
+  const cropped = new Map<string, PickedPhoto>();
+  let collected: PickedPhoto | null = null;
+
+  const crop: NonNullable<CameraRequest['crop']> = async (shot) => {
+    // Boyut native'den gelmezse (0) ölçüyü kendimiz okuyoruz — kırpma
+    // geometrisinin tek girdisi bu.
+    const size =
+      shot.width > 0 && shot.height > 0
+        ? { width: shot.width, height: shot.height }
+        : await measure(shot.uri);
+    if (!size) return null;
+
+    const outcome = await presentCropper({
+      uri: shot.uri,
+      srcWidth: size.width,
+      srcHeight: size.height,
+    });
+    // `skipped`/`aborted`/`failed` → ekrandaki kare olduğu gibi kalıyor.
+    if (outcome.status !== 'done') {
+      if (outcome.status === 'failed') {
+        devLog('📷 [photoPicker] önizleme kırpması başarısız', outcome.error);
+      }
+      return null;
+    }
+
+    cropped.delete(shot.uri);
+    forgetPhoto(shot.uri);
+    cropped.set(outcome.photo.uri, outcome.photo);
+    return { uri: outcome.photo.uri, width: OUTPUT_W, height: OUTPUT_H };
+  };
+
+  const commit: NonNullable<CameraRequest['commit']> = async (shot) => {
+    const final = cropped.get(shot.uri);
+    if (final) {
+      // Zaten 900x1200 ve kalıcı dizinde — yeniden ölçeklemek kalite kaybı.
+      collected = final;
+      return null;
+    }
+
+    const fitted = await fitPhotoForUpload(shot);
+    if (!fitted) return failedMessage;
+    forgetPhoto(shot.uri);
+    collected = fitted;
+    return null;
+  };
+
+  return { crop, commit, result: () => collected };
+};
+
+/**
+ * Kamerayla çek, aynı ekranda önizle (3:4 pencere), istenirse kırp, onayla.
+ * Kırpıcı KENDİLİĞİNDEN açılmaz — `captureAndCropPhoto`dan farkı bu.
+ *
+ * `commitHint` bilerek GEÇİLMİYOR: sol alttaki yazı bu yüzden çizilmiyor.
+ * Overlay bağlı değilse sistem kamerası + kırpıcı yedeğine düşer.
+ */
+export const captureAndPreviewPhoto = async (options: {
+  facing?: 'front' | 'back';
+  /** Ölçekleme patlarsa satır içinde gösterilecek metin (çağıranın `t`si). */
+  failedMessage: string;
+  /** Onay okunun erişilebilir adı. */
+  commitLabel?: string;
+}): Promise<PickedPhoto | null> => {
+  await ensureCameraPermission();
+
+  const session = createPreviewSession(options.failedMessage);
+  const outcome = await presentCameraCapture({
+    facing: options.facing,
+    frame: 'photo',
+    commitLabel: options.commitLabel,
+    crop: session.crop,
+    commit: session.commit,
+  });
+
+  if (outcome.status === 'unavailable') {
+    return captureAndCropPhoto({ facing: options.facing });
+  }
+  if (outcome.status === 'cancelled') return null;
+  if (outcome.status === 'failed') {
+    devLog('📷 [photoPicker] çekim başarısız', outcome.error);
+    return null;
+  }
+  if (outcome.status === 'captured') {
+    // `commit` verildiği için imkânsız; gelirse kare sahipsiz kalmasın.
+    devLog('📷 [photoPicker] önizleme yolunda beklenmeyen captured');
+    forgetPhoto(outcome.shot.uri);
+    return null;
+  }
+
+  const photo = session.result();
+  if (!photo) devLog('📷 [photoPicker] committed ama fotoğraf toplanmadı');
+  return photo;
+};
+
+/**
+ * Galeriden seç, her fotoğrafı SIRAYLA önizleme ekranından geçir.
+ *
+ * Aynı anda tek ekran (48MP kaynaklarda paralel decode belleği uçuruyor).
+ * ✕ o fotoğrafı atlar, sıradakine geçer. Overlay söküldüyse (`unavailable`)
+ * döngü kırılır ve KALANLAR eski kırpıcı yoluna (`cropSequentially`) verilir;
+ * önizleme bir daha denenmez.
+ */
+export const pickAndPreviewPhotos = async (
+  maxFiles: number,
+  options: { failedMessage: string; commitLabel?: string },
+): Promise<PickedPhoto[]> => {
+  const limit = Math.max(1, maxFiles);
+  const assets = await openLibrary(limit);
+  if (!assets) return [];
+
+  const photos: PickedPhoto[] = [];
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    const size = await resolveDimensions(asset);
+    if (!size) {
+      devLog('📷 [photoPicker] boyut yok, fotoğraf atlandı', asset.uri);
+      continue;
+    }
+
+    const session = createPreviewSession(options.failedMessage);
+    const outcome = await presentCameraCapture({
+      frame: 'photo',
+      source: { uri: asset.uri, width: size.width, height: size.height },
+      commitLabel: options.commitLabel,
+      crop: session.crop,
+      commit: session.commit,
+    });
+
+    if (outcome.status === 'unavailable') {
+      photos.push(...(await cropSequentially(assets.slice(i))));
+      break;
+    }
+    if (outcome.status === 'committed') {
+      const photo = session.result();
+      if (photo) photos.push(photo);
+      else devLog('📷 [photoPicker] committed ama fotoğraf toplanmadı');
+      continue;
+    }
+    if (outcome.status === 'failed') {
+      devLog('📷 [photoPicker] önizleme başarısız, fotoğraf atlandı', outcome.error);
+    }
+    // `cancelled`/`failed`: dosyayı overlay zaten unuttu.
+  }
+
+  devLog('📷 [photoPicker] önizlemeden dönen', {
+    secilen: assets.length,
+    donen: photos.length,
+  });
+  return photos;
 };
 
 /**

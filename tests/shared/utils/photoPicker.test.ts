@@ -1,14 +1,21 @@
 import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
+import { ImageManipulator } from 'expo-image-manipulator';
 
 import {
   pickAndCropPhotos,
   captureAndCropPhoto,
   recropExistingPhoto,
+  captureAndPreviewPhoto,
+  pickAndPreviewPhotos,
 } from '@/shared/utils/photoPicker';
 import { presentCropper } from '@/shared/components/cropper/cropperBridge';
 import { presentCameraCapture } from '@/shared/components/camera/cameraBridge';
+import type {
+  CameraOutcome,
+  CameraRequest,
+} from '@/shared/components/camera/cameraBridge';
 import { forgetPhoto } from '@/shared/utils/photoStore';
 
 jest.mock('@/shared/components/cropper/cropperBridge', () => ({
@@ -19,6 +26,9 @@ jest.mock('@/shared/components/camera/cameraBridge', () => ({
 }));
 jest.mock('@/shared/utils/photoStore', () => ({
   forgetPhoto: jest.fn(),
+  persistPickedPhoto: jest.fn(
+    async (_uri: string, name: string) => `file:///documents/profile-photos/${name}`,
+  ),
 }));
 
 const mockPresent = presentCropper as jest.MockedFunction<typeof presentCropper>;
@@ -341,5 +351,212 @@ describe('recropExistingPhoto', () => {
     const request = mockPresent.mock.calls[0][0];
     expect(request.index).toBeUndefined();
     expect(request.total).toBeUndefined();
+  });
+});
+
+/** Overlay'i taklit eder: isteği yakalar, `run` ile kancaları çalıştırır. */
+const runSession = (run: (req: CameraRequest) => Promise<CameraOutcome>) =>
+  mockShoot.mockImplementation((req) => run(req));
+
+const shot = (uri: string, width = 3000, height = 4000) => ({ uri, width, height });
+
+describe('captureAndPreviewPhoto', () => {
+  it('3:4 pencere, kırpma kancası ve commit ile açar; kırpıcı KENDİLİĞİNDEN açılmaz', async () => {
+    mockShoot.mockResolvedValue({ status: 'committed' });
+    await captureAndPreviewPhoto({ facing: 'front', failedMessage: 'x' });
+    const req = mockShoot.mock.calls[0][0];
+    expect(req.frame).toBe('photo');
+    expect(req.facing).toBe('front');
+    expect(typeof req.crop).toBe('function');
+    expect(typeof req.commit).toBe('function');
+    expect(req.commitHint).toBeUndefined(); // sol alt YAZISIZ
+    expect(mockPresent).not.toHaveBeenCalled();
+  });
+
+  it('onaylanan ham kare fitPhotoForUpload ile 3:4 çıktıya çevrilir', async () => {
+    runSession(async (req) => {
+      await expect(req.commit!(shot('file:///raw.jpg'))).resolves.toBeNull();
+      return { status: 'committed' };
+    });
+    const photo = await captureAndPreviewPhoto({ failedMessage: 'x' });
+    expect(photo).toEqual({
+      uri: expect.stringContaining('photo_'),
+      mime: 'image/jpeg',
+      fileName: expect.stringContaining('.jpg'),
+    });
+    // Ham kare, YENİ dosya yazıldıktan SONRA unutulur.
+    expect(mockForget).toHaveBeenCalledWith('file:///raw.jpg');
+  });
+
+  it('ölçekleme patlarsa satır içi metin döner, ekran kapanmaz', async () => {
+    (ImageManipulator.manipulate as jest.Mock).mockImplementationOnce(() => ({
+      crop: jest.fn().mockReturnThis(),
+      resize: jest.fn().mockReturnThis(),
+      renderAsync: jest.fn(async () => {
+        throw new Error('render');
+      }),
+      release: jest.fn(),
+    }));
+    runSession(async (req) => {
+      await expect(req.commit!(shot('file:///raw.jpg'))).resolves.toBe('ölçeklenemedi');
+      return { status: 'cancelled' };
+    });
+    await expect(
+      captureAndPreviewPhoto({ failedMessage: 'ölçeklenemedi' }),
+    ).resolves.toBeNull();
+    // Yeni dosya yazılamadı: ham kare hâlâ kullanıcının elinde, unutulmaz.
+    expect(mockForget).not.toHaveBeenCalled();
+  });
+
+  it('overlay yoksa eski kırpıcı yoluna düşer', async () => {
+    mockShoot.mockResolvedValue({ status: 'unavailable' });
+    mockCamera.mockResolvedValue({ canceled: true, assets: null });
+    await expect(captureAndPreviewPhoto({ failedMessage: 'x' })).resolves.toBeNull();
+    expect(mockCamera).toHaveBeenCalled();
+  });
+
+  it('iptal → null, hiçbir dosya burada unutulmaz (overlay unutuyor)', async () => {
+    mockShoot.mockResolvedValue({ status: 'cancelled' });
+    await expect(captureAndPreviewPhoto({ failedMessage: 'x' })).resolves.toBeNull();
+    expect(mockForget).not.toHaveBeenCalled();
+  });
+});
+
+describe('pickAndPreviewPhotos', () => {
+  it('galeri seçeneklerini DEĞİŞTİRMEDEN geçer', async () => {
+    mockLibrary.mockResolvedValue({ canceled: true, assets: null });
+    await pickAndPreviewPhotos(4, { failedMessage: 'x' });
+    const options = mockLibrary.mock.calls[0][0];
+    expect(options.allowsEditing).toBe(false);
+    expect(options.allowsMultipleSelection).toBe(true);
+    expect(options.selectionLimit).toBe(4);
+    expect(options.orderedSelection).toBe(true);
+    expect(options.shouldDownloadFromNetwork).toBe(true);
+    expect(options.quality).toBeUndefined();
+  });
+
+  it('her fotoğrafı SIRAYLA önizler, ✕lenen atlanır', async () => {
+    mockLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [asset('file:///a.jpg'), asset('file:///b.jpg'), asset('file:///c.jpg')],
+    });
+    runSession(async (req) => {
+      if (req.source!.uri === 'file:///b.jpg') return { status: 'cancelled' };
+      await req.commit!(req.source!);
+      return { status: 'committed' };
+    });
+
+    const photos = await pickAndPreviewPhotos(6, { failedMessage: 'x' });
+
+    expect(photos).toHaveLength(2);
+    expect(mockShoot).toHaveBeenCalledTimes(3);
+    expect(mockShoot.mock.calls.map((c) => c[0].source!.uri)).toEqual([
+      'file:///a.jpg',
+      'file:///b.jpg',
+      'file:///c.jpg',
+    ]);
+    // Her oturum 3:4 pencere ve kırpma kancasıyla açılıyor, sol alt yazısız.
+    expect(mockShoot.mock.calls[0][0].frame).toBe('photo');
+    expect(mockShoot.mock.calls[0][0].commitHint).toBeUndefined();
+    // ✕lenen b'yi overlay unutuyor; burada yalnızca onaylananların ham kaynağı.
+    expect(mockForget).not.toHaveBeenCalledWith('file:///b.jpg');
+  });
+
+  it('sıranın ortasında overlay sökülürse kalanlar kırpıcı yoluna düşer', async () => {
+    mockLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [asset('file:///a.jpg'), asset('file:///b.jpg'), asset('file:///c.jpg')],
+    });
+    runSession(async (req) => {
+      if (req.source!.uri === 'file:///a.jpg') {
+        await req.commit!(req.source!);
+        return { status: 'committed' };
+      }
+      return { status: 'unavailable' };
+    });
+    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+
+    const photos = await pickAndPreviewPhotos(6, { failedMessage: 'x' });
+
+    expect(photos).toHaveLength(3);
+    // Kalan İKİSİ kırpıcıdan geçti — önizleme bir kez daha denenmedi.
+    expect(mockPresent).toHaveBeenCalledTimes(2);
+    expect(mockShoot).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('önizleme kırpma kancası', () => {
+  // Kancayı eline almanın yolu: bir oturum açıp `req.crop`u çağırmak.
+  const withHooks = async (run: (req: CameraRequest) => Promise<void>): Promise<void> => {
+    runSession(async (req) => {
+      await run(req);
+      return { status: 'cancelled' };
+    });
+    await captureAndPreviewPhoto({ failedMessage: 'x' });
+  };
+
+  it('kırpılan kareyi OUTPUT ölçüleriyle döner', async () => {
+    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+    await withHooks(async (req) => {
+      await expect(req.crop!(shot('file:///raw.jpg'))).resolves.toEqual({
+        uri: 'file:///cropped.jpg',
+        width: 900,
+        height: 1200,
+      });
+    });
+  });
+
+  it('native boyut 0 ise ölçüyü kendisi okur', async () => {
+    (Image.getSize as jest.Mock).mockImplementation((_uri, ok) => ok(1200, 1600));
+    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+    await withHooks(async (req) => {
+      await req.crop!(shot('file:///raw.jpg', 0, 0));
+    });
+    expect(mockPresent).toHaveBeenCalledWith(
+      expect.objectContaining({ srcWidth: 1200, srcHeight: 1600 }),
+    );
+  });
+
+  it('kırpma iptal edilirse null döner ve HİÇBİR dosya unutulmaz', async () => {
+    mockPresent.mockResolvedValue({ status: 'skipped' });
+    await withHooks(async (req) => {
+      await expect(req.crop!(shot('file:///raw.jpg'))).resolves.toBeNull();
+    });
+    expect(mockForget).not.toHaveBeenCalled();
+  });
+
+  it('üst üste iki kırpmada bir öncekinin dosyası unutulur', async () => {
+    mockPresent
+      .mockResolvedValueOnce(done('file:///crop1.jpg'))
+      .mockResolvedValueOnce(done('file:///crop2.jpg'));
+    await withHooks(async (req) => {
+      const first = await req.crop!(shot('file:///raw.jpg'));
+      await req.crop!(first!);
+    });
+    expect(mockForget).toHaveBeenCalledWith('file:///raw.jpg');
+    expect(mockForget).toHaveBeenCalledWith('file:///crop1.jpg');
+    expect(mockForget).not.toHaveBeenCalledWith('file:///crop2.jpg');
+    // Oturum `cancelled` bitti: başka hiçbir şey unutulmaz (crop2'yi overlay unutur).
+    expect(mockForget).toHaveBeenCalledTimes(2);
+  });
+
+  it('kırpılmış kare onaylanırsa fitPhotoForUpload ÇALIŞMAZ', async () => {
+    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+    runSession(async (req) => {
+      const cropped = await req.crop!(shot('file:///raw.jpg'));
+      await expect(req.commit!(cropped!)).resolves.toBeNull();
+      return { status: 'committed' };
+    });
+    const photo = await captureAndPreviewPhoto({ failedMessage: 'x' });
+    // Kırpıcının çıktısı OLDUĞU GİBİ dönüyor — yeni bir photo_*.jpg yazılmadı.
+    expect(photo).toEqual({
+      uri: 'file:///cropped.jpg',
+      mime: 'image/jpeg',
+      fileName: 'photo.jpg',
+    });
+    // Manipülatör mock'u da aynı uri'yi döner; uri tek başına ayırt etmez.
+    expect(ImageManipulator.manipulate).not.toHaveBeenCalled();
+    // Nihai dosya asla unutulmaz.
+    expect(mockForget).not.toHaveBeenCalledWith('file:///cropped.jpg');
   });
 });
