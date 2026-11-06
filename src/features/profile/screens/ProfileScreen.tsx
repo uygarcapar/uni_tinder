@@ -26,7 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   pickAndCropPhotos,
-  captureAndCropPhoto,
+  captureAndPreviewPhoto,
   recropExistingPhoto,
   type PickedPhoto,
 } from "../../../shared/utils/photoPicker";
@@ -1740,7 +1740,18 @@ export default function ProfileScreen() {
   const addPhotoFromCamera = async () => {
     let picked: PickedPhoto | null;
     try {
-      picked = await captureAndCropPhoto();
+      // KAYITLA AYNI ÖNİZLEME (istek): deklanşörden sonra ekran değişmiyor,
+      // kare kamera penceresinde donuyor, sağ altta onay oku; kırpıcı yalnız
+      // kırp'a basılırsa açılıyor. Eskiden çekimden hemen sonra kırpıcı
+      // açılıyordu (`captureAndCropPhoto`).
+      // ⚠️ `facing` VERİLMİYOR → ARKA kamera: kayıttan farkı bilerek —
+      // profile kıyafet/ortam karesi de giriyor (bkz. cameraBridge > `facing`).
+      // Yükleme (`uploadPickedPhoto`) ekran kapandıktan SONRA koşuyor; onaya
+      // gelen dosya zaten 900×1200 ve kalıcı dizinde.
+      picked = await captureAndPreviewPhoto({
+        failedMessage: t('common.cropper.failed'),
+        commitLabel: t('common.add'),
+      });
     } catch (e: any) {
       if (e?.code === "E_NO_CAMERA_PERMISSION") {
         // İzin bir daha sorulamıyorsa tek çıkış Ayarlar.
