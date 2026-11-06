@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { InteractionManager, useWindowDimensions } from "react-native";
 import uiBus from "@/shared/services/uiBus";
 import LazyChunkBoundary from "@/shared/components/LazyChunkBoundary";
 // Süre canvas ile PAYLAŞILAN modülden geliyor: elle kopyalanan iki sabit olarak
@@ -28,7 +29,10 @@ import {
  * LazyChunkBoundary DURUYOR: kapsamı chunk değil, canvas'ın KENDİ render'ında
  * çıkan hata (Skia path'i kurulamadı) — kutlama atlanır, ekran gitmez.
  */
-import FlameCanvas from "@/features/discover/components/FireFlameCanvas";
+import FlameCanvas, {
+  FlameWarmCanvas,
+  prewarmFlameWave,
+} from "@/features/discover/components/FireFlameCanvas";
 import { isAppMode, type AppMode } from "@/features/discover/modeTheme";
 
 /**
@@ -56,6 +60,17 @@ const COVER_FALLBACK_MS = FLAME_WAVE_MS + 500;
 const RELEASE_TEARDOWN_MS = FLAME_WAVE_MS + 400;
 
 /**
+ * Isıtmanın başlangıcı: açılışın etkileşimleri bittikten SONRA bu kadar daha
+ * bekle — cold start'ın kendi işi (ilk deste, fotoğraflar) önce bitsin.
+ */
+const PREWARM_DELAY_MS = 1500;
+/**
+ * Görünmez ısıtma katmanının ağaçta kalma süresi — birkaç titreşim karesi
+ * (14 fps'te ~10 kare) çizilsin, yani drawable takası da ısınsın.
+ */
+const SHADER_WARM_MS = 700;
+
+/**
  * Fire kutlaması: ekranı alttan yukarı süpüren alev dalgası (bkz.
  * FireFlameCanvas). Eskiden burada kalp ikonundan süzülen renkli kalp
  * parçacıkları vardı.
@@ -73,6 +88,37 @@ export default function FireFlame() {
     mode?: AppMode;
   } | null>(null);
   const seq = useRef(0);
+
+  /**
+   * ── İLK KUTLAMANIN BEDELİ BOŞTA ÖDENİYOR (2026-11-06) ──────────────────
+   *
+   * Oturumun ilk alevinde iki şey dalganın İÇİNE düşüyordu: on silüetin JS'te
+   * kurulması (PathOp birleşimleri) ve Skia'nın çizim programlarını ilk kez
+   * derlemesi. İkisi de burada, açılış sakinleştikten sonra yapılıyor (bkz.
+   * prewarmFlameWave · FlameWarmCanvas). Ekran ölçüsü değişirse (iPad
+   * split-view) yeni ölçü için yeniden ısıtılıyor.
+   */
+  const { width, height } = useWindowDimensions();
+  const [shaderWarm, setShaderWarm] = useState(false);
+  useEffect(() => {
+    let cancelBuild: (() => void) | undefined;
+    let delay: ReturnType<typeof setTimeout> | undefined;
+    let unwarm: ReturnType<typeof setTimeout> | undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      delay = setTimeout(() => {
+        cancelBuild = prewarmFlameWave(width, height);
+        setShaderWarm(true);
+        unwarm = setTimeout(() => setShaderWarm(false), SHADER_WARM_MS);
+      }, PREWARM_DELAY_MS);
+    });
+    return () => {
+      task.cancel();
+      if (delay) clearTimeout(delay);
+      if (unwarm) clearTimeout(unwarm);
+      cancelBuild?.();
+      setShaderWarm(false);
+    };
+  }, [width, height]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -140,7 +186,13 @@ export default function FireFlame() {
     };
   }, []);
 
-  if (run === null) return null;
+  if (run === null) {
+    return shaderWarm ? (
+      <LazyChunkBoundary resetKey="warm">
+        <FlameWarmCanvas />
+      </LazyChunkBoundary>
+    ) : null;
+  }
 
   return (
     <LazyChunkBoundary resetKey={run.id}>

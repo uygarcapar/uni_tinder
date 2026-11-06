@@ -5,6 +5,7 @@ import {
   useRef,
   useMemo,
 } from "react";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 import { useTranslation } from 'react-i18next';
 import {
   View,
@@ -136,6 +137,7 @@ import {
 // REANIMATED & GESTURE HANDLER IMPORTLARI
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
@@ -226,13 +228,20 @@ function SkeletonBox({
   const animW = typeof w === "number" ? w : width;
   const shimmer = useSharedValue(-animW);
 
+  const active = useAnimationsActive();
   useEffect(() => {
+    // Görünmeyen ekranda/arka planda dönmez (bkz. useAnimationsActive).
+    if (!active) {
+      cancelAnimation(shimmer);
+      shimmer.value = -animW;
+      return;
+    }
     shimmer.value = withRepeat(
       withTiming(animW * 2, { duration: 1200, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [shimmer, animW]);
+  }, [shimmer, animW, active]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmer.value }],

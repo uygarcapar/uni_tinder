@@ -24,6 +24,7 @@ import { colors, withAlpha, type Gradient } from "@/shared/theme/colors";
 import { CampusOutlinedBox } from "@/features/campus/components/CampusInfoBox";
 import { filterLiveMoments } from "@/features/campus/campusQueries";
 import type { CampusMomentDto } from "@/features/campus/campusTypes";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 
 /**
  * KAMPÜS ANLARININ BAŞLIK SATIRINDAKİ ÜÇLÜ DESTESİ.
@@ -347,6 +348,9 @@ const BorderSweep = memo(function BorderSweep({
   gradient: Gradient;
 }) {
   const reduced = useReducedMotion();
+  // Görünmeyen sekmede/arka planda ışık dolaşmaz (bkz. useAnimationsActive) —
+  // Skia her karede yeniden çiziyordu.
+  const active = useAnimationsActive();
   /**
    * 0 → 1 = tur + bekleme. TEK sayı, üç tüketici: dönme, zarf ve (dolaylı)
    * bekleme. Doğrusal, yani zaman ekseninin kendisi.
@@ -354,12 +358,13 @@ const BorderSweep = memo(function BorderSweep({
   const cycle = useSharedValue(0);
 
   useEffect(() => {
-    if (reduced) {
+    if (reduced || !active) {
       /**
        * ⚠️ HAREKET YOK AMA IŞIK VAR: işaretin kendisi bilgi, dolaşması süs.
        * Devrin ORTASINDA park ediyor — zarf orada tam, yani ışık sol üst
        * köşede durağan ve tam parlaklıkta.
        */
+      cancelAnimation(cycle);
       cycle.value = LAP_FRACTION / 2;
       return;
     }
@@ -369,7 +374,7 @@ const BorderSweep = memo(function BorderSweep({
       false,
     );
     return () => cancelAnimation(cycle);
-  }, [cycle, reduced]);
+  }, [cycle, reduced, active]);
 
   /**
    * ⚠️ YOL RENDER SIRASINDA KURULUYOR, modül düzeyinde DEĞİL: `Skia.*` native

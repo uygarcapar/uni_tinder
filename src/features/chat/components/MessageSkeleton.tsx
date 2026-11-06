@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from "react";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 import { View, Dimensions } from "react-native";
 import Animated, {
+  cancelAnimation,
   Easing,
   SharedValue,
   useAnimatedStyle,
@@ -93,14 +95,21 @@ type Props = {
 export default function MessageSkeleton({ count = 6 }: Props) {
   const progress = useSharedValue(0);
 
+  const active = useAnimationsActive();
   useEffect(() => {
+    // Görünmeyen ekranda/arka planda dönmez (bkz. useAnimationsActive).
+    if (!active) {
+      cancelAnimation(progress);
+      progress.value = 0;
+      return;
+    }
     progress.value = 0;
     progress.value = withRepeat(
       withTiming(1, { duration: 1200, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [progress]);
+  }, [progress, active]);
 
   const rows = useMemo(
     () =>

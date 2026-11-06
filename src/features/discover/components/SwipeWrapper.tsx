@@ -352,6 +352,22 @@ const UNDER_SWAY_TILT = 1.2;
  * doku belleği ise bedava değil.
  */
 const RASTER_SETTLE_MS = 1500;
+
+/**
+ * ── 3. ALEVİN ALTINDA HEMEN (2026-11-06) ────────────────────────────────────
+ *
+ * Gecikmeli açılış alevli devirde dalganın ÇEKİLİŞİNE denk geliyordu: iki
+ * örtülü kartın tam ekran rasterleştirmesi, alev ekranı terk ederken. Keşif
+ * artık deste tamamen oturana kadar alevi parkta tutuyor (bkz. DiscoverScreen
+ * > settleBehindFlame) ve oturduğu anda bu olayı yayınlıyor: zincir bitti,
+ * örtülü kartlar ŞİMDİ dokuya alınabilir, alev hâlâ ekranı kaplıyor.
+ *
+ * Prop değil olay, bilerek: prop SwipeWrapper'ları (ve altlarındaki dev
+ * SwipeCard'ı) yeniden render ettirirdi. Gecikmeli yol yedek olarak duruyor
+ * (alevsiz devirler, olay gelmeyen dallar).
+ */
+export const DECK_RASTER_NOW_EVENT = "deckRasterNow";
+
 function RasterizeWhenCovered({
   covered,
   children,
@@ -366,7 +382,11 @@ function RasterizeWhenCovered({
       return;
     }
     const id = setTimeout(() => setRaster(true), RASTER_SETTLE_MS);
-    return () => clearTimeout(id);
+    const unsub = uiBus.on(DECK_RASTER_NOW_EVENT, () => setRaster(true));
+    return () => {
+      clearTimeout(id);
+      unsub();
+    };
   }, [covered]);
   return (
     <View collapsable={false} shouldRasterizeIOS={raster} style={{ flex: 1 }}>
@@ -479,6 +499,8 @@ interface SwipeWrapperProps {
    * olduğu gibi karttan geçiyor (bkz. SwipeCard.onCoverReady).
    */
   onCoverReady?: () => void;
+  /** Kart tamamen oturdu — bkz. SwipeCard.onSettled. */
+  onSettled?: (userId: string) => void;
   /**
    * Bu kart REWIND YUVASINDA: ekranda değil, canlı kartın ardında yalnız
    * ölçülmek için duruyor (bkz. DiscoverScreen > rewindSlot). Ağır paneli
@@ -508,6 +530,7 @@ function SwipeWrapper({
   onMenu,
   onNote,
   onCoverReady,
+  onSettled,
   rewindSlot = false,
 }: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
@@ -1657,6 +1680,7 @@ function SwipeWrapper({
             onMenu={onMenu ? handleMenu : undefined}
             onNote={onNote ? handleNote : undefined}
             onCoverReady={onCoverReady}
+            onSettled={onSettled}
             panelWarmup={!rewindSlot}
           />
         </RasterizeWhenCovered>
@@ -1697,6 +1721,7 @@ export default React.memo(SwipeWrapper, (prev, next) => {
     prev.onBlock === next.onBlock &&
     prev.onNote === next.onNote &&
     prev.onCoverReady === next.onCoverReady &&
+    prev.onSettled === next.onSettled &&
     prev.rewindSlot === next.rewindSlot
   );
 });

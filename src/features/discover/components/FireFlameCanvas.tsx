@@ -7,12 +7,15 @@ import {
   Path,
   PathOp,
   Skia,
+  StrokeCap,
+  StrokeJoin,
   vec,
   type SkPath,
 } from "@shopify/react-native-skia";
-import {
+import Animated, {
   Easing,
-  useDerivedValue,
+  runOnJS,
+  useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -28,28 +31,30 @@ import {
 import uiBus from "@/shared/services/uiBus";
 import {
   buildFlameWave,
+  flameCanvasBox,
   flameCurtainGeometry,
   flameWaveGeometry,
   COVER_HOLD_LIMIT_MS,
+  FLAME_OUTLINE_WIDTH,
+  FLAME_SWAY_PX,
   FLAME_WAVE_MS,
   FLICKER_FPS,
   FLICKER_FRAMES,
   HOLD_BREATHE_EXIT_MS,
   HOLD_BREATHE_MS,
+  type FlameCanvasBox,
   type FlameWaveGeometry,
   type WaveApi,
 } from "./flameWavePath";
 import type { SharedValue } from "react-native-reanimated";
-
-/** Dalga geçerken hafif yalpalasın — katı bir blok gibi kaymasın. */
-const SWAY_PX = 7;
 
 /** Dalganın o andaki ötelemesi: yol boyunca ilerleme + yalpalama. */
 function waveOffset(p: number, startY: number, endY: number) {
   "worklet";
   return {
     y: startY + (endY - startY) * p,
-    x: Math.sin(p * 7.5) * SWAY_PX,
+    // Dalga geçerken hafif yalpalasın — katı bir blok gibi kaymasın.
+    x: Math.sin(p * 7.5) * FLAME_SWAY_PX,
   };
 }
 
@@ -59,7 +64,7 @@ function waveOffset(p: number, startY: number, endY: number) {
  * nane (bkz. modeTheme > modeFlameOutline). İkisi de MEDYA rengi — perde her
  * temada aynı çiziliyor, o yüzden palet token'ı değil sabit.
  */
-const OUTLINE_WIDTH = 5;
+const OUTLINE_WIDTH = FLAME_OUTLINE_WIDTH;
 
 const skiaApi: WaveApi<SkPath> = {
   fromSVG: (d) => Skia.Path.MakeFromSVGString(d)!,
@@ -83,8 +88,22 @@ const skiaApi: WaveApi<SkPath> = {
   },
 };
 
-interface Wave extends FlameWaveGeometry {
-  frames: (SkPath | null)[];
+/**
+ * Bir titreşim karesinin iki path'i: dolgu + konturun DOLGU KARŞILIĞI.
+ *
+ * KONTUR ÖNCEDEN HESAPLANIYOR (2026-11-06): `style="stroke"` ile çizilen path'i
+ * Skia her çizimde CPU'da yeniden konturluyor — dokuz glifin birleşimi olan bu
+ * path'te pahalı bir iş ve UI thread'inde koşuyor. Kontur kare başına BİR KEZ
+ * dolgu path'ine çevrilip saklanıyor; çizim iki düz dolgu. `stroke()`
+ * başarısız olursa (null) eski yola, canlı kontura düşülüyor.
+ */
+interface WaveFrame {
+  fill: SkPath;
+  outline: SkPath | null;
+}
+
+interface Wave extends FlameWaveGeometry, FlameCanvasBox {
+  frames: (WaveFrame | null)[];
 }
 
 /**
@@ -101,15 +120,17 @@ function getWave(width: number, height: number): Wave {
   const hit = CACHE.get(key);
   if (hit) return hit;
 
+  const geo = flameWaveGeometry(width, height);
   const wave: Wave = {
     frames: new Array(FLICKER_FRAMES).fill(null),
-    ...flameWaveGeometry(width, height),
+    ...geo,
+    ...flameCanvasBox(geo),
   };
   CACHE.set(key, wave);
   return wave;
 }
 
-function frameAt(wave: Wave, index: number, width: number): SkPath | null {
+function frameAt(wave: Wave, index: number, width: number): WaveFrame | null {
   const i = ((index % FLICKER_FRAMES) + FLICKER_FRAMES) % FLICKER_FRAMES;
   const cached = wave.frames[i];
   if (cached) return cached;
@@ -126,11 +147,51 @@ function frameAt(wave: Wave, index: number, width: number): SkPath | null {
       tongueHeight: wave.tongueHeight,
       phase: i / FLICKER_FRAMES,
     });
-    wave.frames[i] = built;
-    return built;
+    const outline = built.copy().stroke({
+      width: OUTLINE_WIDTH,
+      join: StrokeJoin.Round,
+      cap: StrokeCap.Round,
+    });
+    const frame: WaveFrame = { fill: built, outline };
+    wave.frames[i] = frame;
+    return frame;
   } catch {
     return null;
   }
+}
+
+/** Isıtmada kareler arası nefes — bir kurulum (~1.4 ms + PathOp) tek tick'e. */
+const PREWARM_STEP_MS = 48;
+
+/**
+ * Silüetleri BOŞTA, kutlamadan ÖNCE kurar (2026-11-06).
+ *
+ * Tembel kurulum maliyeti titreşime yayıyordu ama hâlâ oturumun İLK
+ * kutlamasının içindeydi: dalga ekrandayken JS her titreşim karesinde bir
+ * silüet kuruyor, o da tam kart değişiminin commit'iyle aynı pencereye
+ * düşüyordu. Isıtma işi o pencereden çıkarıyor; sıra dışı bir zamanda
+ * (ısıtma bitmeden) gelen kutlama yine tembel yola düşüyor, yani doğruluk
+ * buna bağlı DEĞİL.
+ *
+ * Kareler AYRI tick'lerde kuruluyor: onunu tek seferde kurmak ~10 karelik bir
+ * JS bloğu demekti (bkz. CACHE notu). Dönen fonksiyon iptal ediyor.
+ */
+export function prewarmFlameWave(width: number, height: number): () => void {
+  const wave = getWave(width, height);
+  let i = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const step = () => {
+    timer = null;
+    while (i < FLICKER_FRAMES && wave.frames[i]) i++;
+    if (i >= FLICKER_FRAMES) return;
+    frameAt(wave, i, width);
+    i++;
+    timer = setTimeout(step, PREWARM_STEP_MS);
+  };
+  timer = setTimeout(step, 0);
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
 }
 
 /**
@@ -214,43 +275,73 @@ function FlameWaveLayer({
     return () => clearInterval(id);
   }, [parked]);
 
-  const { startY, endY, tongueHeight, bandHeight } = wave;
+  const { startY, endY, tongueHeight, bandHeight, originY, padX } = wave;
 
-  const transform = useDerivedValue(() => {
+  /**
+   * ÖTELEME NATIVE KATMANDA, Skia'da DEĞİL (bkz. flameWavePath >
+   * flameCanvasBox). Canvas'ın kendisi yalnız titreşim karesi değişince
+   * yeniden çiziliyor; 60 fps'lik süpürme Core Animation'da bir katman
+   * kaydırması.
+   *
+   * Kutunun tepesi path uzayında `-originY`'de, yani ekrandaki öteleme
+   * `o.y - originY`. Yatayda kutu `padX` kadar taşkın doğuyor (`left: -padX`),
+   * yalpa o payın içinde kalıyor.
+   */
+  const layerStyle = useAnimatedStyle(() => {
     // Nefes toplamsal: park dışında `breathe` sıfır, yani süpürme etkilenmiyor.
     // Üst ucu geometriden sınırlı (holdCeilProgress ≤ uncoverProgress), o yüzden
     // hiçbir fazda kaplamanın dışına çıkmıyor.
     const p = progress.value + (breathe ? breathe.value * breatheSpan : 0);
     const o = waveOffset(p, startY, endY);
-    return [{ translateY: o.y }, { translateX: o.x }];
-  }, [startY, endY, breatheSpan]);
+    return {
+      transform: [{ translateY: o.y - originY }, { translateX: o.x }] as const,
+    };
+  }, [startY, endY, breatheSpan, originY]);
 
-  const path = frameAt(wave, tick, width);
-  if (!path) return null;
+  const frame = frameAt(wave, tick, width);
+  if (!frame) return null;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Canvas style={StyleSheet.absoluteFill}>
-        <Group transform={transform}>
-          <Path path={path}>
-            {/* İkonun kendi gradyanı: uçlarda koyu, aşağı indikçe parlak —
-                rozet ve Fire/Spark kalbiyle AYNI token (modeFireGradient). */}
-            <LinearGradient
-              start={vec(0, -tongueHeight)}
-              end={vec(width, bandHeight * 0.55)}
-              colors={[...modeFireGradient(mode)]}
-            />
-          </Path>
-          <Path
-            path={path}
-            style="stroke"
-            strokeWidth={OUTLINE_WIDTH}
-            strokeJoin="round"
-            strokeCap="round"
-            color={modeFlameOutline(mode)}
-          />
-        </Group>
-      </Canvas>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: -padX,
+            width: width + padX * 2,
+            height: wave.height,
+          },
+          layerStyle,
+        ]}
+      >
+        <Canvas style={StyleSheet.absoluteFill}>
+          <Group transform={[{ translateX: padX }, { translateY: originY }]}>
+            <Path path={frame.fill}>
+              {/* İkonun kendi gradyanı: uçlarda koyu, aşağı indikçe parlak —
+                  rozet ve Fire/Spark kalbiyle AYNI token (modeFireGradient). */}
+              <LinearGradient
+                start={vec(0, -tongueHeight)}
+                end={vec(width, bandHeight * 0.55)}
+                colors={[...modeFireGradient(mode)]}
+              />
+            </Path>
+            {frame.outline ? (
+              <Path path={frame.outline} color={modeFlameOutline(mode)} />
+            ) : (
+              <Path
+                path={frame.fill}
+                style="stroke"
+                strokeWidth={OUTLINE_WIDTH}
+                strokeJoin="round"
+                strokeCap="round"
+                color={modeFlameOutline(mode)}
+              />
+            )}
+          </Group>
+        </Canvas>
+      </Animated.View>
     </View>
   );
 }
@@ -287,6 +378,17 @@ export default function FireFlameCanvas({
   const breatheSpan = holdCeilProgress - coverProgress;
   /** Park sürüyor mu — titreşimi duraklatan bayrak (bkz. FlameWaveLayer). */
   const [parked, setParked] = useState(false);
+  /**
+   * Dalga ekranı terk etti mi — canvas o anda sökülüyor (2026-11-06).
+   *
+   * FireFlame'in sökme sayacı bilerek geniş (salıvermeden sonra süpürme + 400
+   * ms pay) ve o pay boyunca canvas, ekran dışında, 14 fps'lik titreşimle
+   * yeniden çizilmeye devam ediyordu — üstelik artık ~2 ekran boyunda bir
+   * drawable tutuyor. Bitişi animasyonun KENDİ callback'i söylüyor; p=1'de
+   * şerit zaten ekranın üstünde (bkz. flameWaveGeometry > endY payı), yani
+   * sökmek görünür bir şey değiştirmiyor.
+   */
+  const [done, setDone] = useState(false);
   useEffect(() => {
     progress.value = withTiming(
       // Park edecekse ilk faz yalnız örtme noktasına kadar sürülüyor; kalan yol
@@ -298,6 +400,12 @@ export default function FireFlameCanvas({
         // dışında oluyor, ease sadece ortadaki geçişi yavaşlatırdı. Doğrusal
         // olması parkın da şartı: iki fazın ekleme yerinde hız değişmiyor.
         easing: Easing.linear,
+      },
+      // Park etmeyen koşuda bu animasyon süpürmenin TAMAMI; park edende ilk
+      // faz — orada bitiş aşağıdaki `leave`in animasyonunda.
+      (finished) => {
+        "worklet";
+        if (finished && !hold) runOnJS(setDone)(true);
       },
     );
     // Kart değişimi bu ana KİLİTLİ (bkz. flameSweep — Fire de not da):
@@ -354,10 +462,17 @@ export default function FireFlameCanvas({
        * sürüyor; JS tarafından okunan şey bayat. Süre çöp çıkıyor ve dalga
        * "bir anda yok oluyor" (ya da sürünüyor).
        */
-      progress.value = withTiming(1, {
-        duration: FLAME_WAVE_MS - coverMs,
-        easing: Easing.linear,
-      });
+      progress.value = withTiming(
+        1,
+        {
+          duration: FLAME_WAVE_MS - coverMs,
+          easing: Easing.linear,
+        },
+        (finished) => {
+          "worklet";
+          if (finished) runOnJS(setDone)(true);
+        },
+      );
     };
 
     /**
@@ -424,6 +539,8 @@ export default function FireFlameCanvas({
       if (valve) clearTimeout(valve);
     };
   }, [progress, breathe, coverMs, breatheSpan, hold]);
+
+  if (done) return null;
 
   return (
     <FlameWaveLayer
@@ -495,5 +612,42 @@ export function FlameCurtainCanvas({
 
   return (
     <FlameWaveLayer wave={wave} width={width} progress={progress} mode={mode} />
+  );
+}
+
+/**
+ * İLK ALEVİN ISITMASI — GERÇEK katman, tam boyda, görünmez (2026-11-06).
+ *
+ * İlk tur burada 1 pt'lik bir şerit çiziliyordu (yalnız shader derlemesi için)
+ * ve cihazda "ilk alev hâlâ kasıyor" geldi: ilk alevi sonrakilerden ayıran
+ * şeylerin çoğu O ŞERİTTE YOKTU — şerit boyundaki (~2 ekran) Metal
+ * drawable'ın ilk tahsisi, büyük path'in tessellation yolu (küçük path'ler
+ * Skia'da başka bir çiziciye düşüyor), animasyonlu stilin worklet'inin UI
+ * runtime'ındaki ilk kurulumu.
+ *
+ * Artık süpürmenin KENDİ katmanı (FlameWaveLayer) birebir aynı ölçüde mount
+ * ediliyor: aynı Canvas, aynı Animated.View, aynı path'ler, titreşimiyle
+ * birlikte. İlerleme örtme noktasında sabit (ekranı kaplayan, en dolu çizim).
+ *
+ * Opaklık 0 kapta: Core Animation katmanı hiç birleştirmiyor (görünmez, GPU'ya
+ * birleştirme bedeli yok), Skia ise drawable'a yine çiziyor — ısıtmanın
+ * istediği tam bu. Kısa ömürlü; FireFlame birkaç titreşim karesi sonra söküyor.
+ */
+export function FlameWarmCanvas({ mode }: { mode?: AppMode }) {
+  const { width, height } = useWindowDimensions();
+  const wave = useMemo(() => getWave(width, height), [width, height]);
+  const progress = useSharedValue(wave.coverProgress);
+  return (
+    <View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { opacity: 0 }]}
+    >
+      <FlameWaveLayer
+        wave={wave}
+        width={width}
+        progress={progress}
+        mode={mode}
+      />
+    </View>
   );
 }

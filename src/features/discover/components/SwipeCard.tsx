@@ -218,7 +218,7 @@ import {
 // YÜZEY kapısı (`HAS_LIQUID_GLASS` değil): native modülün kendi sabitini okuyor
 // ve `UIDesignRequiresCompatibility` bayrağını da sayıyor — CardSectionBox da
 // aynı kapıdan geçiyor, piller onunla aynı cevabı görmek zorunda.
-import { glassOnMediaInk, hasLiquidGlassSurface } from "@/shared/theme/glass";
+import { glassOnMediaInk } from "@/shared/theme/glass";
 import { MAX_PROFILE_PROMPTS } from "@/shared/constants/limits";
 import {
   photoNoteTarget,
@@ -251,7 +251,10 @@ import CardStickyHeader, {
   PREVIEW_HEADER_TITLE_BOTTOM,
 } from "./CardStickyHeader";
 import CardGlassBackdrop from "./CardGlassBackdrop";
-import CardSectionBox from "./CardSectionBox";
+import CardSectionBox, {
+  GLASS_SETTLE_MS,
+  hasSectionGlass,
+} from "./CardSectionBox";
 import ActivityStatus from "./ActivityStatus";
 import NoteGlyph from "@/shared/components/NoteGlyph";
 import PillFlow from "@/shared/components/PillFlow";
@@ -1887,7 +1890,23 @@ interface SwipeCardProps {
    * zaten üstünün ardında ölçülüyor, önizlemede kapak hiç çizilmiyor.
    */
   onCoverReady?: () => void;
+  /**
+   * Kart TAMAMEN oturdu: ağır panel kuruldu ve bölüm kutularının tek seferlik
+   * cam yenilemesi (CardSectionBox > GLASS_REMOUNT) bitti — bundan sonra kartın
+   * kendi zamanlayıcılarından gelen ağaç değişimi yok.
+   *
+   * Keşif'in alev parkı bunu bekliyor (bkz. DiscoverScreen > settleBehindFlame):
+   * yeni arka kartın mount'u ve ısınması alevin ÖRTÜSÜ ALTINDA bitsin, dalga
+   * çekilirken ana thread'e iş düşmesin. Haber kart başına BİR KEZ.
+   */
+  onSettled?: (userId: string) => void;
 }
+
+/**
+ * Kartın oturduğunu bildirmeden önce cam yenilemesinin üstüne bırakılan pay —
+ * remount'un kendi commit + layout turu.
+ */
+const SETTLE_MARGIN_MS = 80;
 
 /**
  * Ağır panelin kurulmasından önce beklenen süre — kartın KENDİ mount'undan
@@ -1992,6 +2011,7 @@ export default function SwipeCard({
   onMenu,
   onNote,
   onCoverReady,
+  onSettled,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
   const insets = useSafeAreaInsets();
@@ -2246,6 +2266,25 @@ export default function SwipeCard({
     );
     return () => clearTimeout(id);
   }, [previewMode, panelWarmup]);
+
+  /**
+   * "Tamamen oturdum" haberi (bkz. prop'un notu). Panel kurulduktan sonra
+   * kutuların cam yenilemesi `GLASS_SETTLE_MS` sonra koşuyor; camsız yolda o
+   * yenileme yok, yalnız pay bekleniyor.
+   */
+  const settledNotifiedRef = useRef(false);
+  const profileUserId = profile?.userId;
+  useEffect(() => {
+    if (previewMode || !profileReady || !onSettled || !profileUserId) return;
+    if (settledNotifiedRef.current) return;
+    const wait =
+      (hasSectionGlass() ? GLASS_SETTLE_MS : 0) + SETTLE_MARGIN_MS;
+    const id = setTimeout(() => {
+      settledNotifiedRef.current = true;
+      onSettled(profileUserId);
+    }, wait);
+    return () => clearTimeout(id);
+  }, [previewMode, profileReady, onSettled, profileUserId]);
 
   /**
    * Kartın AÇIKKEN varacağı köşe yarıçapı. İki bağlamda farklı ve bu FARK
@@ -2511,7 +2550,7 @@ export default function SwipeCard({
    * pil de opak olursa kutunun içinde kaybolurdu. İki koşulun VE'si
    * CardSectionBox'ın kendi dalıyla birebir aynı.
    */
-  const glassPills = glassPanel && hasLiquidGlassSurface();
+  const glassPills = glassPanel && hasSectionGlass();
 
   /**
    * ── CAM KURULUMUNU GECİKTİRME — ÜÇ KEZ DENENDİ, ÜÇÜNDE DE HATANIN SEBEBİ ──

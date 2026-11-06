@@ -96,7 +96,28 @@ import { glassColorScheme, hasLiquidGlassSurface } from "@/shared/theme/glass";
  * SwipeWrapper'ın giriş yayı (damping 20 / stiffness 100) ~400ms'de duruyor;
  * pay bırakıldı. Gerekçenin tamamı GLASS_REMOUNT notunda.
  */
-const GLASS_SETTLE_MS = 700;
+export const GLASS_SETTLE_MS = 700;
+
+/**
+ * ── BÖLÜM KUTULARI CAMSIZ (2026-11-06, istek) ──────────────────────────────
+ *
+ * Kartın bölüm kutuları iOS 26'da da 26 ALTININ yüzeyine döndü: opak
+ * `theme.bg` levha + gölge. Kartın cam BUTONLARI yerinde (onlar bu kutuyu
+ * kullanmıyor).
+ *
+ * Sebep performans: kart başına dokuz `GlassView` mount'ta oluşturulup
+ * GLASS_REMOUNT ile bir kez daha kuruluyordu (destenin ısınma zincirinin
+ * ~700 ms'si), kaydırırken de her kare arkasını örnekliyordu. Altlarındaki
+ * tam ekran canlı `BlurView` zemin de yalnız onlar için vardı (bkz.
+ * CardGlassBackdrop > blurViewPath) — aynı bayrakla o da düştü.
+ *
+ * Geri açmak = bu sabiti `true` yapmak. Kod yolu silinmedi.
+ */
+const CARD_SECTION_GLASS = false;
+
+/** Bölüm kutuları gerçekten cam mı — kutu, kart pilleri ve zemin aynı kapıyı okur. */
+export const hasSectionGlass = (): boolean =>
+  CARD_SECTION_GLASS && hasLiquidGlassSurface();
 
 /**
  * ── CAMIN KURULUMUNU GECİKTİREN HİÇBİR KAPI YOK, BİLEREK ──────────────────
@@ -162,6 +183,7 @@ function sectionGlassTint(): string {
  *
  * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- bkz. elevated dalı
 function sectionShadow(): ViewStyle {
   const light = isLight();
   return {
@@ -241,13 +263,16 @@ export default function CardSectionBox({
    * Önizleme kartlarında zaten yay yok, yani ilk kurulum tutuyor; oradaki
    * yeniden mount da zararsız (aynı yoldan aynı sonucu veriyor).
    */
+  const glassPath = glass && hasSectionGlass();
   const [installGen, setInstallGen] = useState(0);
   useEffect(() => {
+    // Camsız yolda yenilenecek bir efekt yok — boşuna bir re-render olmasın.
+    if (!glassPath) return;
     const id = setTimeout(() => setInstallGen(1), GLASS_SETTLE_MS);
     return () => clearTimeout(id);
-  }, []);
+  }, [glassPath]);
 
-  if (glass && hasLiquidGlassSurface()) {
+  if (glassPath) {
     return (
       <GlassView
         // Ata dingin hâle gelince tek seferlik tazeleme — bkz. GLASS_REMOUNT.
@@ -305,7 +330,15 @@ export default function CardSectionBox({
       style={[
         shape,
         elevated
-          ? { backgroundColor: theme.bg, ...sectionShadow() }
+          ? {
+              // PROFİL SAYFASININ BÖLÜMLERİYLE AYNI (istek, 2026-11-06 — bkz.
+              // ProfileScreen > accordion kutusu): `surface` zemin + 0.5'lik
+              // `hairline` kenar, gölge YOK. Gölge (sectionShadow) bu yüzden
+              // kullanılmıyor; geri istenirse fonksiyon yerinde.
+              backgroundColor: theme.surface,
+              borderWidth: 0.5,
+              borderColor: theme.hairline,
+            }
           : { overflow: "hidden", backgroundColor: theme.bg },
         style,
         fallbackStyle,

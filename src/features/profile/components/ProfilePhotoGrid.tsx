@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 import { View, TouchableOpacity } from "react-native";
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedReaction,
@@ -65,13 +67,20 @@ function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
   const shimmer = useSharedValue(0);
   const widthSV = useSharedValue(0);
 
+  const active = useAnimationsActive();
   useEffect(() => {
+    // Görünmeyen ekranda/arka planda dönmez (bkz. useAnimationsActive).
+    if (!active) {
+      cancelAnimation(shimmer);
+      shimmer.value = 0;
+      return;
+    }
     shimmer.value = withRepeat(
       withTiming(1, { duration: 1200, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [shimmer]);
+  }, [shimmer, active]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: (shimmer.value - 1) * widthSV.value }],

@@ -6,6 +6,7 @@ import ToastShell from './ToastShell';
 import {
   DEFAULT_APP_MODE,
   modeFireNameKey,
+  modeTitleKey,
   type AppMode,
 } from '../../../features/discover/modeTheme';
 import {
@@ -44,8 +45,9 @@ export default function LikeToast({
   senderName,
   photoUrl,
   preview,
-  mode = DEFAULT_APP_MODE,
+  mode: eventMode,
 }: LikeToastProps) {
+  const mode = eventMode ?? DEFAULT_APP_MODE;
   const isSuper = kind === 'fire';
   const isNote = kind === 'note';
   // Notta kimlik free alıcıya da AÇIK (sözleşme §6) — çağıran adı hiç
@@ -58,9 +60,17 @@ export default function LikeToast({
   // `fire` her iki varyanta da geçiyor: yalnız Fire metinleri onu kullanıyor,
   // diğerlerinde kullanılmayan bir enterpolasyon parametresi zararsız.
   const fire = t(modeFireNameKey(mode));
-  const title = senderName
-    ? t(`likeToast.${kindKey}`, { name: senderName, fire })
-    : t(`likeToast.${kindKey}NoName`, { fire });
+  // Mod etiketi EN BAŞTA ("[Arkadaş] …" / "[Flört] …") — push ve Bildirimler
+  // listesindeki sunucu başlığıyla aynı biçim (bkz. backend
+  // NotificationMessages.WithModePrefix). Toast artık öbür modun beğenisinde de
+  // çıkıyor, kullanıcı hangi moda gideceğini buradan görüyor. Olayın modu
+  // BİLİNMİYORSA etiket yok: varsayılan Dating'i etikete basmak yalan olurdu.
+  const modeTag = eventMode ? `[${t(modeTitleKey(eventMode))}] ` : '';
+  const title =
+    modeTag +
+    (senderName
+      ? t(`likeToast.${kindKey}`, { name: senderName, fire })
+      : t(`likeToast.${kindKey}NoName`, { fire }));
   // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi. Diğer
   // durumlarda alt satır ne yapılacağını söylüyor — isim yukarı taşındı.
   const subtitle = (isNote ? preview : null) || t('likeToast.cta');

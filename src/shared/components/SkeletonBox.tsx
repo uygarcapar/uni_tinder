@@ -1,7 +1,9 @@
 import { useEffect } from "react";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 import { View, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
@@ -32,13 +34,20 @@ export default function SkeletonBox({
   const animW = typeof w === "number" ? w : SCREEN_WIDTH;
   const shimmer = useSharedValue(-animW);
 
+  const active = useAnimationsActive();
   useEffect(() => {
+    // Görünmeyen ekranda/arka planda dönmez (bkz. useAnimationsActive).
+    if (!active) {
+      cancelAnimation(shimmer);
+      shimmer.value = -animW;
+      return;
+    }
     shimmer.value = withRepeat(
       withTiming(animW * 2, { duration: 1200, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [shimmer, animW]);
+  }, [shimmer, animW, active]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmer.value }],

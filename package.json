@@ -166,6 +166,8 @@
     "webdriverio": "^9.32.0"
   },
   "reanimated": {
-    "staticFeatureFlags": {}
+    "staticFeatureFlags": {
+      "IOS_SYNCHRONOUSLY_UPDATE_UI_PROPS": true
+    }
   }
 }

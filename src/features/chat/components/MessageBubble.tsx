@@ -243,7 +243,7 @@ function MessageBubble({
   // GİRMEMELİ. Recycle'da (container başka mesaja geçince) anahtar değişir,
   // yeni mesajın kaydı yoksa anim null olur → hiçbir şey oynamaz.
   //
-  // Reanimated DEĞİL, RN Animated (JS-driven): balon başına reanimated hook'u
+  // Reanimated DEĞİL, RN Animated (native driver, iç sarmalayıcıda): balon başına reanimated hook'u
   // commit-storm teşhisinde suçlu çıkmıştı (bkz. component başlığı). Buradaki
   // tek değer ömür boyu bir kez, ~300ms çalışıp biter.
   const rowKey = message.clientMessageId || message.id;
@@ -265,10 +265,10 @@ function MessageBubble({
       toValue: 1,
       duration: ENTER_DURATION,
       easing: Easing.out(Easing.cubic),
-      // marginBottom (spaceAnim) aynı görünümde JS-driven bir düğüm: native
-      // driver'a geçilirse RN o görünümün TÜM animated prop'larını native'e
-      // taşımaya kalkar ve layout prop'unda patlar.
-      useNativeDriver: false,
+      // NATIVE: stil iç sarmalayıcıda, marginBottom'un (spaceAnim, JS-driven)
+      // olduğu dış görünümden AYRI — yoksa RN aynı görünümün layout prop'unu da
+      // native'e taşımaya kalkıp patlar. Native'de kareler JS yükünden bağımsız.
+      useNativeDriver: true,
     });
     anim.start();
     return () => anim.stop();
@@ -462,12 +462,17 @@ function MessageBubble({
           (isGroupStart ? ROW_SPACE + GROUP_GAP : ROW_SPACE) +
           (message.replyTo ? REPLY_ROW_TOP_GAP : 0),
         marginBottom: spaceAnim,
-        // Yalnız az önce gönderilen balonda dolu (bkz. ENTER_*): satır kendi
-        // yerinin altından süzülerek gelir. Diğer tüm satırlarda null → stil
-        // birebir eski haliyle kalır.
-        ...enterStyle,
       }}
     >
+      {/* Giriş animasyonu AYRI düğümde: dıştaki marginBottom JS-driven (layout
+          prop'u), giriş ise NATIVE driver'da koşmalı — gönderim anı JS'in en
+          meşgul anı (dispatch + liste render + composer temizliği + persist),
+          JS-driven 220ms'lik animasyonun kareleri düşüp balon "2 adımda
+          gidip yerine oturuyordu". Aynı görünümde iki driver karışamaz.
+          Sarmalayıcı her satırda VAR (yalnız stili değişir) → recycle'da ağaç
+          şekli sabit; stilsiz hali dış kutuyla birebir aynı (kolon, stretch),
+          saat kolonunun absolute top/bottom'u da aynı kutuya oturur. */}
+      <Animated.View style={enterStyle}>
       <View
         style={{
           flexDirection: "row",
@@ -742,6 +747,7 @@ function MessageBubble({
           </View>
         )}
       </View>
+      </Animated.View>
     </Animated.View>
   );
 }
