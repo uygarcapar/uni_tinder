@@ -606,9 +606,15 @@ export default function CameraCaptureOverlay() {
      * orada önizlenen kare YÜKLENEN karenin ta kendisi olmak zorunda, yani
      * yukarıdaki "görülen ⊆ çekilen" toleransı o yolda kabul edilemez.
      *
+     * İKİSİ DE AYNI TEPEDEN (`insets.top`) başlıyor — `photo` ekranın ortasına
+     * OTURMUYOR (istek: "kampüsteki gibi üst tarafa dayalı gelsin"). Fark yalnız
+     * alt kenar: `fill`de şeridin üstü, `photo`da 3:4'ün bittiği yer; arada
+     * kalan şerit siyah zemin.
+     *
      * ⚠️ Ölçüler BU EKRANIN chrome'u: başlık satırı ve deklanşör şeridi.
-     * Pencerenin altı = şeridin üstü; araya ek pay KONMUYOR, `footerGap`
-     * zaten o boşluk (eskiden bir de 12 ekleniyordu ve eşitliği bozan oydu).
+     * `fill`de pencerenin altı = şeridin üstü; araya ek pay KONMUYOR,
+     * `footerGap` zaten o boşluk (eskiden bir de 12 ekleniyordu ve eşitliği
+     * bozan oydu).
      */
     const win = previewWindow({
       frame: frame ?? "fill",

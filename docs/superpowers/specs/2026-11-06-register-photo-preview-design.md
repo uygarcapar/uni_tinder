@@ -108,20 +108,23 @@ konur ve zamanla ayrışırlar (hedef 2'nin ihlali).
 
 ## Kararlar
 
-### Pencere: 3:4, `frameWindow` ile, ekranın ortasında
+### Pencere: 3:4, kampüs penceresiyle AYNI TEPEDEN (üste dayalı)
 
-Kayıt yolunda pencere `frameWindow({ screenW, screenH, headerH, footerH,
-aspectW: 3, aspectH: 4 })` ile hesaplanır ve ekran merkezine oturur — kırpıcının
-kullandığı formülün ve yerleşimin aynısı (`cropGeometry > frameWindow`,
-`CropperOverlay > layout`).
+> **Revizyon (2026-11-06, cihaz geri bildirimi):** ilk karar pencereyi kırpıcıyla
+> çakışsın diye ekranın ORTASINA oturtuyordu. İstek: "kampüsteki gibi üst tarafa
+> dayalı gelsin, fotonun gösterildiği yer değişmesin". Pencere artık üste dayalı.
 
-**`headerH`/`footerH` girdisi kamera ekranının KENDİ ölçüleri olmalı**, kırpıcının
-değil. Modern telefonlarda iki pencere zaten birebir çakışıyor (iPhone 15:
-her ikisi de 393×524, merkezde) çünkü `winW` ekran genişliğinde tavanlanıyor.
-Küçük cihazlarda (ör. SE) kırpıcının girdileri kullanılırsa pencere deklanşör
-şeridinin altına taşıyor; kameranın kendi ölçüleriyle taşma olmuyor, karşılığında
-o cihazlarda kırpıcıya geçerken küçük bir ölçek sıçraması kalıyor. Taşma, sıçramadan
-daha kötü.
+Kayıt yolunda pencere kampüs penceresinin kutusunu alır — tepe `insets.top`
+(güvenli alanın hemen altı), alt sınır deklanşör şeridinin üstü — ve onun içinde
+**tepeye yaslı** bir 3:4 çizer: tam genişlik, yükseklik `en × 4/3`. Tam genişlik
+sığmıyorsa (kısa ekran) yükseklik kutuya oturur, en daralır ve kare yatayda
+ortalanır; pencere hiçbir cihazda şeride taşmaz (`cameraLayout > previewWindow`).
+3:4'ün bittiği yer ile şerit arasında kalan bant siyah zemin. Başlık düğmeleri
+kampüsteki gibi pencerenin ÜSTÜNE biner.
+
+**Bedel:** tipik telefonda (iPhone 15) kayıt penceresi ile kırpıcının penceresi
+AYNI BOYUTTA (393×524) ama kırpıcınınki ekranın ortasında — kırp'a basınca kare
+aşağı kayar, ölçeği değişmez. Kampüsle aynı yerleşim bu kaymadan önemli.
 
 Fotoğraf pencereye `contentFit="cover"` ile oturur. 3:4 pencere + `cover` =
 `fitPhotoForUpload`ın ürettiği ortadan 3:4 kesimin ta kendisi, yani önizleme

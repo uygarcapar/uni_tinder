@@ -9,16 +9,17 @@ describe('previewWindow', () => {
       .toEqual({ left: 0, top: 59, winW: 393, winH: 653 });
   });
 
-  it("'photo' 3:4 ve ekranın tam ortasında", () => {
+  it("'photo' 3:4 ve kampüs penceresiyle AYNI tepeden başlıyor (üste dayalı)", () => {
     const w = previewWindow({ ...phone, frame: 'photo' });
+    const fill = previewWindow({ ...phone, frame: 'fill' });
     expect(w.winW).toBe(393);
     expect(w.winH).toBeCloseTo(524, 0);
-    // Merkez EKRANIN merkezi — kırpıcıyla aynı (CropperOverlay > winCY).
-    expect(w.top + w.winH / 2).toBeCloseTo(852 / 2, 0);
-    expect(w.left + w.winW / 2).toBeCloseTo(393 / 2, 0);
+    // Tepe = güvenli alanın hemen altı, kampüs penceresiyle birebir.
+    expect(w.top).toBe(fill.top);
+    expect(w.left).toBe(0);
   });
 
-  it("'photo' penceresi kırpıcının penceresiyle ÇAKIŞIYOR (tipik telefon)", () => {
+  it("'photo' penceresi kırpıcınınkiyle AYNI BOYUTTA (tipik telefon) — kırpmaya geçişte ölçek sıçramaz", () => {
     const preview = previewWindow({ ...phone, frame: 'photo' });
     const cropper = frameWindow({
       screenW: 393, screenH: 852,
@@ -34,8 +35,19 @@ describe('previewWindow', () => {
     // footerH = 2 * max(insetBottom, 20) + SHUTTER = 40 + 72
     const se = { screenW: 375, screenH: 667, insetTop: 20, headerH: 84, footerH: 112 };
     const w = previewWindow({ ...se, frame: 'photo' });
+    expect(w.top).toBe(20);
     expect(w.top + w.winH).toBeLessThanOrEqual(667 - 112);
-    expect(w.top).toBeGreaterThanOrEqual(88);
+  });
+
+  it("'photo' 3:4 tam genişliğe sığmıyorsa daralır, yatayda ortalanır, yine taşmaz", () => {
+    // Kısa ekran: tepe ile şerit arası 600 - 59 - 140 = 401 → en 300.75.
+    const short = { ...phone, screenH: 600 };
+    const w = previewWindow({ ...short, frame: 'photo' });
+    expect(w.top).toBe(59);
+    expect(w.winH / w.winW).toBeCloseTo(4 / 3, 5);
+    expect(w.top + w.winH).toBeLessThanOrEqual(600 - 140);
+    expect(w.left).toBeCloseTo((393 - w.winW) / 2, 5);
+    expect(w.left).toBeGreaterThan(0);
   });
 
   // Review Focus 1: 3:4 pencerede `cover`, fitPhotoForUpload'ın kesimiyle AYNI.
