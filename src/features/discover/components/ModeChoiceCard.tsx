@@ -10,7 +10,7 @@ import { colors, isLight, scrimAt } from "@/shared/theme/colors";
 // Görsel haritası kayıt tarafında doğdu ve ORADA KALIYOR (kayıt adımına
 // dokunulmadı, istek) — bu kart onu okuyan ikinci tüketici.
 import { MODE_CARD_ART } from "@/features/auth/modeCardArt";
-import type { AppMode } from "../modeTheme";
+import { modeAccent, type AppMode } from "../modeTheme";
 
 /**
  * MOD SEÇİM KARTI — zemini fotoğraf olan 3:2 kart. İki tüketicisi var ve
@@ -116,6 +116,12 @@ export interface ModeChoiceCardProps {
    * (`!active`), kayıtta ise "seçim var VE bu kart değil" bilgisi ekranda.
    */
   dimmed?: boolean;
+  /**
+   * Yalnız "switch": bu modda seni beğenen (karar bekleyen) kişi sayısı.
+   * `> 0` → sağ üstte modun renginde pill ("3 beğeni", 9'dan sonra "9+").
+   * `undefined`/0 → pill yok. Sayının kaynağı seçicide (bkz. ModeSelectorSheet).
+   */
+  likeCount?: number;
   /** TouchableOpacity'ye geçer (kayıt e2e'si `reg-mode-<mod>` arıyor). */
   testID?: string;
   onPress: (mode: AppMode) => void;
@@ -135,6 +141,7 @@ export default function ModeChoiceCard({
   open = true,
   variant = "switch",
   dimmed,
+  likeCount,
   testID,
   onPress,
 }: ModeChoiceCardProps) {
@@ -354,12 +361,11 @@ export default function ModeChoiceCard({
               açılacak. Hangi modda olunduğunu perde (parlak/sönük) söylüyor,
               ikinci bir işarete gerek yok.
 
-              ⚠️ KOŞUL `!active`, `!open` DEĞİL. Chevron'un işi "bu kart bir
-              yere götürür" demek ve bu İKİ hâlde de doğru: açılmamış mod
-              kuruluma, açık ama seçili olmayan mod o moda götürüyor. Tek
-              istisna içinde bulunulan kart — orası bir kapı değil, varılan yer.
-              Eskiden yalnız `!open` idi ve açık-ama-seçili-olmayan kart
-              dokunulabilir olduğu hâlde hiçbir işaret taşımıyordu.
+              ⚠️ İKİ KARTTA DA, aktif olsun olmasın (istek). Bir süre koşul
+              `!active` idi — gerekçe "içinde bulunulan kart bir kapı değil,
+              varılan yer"di — ama iki kartın biri chevron'lu biri chevron'suz
+              durunca ızgara simetrisini kaybediyordu. Aktif kartın kendisine
+              basmak da sheet'i kapatıyor, yani işaret yalan söylemiyor.
 
               Mürekkebi ALT SATIRIN mürekkebi (`onMediaMuted`, açık gri —
               istek): chevron o satırın hizasında duruyor ve onun devamı, mod
@@ -370,7 +376,7 @@ export default function ModeChoiceCard({
               "select" varyantında chevron HİÇ yok: kayıttaki kart bir kapı
               değil, işaretlenen bir seçenek — oranın işareti sağ üstteki
               checkbox. */}
-          {variant !== "select" && !active ? (
+          {variant !== "select" ? (
             <SFIcon
               name="chevron.right"
               fallback={ChevronRight}
@@ -382,6 +388,45 @@ export default function ModeChoiceCard({
             />
           ) : null}
         </View>
+
+        {/* BEĞENİ PİLİ — sağ üstte, yalnız "switch" ve sayı > 0 iken. Görünüşü
+            Beğeniler başlığındaki "Beğenenleri gör" pill'inin BİREBİR aynısı
+            (bkz. LikesScreen > LikesListHeader): tam kapsül, modun vurgusu
+            (`modeAccent`) dolgu, `onMediaInverse` 13/700 yazı, 12×6 pay.
+            Dokunulabilir DEĞİL — dokunuş kartın tamamına ait.
+            Perdenin ÜSTÜNDE: sönük kartta da sayı tam renginde okunmalı —
+            öbür modda bekleyen beğeni tam da o moda geçme sebebi.
+            9'da tavan: kart bir sayaç değil, "orada biri var" sinyali. */}
+        {variant !== "select" && !!likeCount && likeCount > 0 ? (
+          <View
+            testID={`mode-card-${mode}-likes`}
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: CARD_PAD,
+              right: CARD_PAD,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              backgroundColor: modeAccent(mode),
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.onMediaInverse,
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+            >
+              {likeCount > 9
+                ? t("discover.mode.likeCount.max")
+                : likeCount === 1
+                  ? t("discover.mode.likeCount.one")
+                  : t("discover.mode.likeCount.other", { count: likeCount })}
+            </Text>
+          </View>
+        ) : null}
 
         {/* "select" CHECKBOX'ı — sağ üstte, yuva HER ZAMAN çizili (kalıp ve
             mürekkep gerekçesi CHECKBOX_SIZE'ın yanında). Perdenin ÜSTÜNDE:

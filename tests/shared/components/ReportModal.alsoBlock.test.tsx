@@ -80,22 +80,12 @@ afterEach(() => {
 });
 
 describe('ReportModal — alsoBlock kutusu', () => {
-  it('kutu işaretli gelir ve alsoBlock:true gönderilir', async () => {
-    mockReportUser.mockResolvedValue({ reportId: 'r1', blocked: true });
-    const tree = setup();
-
-    expect(tree.getByText('Bu kişiyi engelle')).toBeTruthy();
-    await submitWithReason(tree);
-
-    await waitFor(() => expect(mockReportUser).toHaveBeenCalledTimes(1));
-    expect(mockReportUser.mock.calls[0][0]).toMatchObject({ alsoBlock: true });
-  });
-
-  it('kutu kaldırılınca alsoBlock:false gönderilir (engelleme YOK)', async () => {
+  // 2026-11-06: şikayet tek başına hiçbir şeyi gizlemiyor; engel BİLEREK seçilmeli.
+  it('kutu işaretsiz gelir ve alsoBlock:false gönderilir (engelleme YOK)', async () => {
     mockReportUser.mockResolvedValue({ reportId: 'r1', blocked: false });
     const tree = setup();
 
-    fireEvent.press(tree.getByText('Bu kişiyi engelle'));
+    expect(tree.getByText('Bu kişiyi engelle')).toBeTruthy();
     await submitWithReason(tree);
 
     await waitFor(() => expect(mockReportUser).toHaveBeenCalledTimes(1));
@@ -104,6 +94,17 @@ describe('ReportModal — alsoBlock kutusu', () => {
     expect((Alert.alert as jest.Mock).mock.calls[0][1]).toBe(
       'Ekibimiz en kısa sürede inceleyecek. Güvende kalman önemli.',
     );
+  });
+
+  it('kutu işaretlenince alsoBlock:true gönderilir', async () => {
+    mockReportUser.mockResolvedValue({ reportId: 'r1', blocked: true });
+    const tree = setup();
+
+    fireEvent.press(tree.getByText('Bu kişiyi engelle'));
+    await submitWithReason(tree);
+
+    await waitFor(() => expect(mockReportUser).toHaveBeenCalledTimes(1));
+    expect(mockReportUser.mock.calls[0][0]).toMatchObject({ alsoBlock: true });
   });
 });
 
@@ -114,6 +115,7 @@ describe('ReportModal — engelleme düşerse', () => {
     const onSuccess = jest.fn();
     const tree = setup({ onSuccess });
 
+    fireEvent.press(tree.getByText('Bu kişiyi engelle'));
     await submitWithReason(tree);
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
@@ -138,6 +140,7 @@ describe('ReportModal — engelleme düşerse', () => {
     const onSuccess = jest.fn();
     const tree = setup({ onSuccess });
 
+    fireEvent.press(tree.getByText('Bu kişiyi engelle'));
     await submitWithReason(tree);
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());

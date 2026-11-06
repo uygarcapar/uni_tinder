@@ -252,7 +252,10 @@ const COVER_WAIT_BUDGET_MS = 1200;
  * bu yalnız butonun görünür durumu.
  */
 const FIRE_BUTTON_LOCK_MS = 1300;
-const SWIPE_BUTTON_LOCK_MS = 250;
+// Uçuş park edildi (2026-11-06): beğen/geç yine alevi bekliyor, kilit Fire'la
+// aynı. Uçuşu geri açarken 250'ye döndür (gerekçe yukarıda).
+// const SWIPE_BUTTON_LOCK_MS = 250;
+const SWIPE_BUTTON_LOCK_MS = FIRE_BUTTON_LOCK_MS;
 
 // NOT — kart açılırken tab bar'ı `display:"none"` ile gizlemek DENENDİ ve
 // vazgeçildi: bu gizleme animasyona açılmıyor. react-native-screens
@@ -2719,6 +2722,9 @@ export default function DiscoverScreen() {
       setDeckSettled(false);
       setCurrentIndex((i) => i + 1);
     };
+    // ⚠️ 2026-11-06 (sonra): uçuş park edildi, BEĞENİ BU DALA YİNE GİRİYOR —
+    // SwipeWrapper eşleşmeli beğeniyi de `matching` ile yolluyor, yani
+    // yukarıdaki "artık yalnız Fire'dan" notu park süresince geçersiz.
     if (matching) {
       matchCurtainUnsub.current?.();
       // Kart gönderildi ama ekranda: süzgeç onu kuyruktan ELEMESİN (bkz.
@@ -3745,10 +3751,11 @@ export default function DiscoverScreen() {
         visible={!!reportTarget}
         onClose={() => setReportTarget(null)}
         reportedUserId={reportTarget}
-        onSuccess={() => {
-          // Şikayet edilen kart destede kalmasın — engelleme işaretli olsun olmasın.
-          // Sunucu tarafı eleme talebi: backend_discover_report_exclusion_2026-11-02.md
-          if (reportTarget) dropProfileFromDeck(reportTarget);
+        onSuccess={(result: any) => {
+          // Kart YALNIZ engellendiyse düşer — şikayet tek başına hiçbir şeyi
+          // gizlemiyor (2026-11-06; backend
+          // docs/superpowers/specs/2026-11-06-report-no-hide-design.md).
+          if (reportTarget && result?.blocked) dropProfileFromDeck(reportTarget);
         }}
       />
     </GestureHandlerRootView>

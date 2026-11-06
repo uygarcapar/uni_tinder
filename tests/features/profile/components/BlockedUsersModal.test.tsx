@@ -15,7 +15,10 @@ jest.mock('@/shared/services/moderationService', () => ({
 
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BlockedUsersModal from '@/features/profile/components/BlockedUsersModal';
+
+let queryClient: QueryClient;
 
 const USER = {
   userId: 'u-1',
@@ -27,9 +30,14 @@ const USER = {
 };
 
 const setup = (overrides: any = {}) =>
-  render(<BlockedUsersModal visible onClose={jest.fn()} {...overrides} />);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <BlockedUsersModal visible onClose={jest.fn()} {...overrides} />
+    </QueryClientProvider>,
+  );
 
 beforeEach(() => {
+  queryClient = new QueryClient();
   mockGetBlockedUsers.mockReset();
   mockUnblockUser.mockReset();
   mockGetBlockedUsers.mockResolvedValue([USER]);
@@ -90,6 +98,42 @@ describe('BlockedUsersModal', () => {
 
     expect(mockUnblockUser).toHaveBeenCalledWith('u-1');
     await waitFor(() => expect(tree.queryByText('Ramiz, 23')).toBeNull());
+  });
+
+  // 2026-11-06: engel geri alınabilir — kişi elle yenilemeden her yüzeye dönmeli.
+  it('invalidates feed, deck, likes and campus caches after unblocking', async () => {
+    mockUnblockUser.mockResolvedValue(undefined);
+    const spy = jest.spyOn(queryClient, 'invalidateQueries');
+    const tree = setup();
+    fireEvent.press(await waitFor(() => tree.getByText('Kaldır')));
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
+    await act(async () => {
+      await buttons[1].onPress();
+    });
+
+    const keys = spy.mock.calls.map(([f]: any) => JSON.stringify(f?.queryKey));
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        JSON.stringify(['feed', 'posts']),
+        JSON.stringify(['feed', 'replies', 'received']),
+        JSON.stringify(['swipe', 'deck']),
+        JSON.stringify(['swipe', 'whoLikedMe']),
+        JSON.stringify(['campus', 'moments']),
+      ]),
+    );
+  });
+
+  it('does not invalidate caches when unblocking fails', async () => {
+    mockUnblockUser.mockRejectedValue(new Error('boom'));
+    const spy = jest.spyOn(queryClient, 'invalidateQueries');
+    const tree = setup();
+    fireEvent.press(await waitFor(() => tree.getByText('Kaldır')));
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
+    await act(async () => {
+      await buttons[1].onPress();
+    });
+
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('keeps the row and Alerts when unblocking fails', async () => {

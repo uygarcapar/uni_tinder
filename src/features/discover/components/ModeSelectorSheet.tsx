@@ -1,6 +1,9 @@
 import { useCallback } from "react";
 import { useWindowDimensions, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import AppModal from "@/shared/components/AppModal";
+import { useAppSelector } from "@/shared/hooks/redux";
+import swipeService from "../swipeService";
 import ModeChoiceCard from "./ModeChoiceCard";
 import { APP_MODES, type AppMode } from "../modeTheme";
 
@@ -50,6 +53,31 @@ export interface ModeSelectorSheetProps {
   onOpenProfile: (mode: AppMode) => void;
 }
 
+/**
+ * SEÇİLİ OLMAYAN modun beğeni sayısı (kart pill'i için). Seçili modun sayısı
+ * zaten redux'ta (`swipe.whoLikedMeCount` — sekme rozetiyle aynı, hub ile
+ * canlı); öbür modu hiçbir yer tutmuyor, sheet açıkken tek sayfalık bir
+ * WhoLikedMe isteğiyle soruluyor. Sayı `totalProfiles` toplamı — rozet thunk'ı
+ * (`fetchWhoLikedMe`) ile AYNI formül, sayfa boyu 1 çünkü liste istenmiyor.
+ *
+ * `mode` ASLA atlanmaz: atlanan istek sunucuda Dating sayılıyor.
+ */
+function useOtherModeLikeCount(mode: AppMode, enabled: boolean) {
+  return useQuery({
+    queryKey: ["modeSelector", "whoLikedMeCount", mode],
+    enabled,
+    staleTime: 30 * 1000,
+    queryFn: async () => {
+      const res = (await swipeService.getWhoLikedMe(1, 1, 1, mode)) as any;
+      if (!res?.isSuccess || !res?.result) return 0;
+      const r = res.result;
+      return (
+        (r.superLikes?.totalProfiles || 0) + (r.likes?.totalProfiles || 0)
+      );
+    },
+  }).data;
+}
+
 export default function ModeSelectorSheet({
   visible,
   onClose,
@@ -59,6 +87,15 @@ export default function ModeSelectorSheet({
   onOpenProfile,
 }: ModeSelectorSheetProps) {
   const { height: windowHeight } = useWindowDimensions();
+  const currentLikeCount = useAppSelector(
+    (s) => (s as any).swipe.whoLikedMeCount as number,
+  );
+  const otherMode = APP_MODES.find((m) => m !== mode) ?? mode;
+  // Açılmamış modda beğeni olamaz (profil yok) — istek de atılmıyor.
+  const otherLikeCount = useOtherModeLikeCount(
+    otherMode,
+    visible && otherMode !== mode && openModes?.[otherMode] !== false,
+  );
 
   const handlePress = useCallback(
     (next: AppMode) => {
@@ -144,6 +181,13 @@ export default function ModeSelectorSheet({
             mode={m}
             active={m === mode}
             open={openModes?.[m] !== false}
+            likeCount={
+              m === mode
+                ? currentLikeCount
+                : openModes?.[m] !== false
+                  ? otherLikeCount
+                  : undefined
+            }
             onPress={handlePress}
           />
         ))}

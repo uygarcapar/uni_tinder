@@ -1122,6 +1122,14 @@ const tr = {
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
       // açıklama satırı ve hedefi adıyla söylüyor.
+      // Seçicideki mod kartının sağ üst pill'i: o modda seni beğenenlerin
+      // sayısı. 9'da tavan → `max`. Sayı kodda seçiliyor (one/other/max),
+      // i18next çoğul eki kullanılmıyor.
+      likeCount: {
+        one: '1 beğeni',
+        other: '{{count}} beğeni',
+        max: '9+ beğeni',
+      },
       switchTo: {
         Dating: 'Flört moduna geç',
         Friends: 'Arkadaş moduna geç',
@@ -1667,6 +1675,11 @@ const tr = {
     // "Fire" TR'de de İngilizce yazılıyor — sekme adı (tabFire) ve
     // ürünün mağazadaki adı da öyle; ekranın içinde iki farklı ad olmasın.
     firePill: 'Sana {{fire}} gönderdi',
+    notePill: 'Sana not bıraktı',
+    noteOpen: 'Notu aç',
+    noteTag: 'Not',
+    noteAccept: 'Kabul et',
+    noteReject: 'Reddet',
     emptyFire: 'Henüz {{fire}} yok.',
     emptyFireSubtitle:
       'Sana {{fire}} gönderen birileri olduğunda burada görünecek.',
@@ -3004,14 +3017,14 @@ const tr = {
       successTitle: 'Şikayet alındı',
       successMessage: 'Ekibimiz en kısa sürede inceleyecek. Güvende kalman önemli.',
       successBlockedMessage:
-        'Ekibimiz en kısa sürede inceleyecek. Bu kişiyi engelledik — bir daha eşleşmezsiniz.',
+        'Ekibimiz en kısa sürede inceleyecek. Bu kişiyi engelledik — Ayarlar → Engellenenler üzerinden istediğin zaman geri alabilirsin.',
       alreadyReported: 'Bu kullanıcıyı son 24 saatte zaten şikayet ettin.',
       error: 'Şikayet gönderilemedi.',
-      // Şikayet artık zorunlu engelleme yapmıyor: kutu işaretli gelir, kullanıcı
-      // kaldırabilir ("bildirmek istiyorum ama iletişimi kesmek istemiyorum").
+      // Şikayet tek başına hiçbir şeyi gizlemiyor; kutu İŞARETSİZ gelir (2026-11-06).
+      // Engel her yerden kaldırır ve geri alınabilir.
       alsoBlock: 'Bu kişiyi engelle',
       alsoBlockHint:
-        'Engelleme kalıcıdır: bir daha eşleşmezsiniz ve eski sohbet bir daha açılmaz.',
+        'Her yerden kaldırılır ve sana yazamaz. Engellenenler listesinden geri alabilirsin; eski sohbet geri gelmez.',
       blockFailed:
         'Şikayetin alındı ama engelleme tamamlanamadı. Tekrar denemek ister misin?',
       blockRetry: 'Engellemeyi dene',
@@ -3037,10 +3050,10 @@ const tr = {
     block: {
       confirmTitle: 'Bu hesabı blokla',
       confirmMessage:
-        'Bu kişi bir daha karşına çıkmaz ve sana mesaj atamaz. Engelleme kalıcıdır: bir daha eşleşmezsiniz.',
+        'Bu kişi karşına çıkmaz ve sana mesaj atamaz. Engellenenler listesinden istediğin zaman geri alabilirsin.',
       confirmButton: 'Blokla',
       successTitle: 'Engellendi',
-      successMessage: 'Bu kişi bir daha karşına çıkmayacak.',
+      successMessage: 'Bu kişi artık karşına çıkmayacak.',
       error: 'Engelleme başarısız.',
     },
     blocked: {

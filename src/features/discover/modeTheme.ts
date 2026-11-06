@@ -61,6 +61,21 @@ export function modeAccent(mode: AppMode): string {
 }
 
 /**
+ * Consumable sheet'lerinin (Fire/Spark, Not) zemini ve alttan gelen ışığın
+ * gradyanı — Dating'de kırmızı-turuncu, Friends'te yeşil. Render sırasında
+ * çağır: palet tema değişiminde mutasyona uğruyor.
+ */
+export function modeShopSurface(mode: AppMode): string {
+  return mode === "Friends" ? colors.friendsShopSurface : colors.shopSurface;
+}
+
+export function modeShopBackdrop(mode: AppMode): Gradient {
+  return mode === "Friends"
+    ? gradients.friendsShopBackdrop
+    : gradients.shopBackdrop;
+}
+
+/**
  * ⚠️ `modePillFill` KALDIRILDI. Mod anahtarının (EditProfileForm > ModeSwitch)
  * kayan dolgusu bir tur mod renkleriyle çizildi (Dating turuncu / Friends
  * yeşil) ve geri alındı — şerit artık `inverseSurface` ile polarite çeviriyor,

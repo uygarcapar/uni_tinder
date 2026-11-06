@@ -495,13 +495,12 @@ export default function LikerSwipeModal({
         onClose={() => setReportTarget(null)}
         reportedUserId={reportTarget}
         stackBehavior="push"
-        onSuccess={() => {
-          // Şikayet edilen bu kişi listede kalmasın — engelleme işaretli
-          // olsun olmasın (DiscoverScreen'deki deste davranışıyla aynı).
+        onSuccess={(result: any) => {
+          // Kişi listeden YALNIZ engellendiyse düşer — şikayet tek başına
+          // hiçbir şeyi gizlemiyor (2026-11-06, DiscoverScreen ile aynı kural).
           // "block" yönü burada yalnız liste-temizleme sinyali: LikesScreen >
           // handleModalSwipe onu dropFromLists'e çeviriyor, API çağrısı yok.
-          // Sunucu tarafı eleme talebi: backend_discover_report_exclusion_2026-11-02.md
-          if (reportTarget) {
+          if (reportTarget && result?.blocked) {
             onSwipe?.(reportTarget, "block");
           }
           // Şikayet GÖNDERİLDİ → kart da kapanır. Açık bırakmak, az önce

@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, useWindowDimensions } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Flag, Trash2 } from "@/shared/icons";
+import { Ban, Flag, Trash2 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import { colors } from "@/shared/theme/colors";
@@ -10,14 +10,14 @@ import { formatPostTimestamp } from "../feedText";
 import type { FeedPostDto } from "../feedTypes";
 
 /**
- * Akış kartındaki üç noktanın açtığı ara menü — tarih + TEK aksiyon.
+ * Akış kartındaki üç noktanın açtığı ara menü — tarih + aksiyonlar.
  *
- * ProfileOptionsSheet'in kardeşi, kopyası değil: oradaki "Güvenlik" bölümü
- * (şikayet + engelle) bir KİŞİYİ hedefliyor, burası bir GÖNDERİYİ. Engelleme
- * satırı bilerek yok — anonim gönderide engellenecek kimlik de yok, kimlikli
- * gönderide o yol yazarın profil kartından geçiyor. Kendi gönderinde şikayet
- * de yok (kendini şikayet etmek anlamsız): `isMine` ekseni satırı "Sil"e
- * çevirir, iki satırı yan yana koymaz.
+ * ProfileOptionsSheet'in kardeşi, kopyası değil. Başkasının gönderisinde:
+ * "Şikayet Et" (yalnız moderasyona gider, hiçbir şeyi gizlemez) + "Kullanıcıyı
+ * Engelle" (ŞİKAYETSİZ engel, 2026-11-06 — geri alınabilir). Engel satırı yalnız
+ * KİMLİKLİ gönderide: anonim gönderide `author` null, istemci kimi engelleyeceğini
+ * bilmiyor (şikayet sheet'inin engel satırını gizlemesiyle aynı kural). Kendi
+ * gönderinde ikisi de yok: `isMine` ekseni tek "Sil" satırı çizer.
  *
  * ONAY BU DOSYADA SORULMUYOR: silme onayı çağıranda (FeedScreen >
  * handleDeletePost'un Alert'i) — ProfileOptionsSheet'in engelleme onayıyla
@@ -109,12 +109,15 @@ export default function FeedPostOptionsSheet({
   onClose,
   post,
   onReport,
+  onBlock,
   onDelete,
 }: {
   visible: boolean;
   onClose: () => void;
   post: FeedPostDto | null;
   onReport?: () => void;
+  /** Kimlikli gönderide yazarı şikayetsiz engeller (onay çağıranda sorulur). */
+  onBlock?: () => void;
   onDelete?: () => void;
 }) {
   const { t } = useTranslation();
@@ -156,23 +159,45 @@ export default function FeedPostOptionsSheet({
           destructive
         />
       ) : (
-        <ActionRow
-          icon={
-            <SFIcon
-              name="flag.fill"
-              fallback={Flag}
-              size={18}
-              color={colors.text}
-              strokeWidth={1.5}
-              style={{ pointerEvents: "none" }}
+        <View style={{ gap: 8 }}>
+          <ActionRow
+            icon={
+              <SFIcon
+                name="flag.fill"
+                fallback={Flag}
+                size={18}
+                color={colors.text}
+                strokeWidth={1.5}
+                style={{ pointerEvents: "none" }}
+              />
+            }
+            label={t("moderation.options.report")}
+            onPress={() => {
+              onClose();
+              onReport?.();
+            }}
+          />
+          {post?.author?.userId && !post.isAnonymous ? (
+            <ActionRow
+              icon={
+                <SFIcon
+                  name="nosign"
+                  fallback={Ban}
+                  size={18}
+                  color={colors.onInverseSurface}
+                  strokeWidth={1.5}
+                  style={{ pointerEvents: "none" }}
+                />
+              }
+              label={t("moderation.options.block")}
+              onPress={() => {
+                onClose();
+                onBlock?.();
+              }}
+              destructive
             />
-          }
-          label={t("moderation.options.report")}
-          onPress={() => {
-            onClose();
-            onReport?.();
-          }}
-        />
+          ) : null}
+        </View>
       )}
       <TimestampFooter createdAt={post?.createdAt} />
     </AppModal>

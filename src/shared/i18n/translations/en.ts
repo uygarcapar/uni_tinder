@@ -1108,6 +1108,11 @@ const en = {
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
       // açıklama satırı ve hedefi adıyla söylüyor — kullanıcı neye geçtiğini
       // kartın üstünde okuyor.
+      likeCount: {
+        one: '1 like',
+        other: '{{count}} likes',
+        max: '9+ likes',
+      },
       switchTo: {
         Dating: 'Switch to dating',
         Friends: 'Switch to friends',
@@ -1620,6 +1625,11 @@ const en = {
     // Pill above the name row — see the Turkish file for why it is fire
     // only; the badge beside it sits next to the sentence, it does not replace it.
     firePill: 'Sent you a {{fire}}',
+    notePill: 'Left you a note',
+    noteOpen: 'Open note',
+    noteTag: 'Note',
+    noteAccept: 'Accept',
+    noteReject: 'Decline',
     emptyFire: 'No {{fire}}s yet.',
     emptyFireSubtitle:
       'When someone sends you a {{fire}}, they will appear here.',
@@ -2868,14 +2878,14 @@ const en = {
       successTitle: 'Report received',
       successMessage: 'Our team will review it as soon as possible. Staying safe is important.',
       successBlockedMessage:
-        'Our team will review it as soon as possible. We blocked this person — you will never match again.',
+        'Our team will review it as soon as possible. We blocked this person — you can undo it anytime in Settings → Blocked Users.',
       alreadyReported: 'You have already reported this user in the last 24 hours.',
       error: 'Report could not be sent.',
-      // Reporting no longer forces a block: the box is checked by default and
-      // can be unchecked ("I want to report but keep the conversation").
+      // A report alone hides nothing; the box is UNCHECKED by default (2026-11-06).
+      // Blocking hides everywhere and can be undone.
       alsoBlock: 'Block this person',
       alsoBlockHint:
-        'Blocking is permanent: you will never match again and the old chat can never be reopened.',
+        "They're removed everywhere and can't message you. You can undo it from your blocked list; the old chat won't come back.",
       blockFailed:
         'Your report was received but the block could not be completed. Do you want to try again?',
       blockRetry: 'Try blocking',
@@ -2897,10 +2907,10 @@ const en = {
     block: {
       confirmTitle: 'Block this account',
       confirmMessage:
-        "This person won't show up for you again and can't message you. Blocking is permanent: you will never match.",
+        "This person won't show up for you and can't message you. You can undo it anytime from your blocked list.",
       confirmButton: 'Block',
       successTitle: 'Blocked',
-      successMessage: "You won't see this person again.",
+      successMessage: "You won't see this person anymore.",
       error: 'Blocking failed.',
     },
     blocked: {

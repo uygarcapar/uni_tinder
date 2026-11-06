@@ -3051,8 +3051,13 @@ export default function FilterModal({
 
       {/* İlişki niyeti — hard filtre DEĞİL (skor boost'u) ama "kimi arıyorum"
           sorusunun en doğrudan cevabı, o yüzden üniversitenin hemen altında.
-          Gövdesi yukarıda tanımlı (intentsSection); burada yalnızca konumu var. */}
-      {intentsSection}
+          Gövdesi yukarıda tanımlı (intentsSection); burada yalnızca konumu var.
+
+          YALNIZ DATING (bkz. `isFriends`): seçenekler ilişki niyetleri (kısa/
+          uzun süreli...), Friends'te anlamsız; arkadaşlık niyeti için filtre
+          alanı backend'de yok. Değer `local.relationshipIntents`te dokunulmadan
+          kalıyor — Friends'te kaydetmek Dating seçimini sıfırlamıyor. */}
+      {!isFriends ? intentsSection : null}
 
       {/* Şehir — premium-only, HER ZAMAN katı (aday tükense bile gevşemez,
           o yüzden dealbreaker toggle'ı yok). Grubun geri kalanıyla aynı kilit

@@ -151,6 +151,7 @@ import {
   useCreatePost,
   useCreateReply,
   useDeletePost,
+  useFeedBlockAuthor,
   writeFeedQuotaExhausted,
   useFeedMe,
   useFeedPosts,
@@ -1007,6 +1008,43 @@ export default function FeedScreen() {
     [t, deletePost],
   );
 
+  // ŞİKAYETSİZ engel (2026-11-06): yalnız engeller, moderasyona bir şey gitmez.
+  // Onay burada (ProfileOptionsSheet → DiscoverScreen > handleBlockProfile ile
+  // aynı metinler ve aynı akış). Kimliksiz (anonim) gönderide menü satırı hiç
+  // çizilmiyor; buradaki guard savunmacı.
+  const blockAuthor = useFeedBlockAuthor();
+  const handleBlockPostAuthor = useCallback(
+    (post: FeedPostDto) => {
+      const authorId = post.author?.userId;
+      if (!authorId || post.isAnonymous) return;
+      Alert.alert(
+        t("moderation.block.confirmTitle"),
+        t("moderation.block.confirmMessage"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("moderation.block.confirmButton"),
+            style: "destructive",
+            onPress: () =>
+              blockAuthor.mutate(
+                { authorId },
+                {
+                  onSuccess: () =>
+                    Alert.alert(
+                      t("moderation.block.successTitle"),
+                      t("moderation.block.successMessage"),
+                    ),
+                  onError: () =>
+                    Alert.alert(t("common.error"), t("moderation.block.error")),
+                },
+              ),
+          },
+        ],
+      );
+    },
+    [t, blockAuthor],
+  );
+
   const handleReportPost = useCallback((post: FeedPostDto) => {
     setReportTarget({
       targetType: "Post",
@@ -1481,6 +1519,20 @@ export default function FeedScreen() {
           message: t("note.sentMessage", { name: post.author?.name ?? "" }),
           icon: "note",
         });
+        // Gönderi altından atılan not da yazar kartındaki notla AYNI çifti
+        // alıyor: toast + alev (istek, 2026-11-06 — "her yerde banner").
+        // EŞLEŞME GELİYORSA YOK (flameSweep kuralı): yazar seni beğenmişse
+        // MatchModal perdesi gelecek. Kart açılmadığı için `authorLikedMeFact`
+        // yok — kestirim yerel kümeden, yazar kartındakiyle aynı kaynak.
+        if (!hasLikedMe(store.getState(), userId)) {
+          authorFlameUnsub.current?.();
+          authorFlameUnsub.current = runFlameSweep(
+            () => {
+              authorFlameUnsub.current = null;
+            },
+            { mode: req.mode ?? undefined },
+          );
+        }
       } catch (e: any) {
         const code = e?.response?.data?.code ?? null;
 
@@ -1557,7 +1609,15 @@ export default function FeedScreen() {
       // `hold` YOK: örtünün saklayacağı bir değişim yok (kart modalı zaten
       // kapanıyor), süpürme saf kutlama. Renk Fire'ın GİTTİĞİ moddan
       // (LikerSwipeModal'a geçen `mode`un aynısı).
-      if (direction === "up" && !authorLikedMeFact) {
+      //
+      // ⚠️ 2026-11-06 GENİŞLEDİ (istek): "nerede beğenirsem/atarsam banner
+      // çıksın." REDDET de artık süpürme alıyor (eşleşmesi yok, kutlamayı
+      // başka kimse vermiyor). Kabul/Fire eşleşmeye gidiyorsa alev yine
+      // MatchModal'ın perdesi — tek karara iki alev kuralı duruyor.
+      const celebrates =
+        direction === "left" ||
+        ((direction === "up" || direction === "right") && !authorLikedMeFact);
+      if (celebrates) {
         authorFlameUnsub.current?.();
         authorFlameUnsub.current = runFlameSweep(
           () => {
@@ -3461,6 +3521,11 @@ export default function FeedScreen() {
           const target = menuPost;
           setMenuPost(null);
           if (target) handleReportPost(target);
+        }}
+        onBlock={() => {
+          const target = menuPost;
+          setMenuPost(null);
+          if (target) handleBlockPostAuthor(target);
         }}
         onDelete={() => {
           const target = menuPost;

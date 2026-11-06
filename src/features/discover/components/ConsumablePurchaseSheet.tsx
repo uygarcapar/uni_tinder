@@ -26,10 +26,14 @@ import { isPurchaseIdentityReady } from "@/features/profile/subscriptionService"
 import { showInfoToast } from "@/shared/services/toaster";
 import type { ToastIconKind } from "@/shared/components/toaster/toastIcons";
 import { analytics } from "@/shared/services/analytics";
-import { colors, gradients, ink } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
 import { useAppMode } from "@/features/discover/useAppMode";
-import { modeAccent } from "@/features/discover/modeTheme";
+import {
+  modeAccent,
+  modeShopBackdrop,
+  modeShopSurface,
+} from "@/features/discover/modeTheme";
 
 /**
  * Consumable paket satın alma sheet'i — Fire ve not paketleri bunu
@@ -426,14 +430,14 @@ export default function ConsumablePurchaseSheet({
       visible={visible}
       onClose={onClose}
       snapPoints={snapPoints}
-      backgroundStyle={{ backgroundColor: colors.shopSurface }}
+      backgroundStyle={{ backgroundColor: modeShopSurface(mode) }}
       handleComponent={null}
       footer={footer}
     >
       {/* Yukarıdan gri → aşağıda messageOwn'a fade — PurchaseModal ile aynı */}
       <LinearGradient
         pointerEvents="none"
-        colors={gradients.shopBackdrop}
+        colors={modeShopBackdrop(mode)}
         locations={[0, 0.4, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}

@@ -25,8 +25,9 @@ import { colors as theme } from "@/shared/theme/colors";
 // isim 21pt ve bu satır ona eşlik eden bir dipnot — eski ölçüde ikinci bir
 // başlık gibi okunuyordu. Noktayla metin birlikte küçüldü: ikisinin oranı
 // (nokta ≈ metnin 2/3'ü) korunmalı, yoksa nokta ya lekeye ya toz tanesine
-// dönüyor.
-export const ACTIVITY_DOT_SIZE = 7;
+// dönüyor. Sonra metin 11 → 12, nokta 7 → 8 (istek: "bir tık büyüt"); oran
+// korunarak birlikte büyüdüler.
+export const ACTIVITY_DOT_SIZE = 8;
 
 export default function ActivityStatus({ label }: { label: string }) {
   return (
@@ -40,7 +41,7 @@ export default function ActivityStatus({ label }: { label: string }) {
           backgroundColor: theme.success,
         }}
       />
-      <Text className="font-[600] text-[11px]" style={{ color: theme.success }}>
+      <Text className="font-[600] text-[12px]" style={{ color: theme.success }}>
         {label}
       </Text>
     </View>

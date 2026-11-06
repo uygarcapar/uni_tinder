@@ -9,6 +9,7 @@ import PagerTabBar, {
 import { View, Text, AppState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { runFlameSweep } from "@/features/discover/flameSweep";
 import { RotateCcw } from "@/shared/icons";
 import FireGlyph from "@/shared/components/FireGlyph";
 import NoteGlyph from "@/shared/components/NoteGlyph";
@@ -49,6 +50,7 @@ import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
+import LikeNoteSheet from "@/features/discover/components/LikeNoteSheet";
 import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
 } from "@/shared/components/ScreenHeader";
@@ -1575,6 +1577,11 @@ export default function LikesScreen() {
         });
         return;
       }
+      // GEÇ DE ALEV ALIYOR (istek, 2026-11-06): "nerede beğenirsem/atarsam
+      // banner çıksın." Onayın alevi MatchModal'ın perdesi (kesin eşleşme);
+      // pasın eşleşmesi yok, kutlamayı süpürme veriyor. `hold` YOK: kart
+      // kendi çıkışıyla gidiyor, örtünün saklayacağı bir değişim yok.
+      runFlameSweep(() => {}, { mode: modeRef.current });
       runCardExit(likerUserId, "left", () =>
         handleLikerSwiped(likerUserId),
       );
@@ -1624,6 +1631,11 @@ export default function LikesScreen() {
         dropFromLists(userId);
         return;
       }
+      // Modaldan gelen PAS da alev alıyor — karttaki X ile aynı gerekçe (bkz.
+      // handleQuickSwipe). Beğeni/Fire burada kesin eşleşme: alevi MatchModal.
+      if (direction === "left") {
+        runFlameSweep(() => {}, { mode: modeRef.current });
+      }
       handleLikerSwiped(userId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1638,6 +1650,53 @@ export default function LikesScreen() {
     (item) => handleQuickSwipe(item, "right"),
     [handleQuickSwipe],
   );
+
+  // ── Not sheet'i ─────────────────────────────────────────────────────────
+  // Kartın not pill'i notu kartta açmıyor, bu sheet'i açıyor (bkz.
+  // LikeNoteSheet). Kabul/Reddet karttaki tik/X ile AYNI yoldan gidiyor
+  // (handleQuickSwipe; Kaçırdıkların'da kabul = kurtar, reddet yok — kişi
+  // zaten geçilmiş).
+  //
+  // Aksiyon sheet KAPANDIKTAN SONRA koşuyor (`onDismissed`): kartın uçuşu ve
+  // varsa eşleşme modalı sheet'in arkasında kalmasın, kullanıcı görsün.
+  // ⚠️ Bekleyen aksiyon REF'te: X/aşağı çekme ile kapanışta null kalıyor, yani
+  // yalnız butonla kapanış bir aksiyon taşıyor.
+  const [noteSheet, setNoteSheet] = useState(null); // { item, missed }
+  const [noteSheetVisible, setNoteSheetVisible] = useState(false);
+  const pendingNoteActionRef = useRef(null);
+  const handleOpenNote = useCallback((item) => {
+    pendingNoteActionRef.current = null;
+    setNoteSheet({ item, missed: false });
+    setNoteSheetVisible(true);
+  }, []);
+  const handleOpenMissedNote = useCallback((item) => {
+    pendingNoteActionRef.current = null;
+    setNoteSheet({ item, missed: true });
+    setNoteSheetVisible(true);
+  }, []);
+  const closeNoteSheet = useCallback(() => setNoteSheetVisible(false), []);
+  const handleNoteAccept = useCallback(() => {
+    const target = noteSheet;
+    if (!target) return;
+    pendingNoteActionRef.current = () =>
+      target.missed
+        ? handleRecover(target.item)
+        : handleQuickSwipe(target.item, "right");
+    setNoteSheetVisible(false);
+  }, [noteSheet, handleRecover, handleQuickSwipe]);
+  const handleNoteReject = useCallback(() => {
+    const target = noteSheet;
+    if (!target) return;
+    pendingNoteActionRef.current = () =>
+      handleQuickSwipe(target.item, "left");
+    setNoteSheetVisible(false);
+  }, [noteSheet, handleQuickSwipe]);
+  const handleNoteSheetDismissed = useCallback(() => {
+    const run = pendingNoteActionRef.current;
+    pendingNoteActionRef.current = null;
+    setNoteSheet(null);
+    run?.();
+  }, []);
 
   // Bu ekran dışında handle edilen liker'lar (match, ya da Discover destesinde
   // pass'lenmiş bir liker) listeden düşsün. Ekran lazy mount olup açık kaldığı
@@ -1997,6 +2056,9 @@ export default function LikesScreen() {
             recoverLabel={t("likes.recoverButton")}
             mode={mode}
             fireLabel={t("likes.firePill", { fire: fireName })}
+            noteLabel={t("likes.notePill")}
+            noteOpenLabel={t("likes.noteOpen")}
+            onNotePress={isMissed ? handleOpenMissedNote : handleOpenNote}
             resolveIntentLabel={resolveIntentLabel}
             exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />
@@ -2108,6 +2170,21 @@ export default function LikesScreen() {
           setNotePurchaseVisible(false);
           statsQuery.refetch?.();
         }}
+      />
+
+      <LikeNoteSheet
+        visible={noteSheetVisible}
+        item={noteSheet?.item ?? null}
+        mode={mode}
+        onClose={closeNoteSheet}
+        onDismissed={handleNoteSheetDismissed}
+        onAccept={handleNoteAccept}
+        onReject={noteSheet?.missed ? undefined : handleNoteReject}
+        acceptLabel={
+          noteSheet?.missed ? t("likes.recoverButton") : t("likes.noteAccept")
+        }
+        rejectLabel={t("likes.noteReject")}
+        closeLabel={t("common.close")}
       />
 
       {/* YANITLAYAN PROFİLİ MODALI KALDIRILDI: akış yanıtları sekmesiyle

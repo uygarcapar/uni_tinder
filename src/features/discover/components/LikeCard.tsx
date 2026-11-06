@@ -1,5 +1,5 @@
 /**
- * Beğeni/not kartı — fotoğraf kartı, kimlik bloğu ve NOT KUTUSU.
+ * Beğeni/not kartı — fotoğraf kartı, kimlik bloğu ve ürün pill'i (Fire / not).
  *
  * 2026-10-10'da LikesScreen'den BURAYA taşındı; tek sebebi ikinci bir çağıran:
  * İKİNCİ ÇAĞIRAN İÇİN ÇIKARILMIŞTI (akışın gelen yanıtları, FeedReplyCard) ve
@@ -18,11 +18,9 @@
  * alıyor — gerekçesi LikeCard'ın başındaki notta.
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import {
   Dimensions,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -36,9 +34,7 @@ import {
   DEFAULT_APP_MODE,
   modeAccent,
   modeFireTint,
-  type AppMode,
 } from "../modeTheme";
-import { likerNoteTargetView } from "../noteTarget";
 import { isUnlockedLike } from "../likeUnlock";
 import { easeGradient } from "react-native-easing-gradient";
 import Animated, {
@@ -47,17 +43,16 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { GlassView } from "expo-glass-effect";
 import {
   Check,
-  ChevronDown,
+  ChevronRight,
   GraduationCap,
-  MessageCircle,
   Search,
   X,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import FireGlyph from "@/shared/components/FireGlyph";
+import NoteGlyph from "@/shared/components/NoteGlyph";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SkeletonBox from "@/shared/components/SkeletonBox";
 import PremiumBadge from "@/shared/components/PremiumBadge";
@@ -72,17 +67,12 @@ import CardActionGlassButton from "@/features/discover/components/CardActionGlas
 import { CARD_CHROME_FALLBACK_ICON_SIZE } from "@/features/discover/components/CardChromeGlassButton";
 import {
   colors,
-  darkColors,
-  ink,
   isLight,
   onMediaAt,
   scrimAt,
-  veilSurface,
 } from "@/shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import {
-  glassColorScheme,
-  hasLiquidGlassSurface,
   GLASS_ICON_BUTTON,
   HAS_LIQUID_GLASS,
 } from "@/shared/theme/glass";
@@ -165,7 +155,7 @@ const LOCKED_CARD_BLUR_LAYERS = 2;
 const LOCKED_CARD_BLUR_INTENSITY_LIGHT = Platform.OS === "ios" ? 100 : 60;
 /**
  * Kilitli kartın perde malzemesi. Koyu mod `chromeBlurTint()` ile AYNI kalıyor
- * (kartın not kutusu da oradan besleniyor, tek kartta iki cam olmasın); açık
+ * (kartın alt perdesiyle aynı malzeme ailesi); açık
  * modda bir kademe incesine düşüyor.
  * ⚠️ `isLight()` RENDER SIRASINDA okunmalı — modül seviyesinde sabitlenirse
  * tema değişince bayat kalır (bkz. theme/colors.ts).
@@ -221,7 +211,7 @@ const LOCKED_TEASER_INK_ALPHA_LIGHT = 0.85;
 
 /**
  * Kart fotoğrafının ALT BANDINDAKİ okunabilirlik perdesi — isim/üniversite
- * satırı ve not kutusu bunun üstünde duruyor. İki durak: tepede neredeyse yok,
+ * satırı ve ürün pill'i bunun üstünde duruyor. İki durak: tepede neredeyse yok,
  * dipte `mediaScrimSoft` (rgba(0,0,0,0.45)) ile aynı değer.
  *
  * AÇIK MODDA bir tık daha koyu (`*_LIGHT_BOOST`). Perde foto üstü olduğu için
@@ -322,16 +312,15 @@ const CARD_CORNER_PAIR_GAP = HAS_LIQUID_GLASS
 // Keşif'in üç noktasıyla aynı kaynaktan olmalı — camlı yolda
 // `GLASS_ICON_BUTTON.icon`, fallback'te `CARD_CHROME_FALLBACK_ICON_SIZE`;
 // elle sayı yazmak iki ekrandaki aynı işareti sessizce ayrıştırıyor.
-// Kart başlığı — isim/yaş TEK yerden ölçülüyor: satırın kendisi, blurlu kartın
-// yerine geçen kutu ve not kutusunun yükseklik bütçesi (NOTE_IDENTITY_BLOCK)
-// hep buna bakar. Premium işaretinin puntosu da buradan türüyor, ayrı sabiti YOK
+// Kart başlığı — isim/yaş TEK yerden ölçülüyor: satırın kendisi ve blurlu
+// kartın yerine geçen kutu hep buna bakar. Premium işaretinin puntosu da buradan türüyor, ayrı sabiti YOK
 // (eskiden LIKE_CARD_FLAME_SIZE vardı; bkz. PremiumBadge > premiumBadgeFontSize).
 const LIKE_CARD_NAME_SIZE = 22;
 const LIKE_CARD_NAME_LINE = 26;
 // Üniversite — kimlik bloğunun ikinci satırı. İsimden bir kademe küçük ama
 // okunur; aralarındaki boşluk iki satırı ayrı iki bilgi gibi okutuyor (bitişik
 // olduklarında tek bir sarkan cümle gibi görünüyorlardı). Yükseklik bütçeleri
-// (NOTE_CARD_BLUR_FLOOR / NOTE_IDENTITY_BLOCK) bu üçüne bakıyor.
+// (perdenin boyu, bkz. bottomBlurHeight) bu üçüne bakıyor.
 const LIKE_CARD_UNI_SIZE = 15;
 const LIKE_CARD_UNI_LINE = 20;
 const LIKE_CARD_UNI_GAP = 5;
@@ -364,257 +353,21 @@ const LIKE_CARD_PILL_RADIUS =
 const LIKE_CARD_PILL_ICON_SIZE = LIKE_CARD_PILL_TEXT_LINE;
 const LIKE_CARD_PILL_ICON_GAP = 6;
 
-// ── Not kutusu ───────────────────────────────────────────────────────────────
-// Notun metni + NEYE yazıldığı, kartın alt bloğunda isim/üniversitenin altında.
-//
-// Hedef fotoğrafı kutunun İÇİNDE, sol sütunda: "not bıraktı" satırının ve
-// notun solunda, o İKİSİYLE dikeyde ortalı (chevron satırı ortalamaya girmez,
-// yoksa fotoğraf onun boyu kadar yukarı kayıyordu).
-const NOTE_THUMB_SIZE = 56;
-const NOTE_THUMB_GAP = 12;
-const NOTE_BOX_PAD_TOP = 22;
-// Alt pay üstten GENİŞ — ama YALNIZ CHEVRON ÇİZİLİRKEN (bkz. LikeNoteBox'taki
-// `padBottom`). Kutunun altında yazının yanı sıra chevron da duruyor (mutlak,
-// bkz. NOTE_CHEVRON_BOTTOM); eşit paylarda ok yazının dibine yapışıyor ve
-// kutunun alt kenarı sıkışık okunuyordu.
-// ⚠️ Bu sayı chevron'un ÜSTÜNDEKİ boşluğu da belirliyor: ok akışta olmadığı için
-// yazının son satırıyla arasındaki tek şey bu payın chevron'dan artan kısmı
-// (pay − CHEVRON_BOTTOM − CHEVRON_SIZE). 30'ken o fark 2px'ti ve ok yazıya
-// değiyor gibi duruyordu.
-// ⚠️ SIĞAN NOTTA (ok yok) KULLANILMAZ: ok akıştan çıktığı için onun payını
-// dolduran başka hiçbir şey yok, kutu 22 üst / 38 alt ile görünür biçimde alta
-// ağır basıyordu. Sığan notta alt pay üstle EŞİT.
-const NOTE_BOX_PAD_BOTTOM = 38;
-const NOTE_BOX_PAD_H = 20;
-// Kutu bloğun İKİ yanına da eşit oturur: kuyruk artık solda değil, üst kenarın
-// ORTASINDA. Eskiden sol üstte iki daire vardı ve kutu onlara yer açmak için
-// soldan 16px içeriden başlıyordu; bu, aynı kartta kutuyu fotoğrafın solundaki
-// paydan dar gösteriyordu.
-const NOTE_BOX_RADIUS = 26;
-// ⚠️ Kutunun üst kenarının ortasında KUYRUK (balon üçgeni) YOK — kaldırıldı.
-// Cam yüzeyde kendi başına duran bir çıkıntıydı; kutu artık düz bir kapsül.
-// Kutunun zemini CAM: blur + üstünde ince bir perde. Perde tek başına opak bir
-// pul, blur tek başına da yazıyı taşıyamayacak kadar zayıf; ikisi birlikte
-// fotoğrafı sızdırırken yazıyı okunur tutuyor.
-const NOTE_BOX_BLUR_INTENSITY = 80;
-const NOTE_BOX_TINT_ALPHA = 0.45;
-/**
- * Cam yolundaki (iOS 26+ `GlassView`) kontrast knob'u — perdenin karşılığı.
- *
- * Cam yolunda AYRI bir perde katmanı YOK, bilerek: opak bir dolgu camın
- * kırılmasını öldürüyor (bkz. CardSectionBox'taki "cam yolunda dolgu/kenarlık
- * yok" kuralı). Aynı işi `tintColor` yapıyor — camın kendi rengine eğim.
- *
- * Blur yolundaki 0.45'ten DÜŞÜK: expo-blur'un tint'i malzemenin kendisi kadar
- * ışık geçirmiyor, orada perde olmadan yazı taşınmıyordu; native cam zaten
- * arkayı yumuşatıp parlaklığı dengeliyor, üstüne 0.45 gelirse kutu düz bir pula
- * dönüyor.
- */
-const NOTE_GLASS_TINT_ALPHA = 0.28;
-const NOTE_TEXT_SIZE = 19;
-const NOTE_TEXT_LINE = 24;
-/**
- * Notun metin AĞIRLIĞI. Alıntı bloğu (hedef prompt'un sorusu + cevabı) da
- * bundan besleniyor — üçü tek yerden, biri değişince öbürü geride kalmasın.
- */
-const NOTE_TEXT_WEIGHT = "500" as const;
-// "Bu fotoğrafına not bıraktı" — yazının üstünde, nottan açık gri tarafta ve
-// belirgin biçimde küçük. Hedef ilişkisini kuran
-// TEK şey bu satır: foto artık kutunun dışında, satır olmasa yanındaki kare
-// notun hedefi mi gönderenin başka bir fotoğrafı mı ayrılmazdı. "Devamını gör"
-// de aynı ölçüde/ağırlıkta: ikisi de notun kendisi değil, onun etiketleri.
-const NOTE_TARGET_LABEL_SIZE = 12;
-const NOTE_TARGET_LABEL_LINE = 16;
-const NOTE_TARGET_LABEL_GAP = 2;
-// Kapalıyken 2 satır. Üçüncüye taşan not sağ altta "devamını gör" ile açılıp
-// kapanıyor (bkz. LikeNoteBox).
-const NOTE_COLLAPSED_LINES = 2;
-// Aç/kapa chevron'u kutunun alt ortasında, MUTLAK konumlu: akıştan çıktığı için
-// kutuya kendi satır yüksekliğini eklemiyor (yazı tavanından da düşülmesi
-// gerekmiyor, bkz. textMaxHeight).
-// Oturduğu yer kutunun alt payı: 12 + 16 = 28 < NOTE_BOX_PAD_BOTTOM (38), yani
-// yazının son satırıyla arasında 10'luk, altında da 12'lik nefes kalıyor —
-// okun iki yanı artık birbirine yakın, ok yazıya asılı durmuyor. Yatayda
-// ortalayan şey KUTUNUN kendi genişliği — soldaki fotoğraf sütunu hesaba
-// katılmıyor: ok kutunun simetri ekseninde, üstteki kuyrukla aynı hizada durur.
-const NOTE_CHEVRON_SIZE = 16;
-const NOTE_CHEVRON_BOTTOM = 12;
-// Prompt hedefinin alıntısı: yalnız CEVAP (tek satır, başında tırnak).
-// Fotoğrafın yerini tutuyor ama sütuna sığmaz — kutunun İÇİNDE, yazının üstünde
-// tam genişlikte durur. Burası hedefi hatırlatan etiket, cevabın okunduğu yer
-// değil; satır kırpılıyor.
-//
-// ⚠️ PROMPT BAŞLIĞI (sorunun kendisi) ÇİZİLMİYOR. Blok iki satırdı (üstte soru,
-// altında cevap) ve kutuda üç ayrı metin birikiyordu: gri "not bıraktı" satırı,
-// soru, cevap — notun kendisi okunmadan önce. Hedefi hatırlatmaya cevap yetiyor,
-// hangi soruya ait olduğu profil açılınca zaten görünüyor. Geri eklenecekse
-// NOTE_CHIP_HEIGHT ve alt perdenin bütçesi (textMaxHeight) birlikte güncellenmeli.
-//
-// Blok KONTURSUZ. Eskiden etrafında 1px çerçeve + 14 yarıçap vardı ve cam
-// kutunun içinde ikinci bir kutu gibi duruyordu; alıntıyı nottan ayıran şey
-// artık BAŞINDAKİ dikey çizgi — sohbette yanıtlanan mesajın işaretiyle
-// (chat/components/ReplyPreview) aynı dil.
-const NOTE_CHIP_LINE_W = 4;
-// Çizgi ile yazının arası. Çizgi MUTLAK konumlu (bloğun sol kenarına çivili),
-// yazı sütunu W + GAP kadar içeriden başlar.
-const NOTE_CHIP_LINE_GAP = 10;
-// Çizgi bloğun tam boyu değil: iki ucundan bu kadar kısalır (dikey ortalı).
-const NOTE_CHIP_LINE_INSET_V = 2;
-/**
- * Alıntının MÜREKKEBİ — çizgi, tırnak ve cevap ÜÇÜ DE bu renkte (bkz. chipInk).
- * MODLA DÖNER (`ink`): açıkta siyah, koyuda beyaz.
- *
- * ⚠️ Eskiden `scrimAt` ile SABİT siyahtı ve koyu modda yanlıştı: kutunun zemini
- * `veilSurface`, yani koyuda KOYU (rgba(32,32,34,α)) — siyah mürekkep o zeminde
- * kayboluyordu. Kutunun kendi yazısı zaten modla dönüyor (`colors.text`),
- * alıntının da aynı polariteyi izlemesi gerekiyor.
- *
- * `colors.border` denendi ve iki modda da silik kaldı: kutu CAM, arkasındaki
- * fotoğrafı sızdırıyor: koyuda #3A3A3A camın kendi tonuyla neredeyse aynı yere
- * düşüyor, açıkta #DCDCE0 beyaz camda kayboluyor. Şeffaf mürekkep ikisinde de
- * aynı işi görüyor — arkada ne varsa ondan uzaklaşıyor, yani çizgi kontrastını
- * fotoğraftan bağımsız koruyor.
- *
- * İki alfa AYRI: beyaz mürekkep koyu zeminde aynı sayıda daha silik okunuyor.
- * Başlangıç noktası `textMuted`in iki moddaki grisiydi (açık #8E8E93 ≈ 0.44
- * siyah, koyu #878787 ≈ 0.53 beyaz); koyu değer cihazda o hesabın bir tık
- * üstüne çekildi — kutu CAM olduğu için arkasındaki fotoğraf mürekkebi
- * yiyor, muted'ın tam karşılığı orada olması gerekenden sönük duruyordu.
- * Yine de `colors.text`in altında: alıntı notun kendi metniyle yarışmamalı.
- */
-const NOTE_CHIP_INK_ALPHA_LIGHT = 0.45;
-const NOTE_CHIP_INK_ALPHA_DARK = 0.66;
-// Dolgu artık konturun içini beslemiyor, yalnız çizginin uçlarına nefes
-// bırakıyor — bu yüzden eski 8 değil.
-const NOTE_CHIP_PAD_V = 2;
-/**
- * CEVABIN satır adımı notun metniyle AYNI (`NOTE_TEXT_LINE`): puntosu ve
- * ağırlığı da ondan geliyor, satır adımının ayrışması yazıyı sıkışık gösterirdi.
- *
- * ⚠️ Cevabı nottan ayıran şey PUNTO DEĞİL, mürekkep (`chipInk` — bkz.
- * NOTE_CHIP_INK_ALPHA_*) ve baştaki dikey çizgi. Fazla öne çıkıyorsa
- * oynatılacak yer o alfa.
- *
- * ⚠️ `NOTE_CHIP_ICON_SIZE` bunu GEÇMEMELİ: tırnağın dikey hizası
- * (satır − ikon) / 2 ile kuruluyor, büyük ikon payı eksiye çevirir.
- */
-const NOTE_CHIP_ANSWER_LINE = NOTE_TEXT_LINE;
-// Tırnak işareti CEVAP PUNTOSUNDAN büyük (19 → 21), bilerek: glyph kendi em
-// kutusunun içinde küçük çiziliyor, yazıyla aynı boyda verildiğinde yanındaki
-// harflerden küçük görünüyordu.
-// ⚠️ ANSWER_LINE'ı geçmesin: dikey ortalama (satır − ikon) / 2 ile yapılıyor,
-// büyük ikon o payı eksiye çevirip tırnağı satırın dışına taşırır.
-const NOTE_CHIP_ICON_SIZE = 21;
-const NOTE_CHIP_MARGIN = 10;
-// ⚠️ Konturun payı (+2) YOK: kenarlık kalktı. Soru satırı da yok (bkz. bloğun
-// başındaki not), blok artık yalnız dolgu + TEK satır.
-const NOTE_CHIP_HEIGHT = 2 * NOTE_CHIP_PAD_V + NOTE_CHIP_ANSWER_LINE;
-
-// Kartın alt bloğunun (isim + üniversite + not kutusu) kart tabanına uzaklığı.
-// Notlu kartta blok daha AŞAĞIDA duruyor: kutu fotoğrafın ortasına doğru
-// tırmanmasın, alt kenara yakın otursun. Blok `bottom`a çivili olduğu için bu
-// tek sayı hem kutunun oturduğu yeri hem de yukarı doğru açılabileceği payı
-// belirliyor.
-// Alt bloğun yan payları — SİMETRİK. Sol pay eskiden 4px daha genişti (16/12);
-// blok yalnız yazı taşıdığı sürece fark edilmiyordu ama not kutusu bloğun sağ
-// kenarına kadar uzadığı için kutunun sağındaki boşluk fotoğrafın solundakinden
-// dar görünüyordu.
-// Notsuz ("sadece beğeni") kartta blokta yalnız isim + üniversite var: kutu
-// olmadığı için iki satır kartın sol-alt köşesine yapışık duruyordu. Bu yüzden
-// notsuz kart kendi payını kullanıyor — biraz daha içeride ve yukarıda.
-// ⚠️ Simetri notu YALNIZ notlu kart için geçerli (kutu sağ kenara uzanıyor);
-// notsuz blok sadece yazı taşıdığı için sol payı büyütmek sağ tarafı bozmuyor.
+// ── Alt blok payları ─────────────────────────────────────────────────────────
+// Not kutusu KALDIRILDI (2026-11-06): not artık isim satırının üstünde Fire
+// pill'iyle aynı yapıda bir pill (bkz. LikeProductPill) ve metni basınca açılan
+// sheet'te (LikeNoteSheet). Notlu kartın ayrı payları (CARD_SIDE_INSET /
+// CARD_BOTTOM_INSET_NOTE) ve kutunun yükseklik bütçesi onunla birlikte gitti —
+// notlu kart da düz kartın paylarını kullanıyor.
 // ⚠️ Bu paylar listenin yan payıyla (LIST_H_PADDING) BİRLİKTE okunur: isim
-// satırının ekran kenarına uzaklığı ikisinin toplamı. Liste payı daraldığında
-// (kart kenara yaklaştı) bu paylar aynı kaldığı sürece yazı ekranın kenarına
-// yapışıyordu — fark buraya eklendi, kimlik bloğu kart içinde eskisi kadar
-// içeride duruyor.
-const CARD_SIDE_INSET = 18;
+// satırının ekran kenarına uzaklığı ikisinin toplamı.
 const CARD_SIDE_INSET_PLAIN = 24;
 const CARD_BOTTOM_INSET = 32;
-const CARD_BOTTOM_INSET_NOTE = 14;
 
 // Alt perdenin içeriğin TEPESİNDEN yukarı taşan payı. Perde en üstte şeffaf
 // başlayıp aşağı doğru koyulaştığı için (maske) bu pay olmadan geçiş tam isim
 // satırının üstünde başlar ve isim keskin bir kenarın dibinde kalır.
 const BOTTOM_BLUR_LEAD = 36;
-
-/**
- * NOTLU kartta alt perdenin ÖLÇÜMDEN ÖNCEKİ tabanı.
- *
- * Perdenin boyu alt bloğun `onLayout` ölçümünden geliyor; o gelene kadar
- * (mount'ta bir kare) taban devrede. Notsuz kartta taban kartın %33'ü ve blok
- * ondan kısa olduğu için ilk kare ile son kare arasında fark yok. Notlu kartta
- * ise blok %33'ten ÇOK uzun: taban da %33 olduğunda perde ilk karede kısa
- * çizilip ölçümle birlikte sıçrıyordu — "sekmeye girince perde flash ediyor".
- *
- * Buradaki toplam KAPALI notlu bloğun ölçüleri: kimlik iki satırı + kutu marjı +
- * kutu payları + hedef başlığı + iki satır yazı + kartın alt payı +
- * perdenin nefes payı. Gerçek blok bundan yalnız birkaç piksel sapar (yazının
- * gerçek satır adımı), o fark da perdede görünmez.
- *
- * ⚠️ TAHMİN, kırpma ölçüsü DEĞİL: yanılırsa perde birkaç piksel oynar, hepsi o.
- * Kutunun kendi kırpması ASLA tahminle yapılmıyor (bkz. measureText).
- */
-const NOTE_CARD_BLUR_FLOOR =
-  LIKE_CARD_NAME_LINE +
-  (LIKE_CARD_UNI_LINE + LIKE_CARD_UNI_GAP) + // üniversite satırı + üst boşluğu
-  8 + // not kutusunun üst marjı
-  NOTE_BOX_PAD_TOP +
-  NOTE_TARGET_LABEL_LINE +
-  NOTE_TARGET_LABEL_GAP +
-  NOTE_COLLAPSED_LINES * NOTE_TEXT_LINE +
-  NOTE_BOX_PAD_BOTTOM +
-  CARD_BOTTOM_INSET_NOTE +
-  BOTTOM_BLUR_LEAD;
-
-// Açık haldeki tavan KARTIN KENDİ YÜKSEKLİĞİNDEN çıkıyor: açılan not yukarı,
-// fotoğrafın üstüne doğru büyür ve kartı uzatmaz — sınırsız bıraksak uzun bir
-// not kimlik bloğunu (isim/yaş + üniversite) kartın dışına iter, `overflow:
-// hidden` da onu keserdi. Pay: isim satırı + üniversite satırı + kutunun üst
-// marjı + kart tepesinde nefes.
-const NOTE_IDENTITY_BLOCK =
-  LIKE_CARD_NAME_LINE + (LIKE_CARD_UNI_LINE + LIKE_CARD_UNI_GAP) + 8;
-const NOTE_BOX_MAX_HEIGHT =
-  CARD_HEIGHT - CARD_BOTTOM_INSET_NOTE - NOTE_IDENTITY_BLOCK - 12;
-/**
- * Açık kutuda YAZIYA kalan yükseklik. `chrome` = yazı dışındaki her şey (kutu
- * payları, başlık, "devamını gör" satırı, varsa prompt kartı ve fotoğrafın
- * kutunun üstünde bıraktığı pay).
- *
- * Kırpma yerine TAVAN + iç kaydırma: kullanıcı "hepsini göster" dediğinde bir
- * kısmını saklamak istemiyoruz, ama 19px yazıyla 240 karakterlik bir not bu
- * genişlikte ~10 satır ve kart yüksekliği SABİT. Sığmayan uçta yazı kendi
- * içinde kayıyor; tipik notlar (çok daha kısa) hiç kaydırmadan tamamen
- * görünüyor.
- */
-function noteTextMaxHeight(chrome: number) {
-  return Math.max(
-    NOTE_COLLAPSED_LINES * NOTE_TEXT_LINE,
-    NOTE_BOX_MAX_HEIGHT - chrome,
-  );
-}
-
-// Kutunun açılıp kapanma ritmi. Ekrandaki DİĞER hareketlerden (kart çıkışı,
-// liste kayması) ayrı bir eğri kullanıyor — kasıtlı:
-//
-// Onlar `Easing.out(cubic)`: t=0'da eğim 3, yani hareket en hızlı yerinden
-// BAŞLIYOR. Bir kart uçup giderken doğrusu bu (kullanıcı zaten "gitti" görmek
-// istiyor) ama kutu GİTMİYOR, boyut değiştiriyor: aynı eğride kutu ilk karede
-// zıplayıp sonra yavaşlıyordu — açılış "pat diye açıldı, sonra oturdu" diye
-// okunuyordu. Buradaki bezier iki ucu da rampalı (t=0'da eğim 0), uzun
-// yavaşlama kuyruğuyla: kutu duruyorken hareket etmeye, hareket ederken durmaya
-// başlıyor, sıçrayan bir kare yok.
-//
-// ⚠️ Bu değerden BEŞ şey birden besleniyor (kutunun yüksekliği, chevron dönüşü,
-// kimlik bloğunun solması, alt perdenin boyu ve kartın bloğunu yukarı kaydıran
-// pay) — hepsi tek `progress`ten okuduğu için eğriyi burada değiştirmek beşini
-// birden aynı anda taşır. Ayrı ayrı zamanlama YAPMA.
-//
-// Süre eğriyle birlikte uzadı: rampalı bir eğri 260ms'de ortadaki hızlı bölüme
-// sıkışıyor ve kazandığı yumuşaklığı geri veriyor.
-const NOTE_EXPAND_MS = 340;
-const NOTE_EXPAND_EASING = Easing.bezier(0.4, 0, 0.2, 1);
 
 // Kartın listeden düşerken oynattığı çıkış animasyonu. Süre TEK yerde duruyor:
 // kart bu süre boyunca uçup sönerken ekran onu veride tutuyor, sonra çıkarıyor
@@ -628,89 +381,24 @@ const IMAGE_LOAD_TIMEOUT_MS = 6000;
 // Daha önce yüklenmiş foto URI'leri — tab değişip remount olunca skeleton'a tekrar düşmesin
 const loadedPhotoUris = new Set();
 
-/**
- * Ekranın cam yüzeylerinin OTURDUĞU stil (kart kutularıyla aynı — bkz.
- * CardSectionBox). Zincirin ilk ve son adımı bu.
- */
-const LIKE_GLASS_STYLE = "clear" as const;
+// Not pill'inin sağındaki chevron. Yazı satırından küçük: işaret "açılır"
+// demeli, yazıyla yarışmamalı. Chevron görsel bir boşluk taşıdığı için pill'in
+// sağ dolgusu bu hâlde bir kademe dar (bkz. LIKE_CARD_PILL_PAD_RIGHT_CHEVRON).
+const LIKE_CARD_PILL_CHEVRON_SIZE = 11;
+const LIKE_CARD_PILL_PAD_RIGHT_CHEVRON = 10;
 
 /**
- * CAM ÜSTÜNDEKİ MÜREKKEP — açık modda da KOYU MOD tokenları.
+ * İsim satırının üstündeki ürün pill'i — ürünün glifi + cümlesi. İki hâli var:
+ *   • Fire/Spark: FireGlyph + "Sana Fire gönderdi". Bilgi, basılamaz.
+ *   • Not: NoteGlyph + "Sana not bıraktı" + chevron. BASILABİLİR: notun metni
+ *     kartta değil, basınca açılan sheet'te (LikeNoteSheet) okunuyor.
  *
- * `clear` cam kendi zeminini koyulaştırıyor ve altından geçen şey kartın
- * fotoğrafı: açık moddaki `colors.text` (#0B0B0C) orada yıkanıyordu. Bu yüzden
- * cam yüzeyin üstündeki yazı/glif iki modda da koyu modun mürekkebini
- * kullanıyor — koyu modda tamamen no-op (`colors` zaten koyu palet).
+ * Not pill'i Fire'ınkiyle BİREBİR aynı yapıda (istek, 2026-11-06): eskiden not
+ * kartın alt bloğunda cam bir kutuda (LikeNoteBox) açılıp kapanıyordu; kutu
+ * fotoğrafın üstüne tırmanıyor ve kartın en ağır öğesi oluyordu.
  *
- * ⚠️ Yalnız GERÇEK cam yolunda (iOS 26 + `UIDesignRequiresCompatibility`
- * kapalı). Cam yoksa not kutusunun zemini `BlurView` + `veilSurface` perdesi ve
- * o perde açık modda gerçekten AÇIK — orada beyaz mürekkep okunmaz.
- *
- * ⚠️ Sadece bu ekran için. Uygulamanın diğer cam yüzeyleri (sohbet çubuğu,
- * toaster, aksiyon sayfası) bilerek dışarıda: onlar fotoğrafın değil, açık
- * modda AÇIK olan bir zeminin üstünde duruyor.
- *
- * Render sırasında çağır: palet mutasyona uğruyor.
- */
-const glassInk = () => (hasLiquidGlassSurface() ? darkColors : colors);
-
-/**
- * `GlassView`in stil zinciri: "clear" → "none" → "clear".
- *
- * Kopyala-yapıştır değil, ZORUNLU. `UIGlassEffect` yalnız `glassEffectStyle`
- * DEĞİŞİNCE yaratılıyor ve bayat bir efektin üstüne yenisini atamak sessizce
- * no-op; aradaki "none" adımı JS'ten ulaşılabilen tek teardown yolu. Tam gerekçe
- * ve native kaynak referansları CardSectionBox'ın başında — ÜÇÜNCÜ bir kopya
- * yazılmasın, oraya bakılsın.
- *
- * Tutulan şey stilin kendisi DEĞİL zincirin ADIMI: ilk ve son adım aynı stili
- * veriyor ("clear"), tek bir string ikisini ayırt edemezdi ve "efekt kuruldu mu"
- * sorusu cevapsız kalırdı.
- *
- * Bu ekranda İKİ cam yüzey var (not kutusunun zemini + Fire pill'i) ve
- * ikisi de aynı zinciri istiyor; kanca o yüzden ortak. Kancanın kendisi cam
- * dışı yolda da güvenle çağrılabilir (`enabled: false` → zincir hiç koşmaz).
- */
-function useGlassPhase(enabled: boolean) {
-  const [step, setStep] = useState<"install" | "teardown" | "ready">("install");
-  const [laidOut, setLaidOut] = useState(false);
-  // setState bir sonraki kareye ertelendiği için sökülmüş bileşene yazma riski
-  // var; tek bayrakla kapatılıyor.
-  const aliveRef = useRef(true);
-  useEffect(
-    () => () => {
-      aliveRef.current = false;
-    },
-    [],
-  );
-  const onGlassLayout = useCallback((e) => {
-    const { width, height } = e.nativeEvent.layout;
-    // Sıfır ölçüde zinciri açmak yarışı kapatmaz, yalnız yerini değiştirir.
-    if (width > 0 && height > 0) setLaidOut(true);
-  }, []);
-  useEffect(() => {
-    if (!enabled || step === "ready") return;
-    // Kapı YALNIZ ilk adımda: "teardown" efektin SÖKÜLDÜĞÜ ara durum, zincir
-    // orada durursa yüzey camsız değil BOMBOŞ kalır.
-    if (step === "install" && !laidOut) return;
-    const id = requestAnimationFrame(() => {
-      if (!aliveRef.current) return;
-      setStep((s) => (s === "install" ? "teardown" : "ready"));
-    });
-    return () => cancelAnimationFrame(id);
-  }, [enabled, laidOut, step]);
-  return {
-    phase: step === "teardown" ? ("none" as const) : LIKE_GLASS_STYLE,
-    onGlassLayout,
-  };
-}
-
-/**
- * İsim satırının üstündeki ürün pill'i — Fire kalbi + "Sana Fire
- * gönderdi".
- *
- * Kalp cümlenin yerine GEÇMİYOR, yanında duruyor: yazı ne olduğunu söylüyor,
- * kalp onu bir bakışta seçilir kılıyor (bkz. i18n likes.firePill).
+ * Glif cümlenin yerine GEÇMİYOR, yanında duruyor: yazı ne olduğunu söylüyor,
+ * glif onu bir bakışta seçilir kılıyor (bkz. i18n likes.firePill / notePill).
  *
  * Zemin SEÇİLİ MODUN vurgusu (`modeAccent`) — başlığın yanındaki "Beğenenleri
  * gör" pill'iyle (bkz. LikesListHeader) BİREBİR aynı dolgu, mürekkebi de aynı:
@@ -719,56 +407,58 @@ function useGlassPhase(enabled: boolean) {
  * Mürekkep MODLA DÖNMÜYOR: iki vurgu da (kırmızı/yeşil) orta tonlu, ikisinin
  * üstünde de siyah okunuyor.
  *
- * ⚠️ Burada CAM YOK, bilerek: dolgu opak: `GlassView`in altındaki hiçbir şey
- * görünmeyeceği için efekt yalnız maliyet olurdu (liste hücrelerinde geri
- * dönüştürülen cam zaten hassas — bkz. useGlassPhase). Kapsül gerekirse camlı
- * hâli git geçmişinde: tint `scrimAt(0.3)`, camsız yolda `scrimAt(0.42)` +
- * hairline.
+ * ⚠️ Burada CAM YOK, bilerek: dolgu opak, `GlassView`in altındaki hiçbir şey
+ * görünmeyeceği için efekt yalnız maliyet olurdu.
  *
  * ⚠️ Yarıçap 999 DEĞİL, yükseklikten türüyor (bkz. LIKE_CARD_PILL_RADIUS).
  *
- * ⚠️ Pill SOLMUYOR, kayboluyor: not açılınca `LikeCard` onu tamamen KALDIRIYOR
- * (gerekçe orada). Buraya fade/scale animasyonu EKLEME.
+ * ⚠️ Basılabilir hâl kartın kendi dokunuşunun (profili aç) İÇİNDE duruyor.
+ * RN responder zinciri en derindeki adaydan başladığı için pill'in
+ * TouchableOpacity'si kazanıyor; kart profili AÇMIYOR. Pill'i bir
+ * SwiftUI/cam butona çevirirsen bu garanti biter (köşe kolonundaki
+ * `onStartShouldSetResponder` kalıbı gerekir).
  */
-function FirePill({
+function LikeProductPill({
   label,
   accent,
-  mode,
+  glyph,
+  onPress,
+  accessibilityLabel,
 }: {
   label: string;
   accent: string;
-  /** Glif modla dönüyor: Flört alev, Arkadaş yıldız (bkz. FireGlyph). */
-  mode: AppMode;
+  /** Pill'in solundaki glif — rengi `colors.onMediaInverse` olmalı. */
+  glyph: React.ReactNode;
+  /** Verilirse pill basılabilir olur ve sağına chevron eklenir. */
+  onPress?: () => void;
+  accessibilityLabel?: string;
 }) {
-  return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: "100%",
-        marginBottom: LIKE_CARD_PILL_GAP,
-        paddingVertical: LIKE_CARD_PILL_PAD_V,
-        paddingHorizontal: LIKE_CARD_PILL_PAD_H,
-        borderRadius: LIKE_CARD_PILL_RADIUS,
-        borderCurve: "continuous",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: LIKE_CARD_PILL_ICON_GAP,
-        backgroundColor: accent,
-      }}
-    >
-      {/* Kalbin altında disk YOK, glif doğrudan dolgunun üstünde duruyor.
-          Rengi yazıyla AYNI ve SABİT (`onMediaInverse`): dolgu TEMAYLA
-          dönmediği için (yalnız MODLA dönüyor) üstündeki hiçbir şey de
-          dönmemeli — açık modda da siyah. `ink()`/`colors.text` kullanma,
-          ikisi de açık modda çevrilir. */}
-      <FireGlyph
-        size={LIKE_CARD_PILL_ICON_SIZE}
-        color={colors.onMediaInverse}
-        mode={mode}
-      />
+  const pressable = !!onPress;
+  const style = {
+    alignSelf: "flex-start" as const,
+    maxWidth: "100%" as const,
+    marginBottom: LIKE_CARD_PILL_GAP,
+    paddingVertical: LIKE_CARD_PILL_PAD_V,
+    paddingLeft: LIKE_CARD_PILL_PAD_H,
+    paddingRight: pressable
+      ? LIKE_CARD_PILL_PAD_RIGHT_CHEVRON
+      : LIKE_CARD_PILL_PAD_H,
+    borderRadius: LIKE_CARD_PILL_RADIUS,
+    borderCurve: "continuous" as const,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: LIKE_CARD_PILL_ICON_GAP,
+    backgroundColor: accent,
+  };
+  const content = (
+    <>
+      {/* Glifin altında disk YOK, doğrudan dolgunun üstünde duruyor. Rengi
+          yazıyla AYNI ve SABİT (`onMediaInverse`): dolgu TEMAYLA dönmediği
+          için (yalnız MODLA dönüyor) üstündeki hiçbir şey de dönmemeli. */}
+      {glyph}
       <Text
         numberOfLines={1}
-        // Kısalan taraf YAZI: rozet ürünün işareti, dar kartta o değil yazı
+        // Kısalan taraf YAZI: glif ürünün işareti, dar kartta o değil yazı
         // kırpılsın.
         style={{
           flexShrink: 1,
@@ -780,656 +470,31 @@ function FirePill({
       >
         {label}
       </Text>
-    </View>
-  );
-}
-
-/**
- * Not kutusunun ZEMİNİ. iOS 26+'da native liquid glass (`GlassView`), diğer her
- * yerde eskisi gibi `BlurView` + ince perde.
- *
- * Katman MUTLAK ve SABİT YÜKSEKLİKTE (`NOTE_BOX_MAX_HEIGHT`), kutunun tabanına
- * çivili — kutuyla birlikte boyutlanMIYOR. Gerekçesi çağıran taraftaki notta:
- * kutunun yüksekliği not açılırken KARE KARE değişiyor ve zeminle birlikte
- * ölçülen native efekt görünümü layout'un bir kare gerisinde kalıyor. Bu
- * `GlassView` için blur'dan da kritik: efekt İLK `layoutSubviews`te kuruluyor,
- * her karede yeniden ölçülen bir cam kendini durmadan yeniden kurmak zorunda
- * kalırdı. Görünen kısmı ebeveynin kırpması belirliyor.
- *
- * ⚠️ Camın kendi köşe yarıçapı YOK, kırpmayı ebeveyn yapıyor — normalde cam
- * yolunda kaçınılan şey (maske efektin üstüne biniyor), burada mecburi: katman
- * kutudan BÜYÜK, yani şekli veren şey kırpmanın ta kendisi. Bugünkü `BlurView`
- * de aynı kırpmanın altında çalışıyor.
- *
- * Stil zinciri ("clear" → "none" → "clear") ortak kancada: bkz. useGlassPhase.
- *
- * ⚠️ ATA ZİNCİRİNDE OPACITY < 1 OLAMAZ. Bu kutu güvenli: kartın kimlik bloğu
- * `identityStyle` ile soluyor ama not kutusu o bloğun ÇOCUĞU değil KARDEŞİ,
- * kartın kök `Animated.View`i de yalnız çıkış anında (kart zaten gidiyorken)
- * opaklık yazıyor. Kutuyu identity bloğunun içine taşıma.
- */
-function NoteBoxSurface() {
-  const glass = hasLiquidGlassSurface();
-  const { phase, onGlassLayout } = useGlassPhase(glass);
-
-  // Katmanın geometrisi iki yolda da AYNI — yalnız malzeme değişiyor.
-  const layer = {
-    position: "absolute" as const,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: NOTE_BOX_MAX_HEIGHT,
-  };
-
-  if (glass) {
-    return (
-      <GlassView
-        // `animate: false` — geçiş UIKit'in anlık görüntü makinesine girmesin
-        // (kutu listede, kaydırma sırasında doğuyor). Gerekçe CardSectionBox'ta.
-        glassEffectStyle={{ style: phase, animate: false }}
-        onLayout={onGlassLayout}
-        tintColor={veilSurface(NOTE_GLASS_TINT_ALPHA)}
-        // Sistem görünümü DEĞİL uygulamanın kendi modu (bkz. theme/glass).
-        colorScheme={glassColorScheme()}
-        // Basınca `UIGlassEffect` kendi tepkisini veriyor. Kutu zaten
-        // basılabilir (üstündeki TouchableOpacity notu açıp kapatıyor), yani
-        // cam o dokunuşla birlikte çalışıyor.
-        //
-        // ⚠️ Prop STATİK — sonradan değiştirmek efektin sökülüp yeniden
-        // kurulmasını gerektiriyor (bkz. setInteractive).
-        isInteractive
-        style={layer}
-      />
-    );
-  }
-
-  return (
-    <>
-      <BlurView
-        intensity={NOTE_BOX_BLUR_INTENSITY}
-        // Modla DÖNEN cam: açık modda beyaz, koyuda koyu. Fotoğraf üstündeki
-        // blur'lar normalde her iki modda koyu kalır (bkz. theme/blur), bu
-        // kutu bilinçli istisna — zemini zaten başından beri modla dönüyor.
-        tint={chromeBlurTint()}
-        style={layer}
-      />
-      {/* İnce perde — blur tek başına yazıyı taşımıyor. `veil` DEĞİL
-          `veilSurface`: koyu modda tam siyah bu ölçüde bir kutuda fotoğrafta
-          kesilmiş delik gibi duruyordu (bkz. theme/colors). */}
-      <View
-        pointerEvents="none"
-        style={[layer, { backgroundColor: veilSurface(NOTE_BOX_TINT_ALPHA) }]}
-      />
+      {pressable && (
+        <SFIcon
+          name="chevron.right"
+          fallback={ChevronRight}
+          size={LIKE_CARD_PILL_CHEVRON_SIZE}
+          color={colors.onMediaInverse}
+          strokeWidth={3}
+          weight="bold"
+        />
+      )}
     </>
   );
-}
 
-/**
- * Kartın alt bloğundaki not kutusu — notun METNİ ve NEYE yazıldığı.
- *
- * ZEMİN `veilSurface`: açık modda BEYAZ, koyu modda açık bir siyah; yazı
- * `colors.text` ile tam tersi. Kutu bir FOTOĞRAFIN üstünde duruyor, o yüzden
- * tema yüzeyleri (`surface`) değil perde ailesi kullanılıyor — fotoğrafın
- * parlaklığı ne olursa olsun kutu okunur kalıyor (SwipeCard'daki not diskiyle
- * aynı karar). Tam opak değil: altındaki fotoğraf bir tık sızsın, kutu
- * yapıştırılmış bir pul gibi durmasın.
- *
- * HEDEF ÖNİZLEMESİ kutunun İÇİNDE, iki hedefte de: fotoğrafa yazılmış notta
- * kare thumbnail sol sütunda yazıyla dikeyde ortalı, prompt'a yazılmışta ise
- * (chip'e sığmayacak kadar metin taşıdığı için) yazının üstünde tam genişlikte
- * mini kart. İkisini de aynı cümleye bağlayan şey yazının üstündeki küçük "not
- * bıraktı" satırı: "şuna, şunu yazdı".
- *
- * KUTUNUN BİÇİMİ hedefe göre DEĞİŞMEZ: her iki halde de blokla aynı genişlikte
- * ve iki yanı eşit, düz bir kapsül — üst kenarında kuyruk/çıkıntı YOK.
- *
- * Kutu iki satırdan sonra kırpılır; KUTUYA BASMAK açıp kapatır ve notun tamamı
- * görünür. Kart yüksekliği SABİT ve kutu (alt blok bottom'a çivili olduğu için)
- * yukarı doğru büyüyor — açılan not fotoğrafın üstüne taşar, kartı uzatmaz.
- * Açılışın zamanlaması kutunun değil KARTIN elinde (`progress`): kutu, kimlik
- * bloğu ve alt perde aynı değerden besleniyor.
- *
- * ⚠️ Hedef alanları GÖNDERİM ANINDAKİ kopyalar (snapshot): fotoğraf profilden
- * silinmiş olsa bile `photoUrl` notun yanında durur. Hedefi hiç olmayan not
- * (eski kayıt / realtime önizleme) sadece kutu olarak çizilir, önizlemesiz.
- */
-function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
-  const { t } = useTranslation();
-  const target = note?.target ?? null;
-  // Hedef bloğunun ÜÇ sorusu (başlık / alıntı / fotoğraf) tek saf fonksiyonda:
-  // `likerNoteTargetView`. Kural burada gömülü kalsaydı bu dosya testte render
-  // edilmediği için sessizce bozulabilirdi — gönderi hedefi eklenirken tam o
-  // oldu (bkz. noteTarget.ts).
-  //
-  // ⚠️ Prompt'ta yalnız CEVAP çiziliyor, sorunun kendisi değil (gerekçe
-  // NOTE_CHIP_* sabitlerinin başında); gönderide alıntı gönderinin gönderim
-  // anındaki metni.
-  const targetView = likerNoteTargetView(target, t);
-  const photoUri = targetView.photoUrl;
-  const quote = targetView.quote;
-  const noteTargetLabel = targetView.label;
-  const removedNotice = targetView.removedNotice;
-  // Metin yoksa alıntı bloğu HİÇ çizilmiyor: dikey çizgi + tırnak, neyi
-  // alıntıladığını söylemeyen bir işaret olurdu. Hedefi zaten başlık anlatıyor.
-  const showChip = !!quote;
-  const comment = note?.comment ?? "";
-
-  // Yazının GERÇEK satır geometrisi — görünmez bir kopyadan ölçülüyor (aşağıya
-  // bak). `count` satır sayısı, `collapsed` ilk iki satırın kapladığı yükseklik,
-  // `full` metnin tamamı. Kırpılmış Text'in `onTextLayout`'u satırları
-  // `numberOfLines` kadar rapor ettiği için bunlar asıl yazıdan okunamıyor.
-  //
-  // Ölçümün YANINDA HANGİ METİNDEN geldiği de duruyor (`text`): FlatList
-  // hücreleri yeniden kullanılabiliyor, eski ölçüm yeni notun kutusunu yanlış
-  // boyutlandırırdı. Tazelik BURADAN TÜRETİLİYOR (`measured` — metin tutuyor
-  // mu?), ayrı bir sıfırlama efektiyle DEĞİL.
-  //
-  // ⚠️ Eskiden `useEffect(… , [comment])` ölçümü sıfırlıyordu ve o efekt iki
-  // ayrı yoldan kutuyu ÖLDÜRÜYORDU — ikisinin de belirtisi aynı: chevron hiç
-  // çizilmiyor ve kutuya basmak açmıyor (`overflowing` false → dokunuş
-  // `disabled`, üstelik karta geçip profili açıyor).
-  //  • YARIŞ: sıfırlama ile `onTextLayout` arasında sıra garantisi YOK. Pasif
-  //    efektler commit'ten sonra ayrı bir turda boşalıyor; native'in gönderdiği
-  //    satır ölçümü araya girip ÖNCE gelirse efekt onu siliyor ve bir daha
-  //    ölçüm GELMİYOR — yazı değişmediği için yeni bir text layout yok. Kutu o
-  //    kartta kalıcı olarak "ölçülmemiş" kalıyordu; yarış olduğu için de her
-  //    kartta değil, arada ("bazen bir kutuda").
-  //  • FAST REFRESH: her düzenlemede efektler yeniden çalışıyor, yazı ise aynı
-  //    kaldığı için yine yeni ölçüm gelmiyor. Aynı ölü kutu, ama her seferinde.
-  // Türetilmiş tazelikte böyle bir pencere yok: ölçüm ancak kendi metniyle
-  // birlikte geçerli sayılıyor, geri alınması gereken bir state kalmıyor.
-  const [textMetrics, setTextMetrics] = useState<{
-    text: string | null;
-    count: number;
-    collapsed: number;
-    full: number;
-  }>({
-    text: null,
-    count: 0,
-    collapsed: 0,
-    full: 0,
-  });
-  // Satır dizisi → kap yükseklikleri.
-  //
-  // ⚠️ KAPALI yükseklik ikinci satırın ALTINDAN (`y + height`) DEĞİL, ÜÇÜNCÜ
-  // satırın TEPESİNDEN (`y`) okunuyor. İkisi aynı sayı değil: `onTextLayout`
-  // satır yüksekliğini yazı tipinin doğal satır kutusundan raporluyor, biz ise
-  // `lineHeight` ile satır aralığını sıkıştırıyoruz — doğal kutu 24'ten büyük
-  // olduğunda `lines[1].y + lines[1].height` bir sonraki satırın tepesini
-  // AŞIYOR ve kap üçüncü satırdan birkaç piksel gösteriyordu ("2.3 satır").
-  // Fark harflere bağlı olduğu için de her notta değil, arada çıkıyordu.
-  // Satır tepesinden kesmek `numberOfLines={2}`'nin yaptığının aynısı.
-  //
-  // AÇIK yükseklik son satırın altı olmaya devam ediyor: orada amaç kırpmak
-  // değil, son satırın mürekkebini tam içine almak — fazladan gelen birkaç
-  // piksel yalnız kutunun altına nefes ekler.
-  const measureText = useCallback(
-    (e) => {
-      const lines = e.nativeEvent.lines;
-      if (!lines?.length) return;
-      const last = lines[lines.length - 1];
-      const fullHeight = Math.ceil(last.y + last.height);
-      // Kırpma sınırı = ilk GÖRÜNMEYECEK satırın tepesi. Metin zaten sığıyorsa
-      // (o satır yok) kırpma da yok: tam yükseklik.
-      const cut = lines[NOTE_COLLAPSED_LINES];
-      // Ölçüm ÖLÇÜLEN METİNLE birlikte yazılıyor — geçerliliğini bu taşıyor.
-      setTextMetrics({
-        text: comment,
-        count: lines.length,
-        collapsed: cut ? Math.floor(cut.y) : fullHeight,
-        full: fullHeight,
-      });
-    },
-    [comment],
-  );
-
-  // Kutunun zemini iOS 26'da CAM (bkz. NoteBoxSurface) — mürekkep o zaman açık
-  // modda da koyu moddan geliyor (bkz. glassInk). Cam yoksa zemin BlurView +
-  // `veilSurface` perdesi, yani açık modda gerçekten açık: palet olduğu gibi.
-  const glassSurface = hasLiquidGlassSurface();
-  const inkOnGlass = glassInk();
-  const textStyle = {
-    color: inkOnGlass.text,
-    fontSize: NOTE_TEXT_SIZE,
-    lineHeight: NOTE_TEXT_LINE,
-    fontWeight: NOTE_TEXT_WEIGHT,
-  };
-  // Alıntı bloğunun TEK mürekkebi: dikey çizgi, soru, tırnak ve cevap. Tek
-  // değişkenden besleniyorlar ki biri değişince öbürü geride kalmasın.
-  // `isLight()` render sırasında okunuyor — modül seviyesinde sabitlenirse tema
-  // değişince bayat kalır (bkz. theme/colors.ts).
-  //
-  // Cam yolunda POLARİTE de koyu modun tarafında: `ink()` açık modda siyaha
-  // dönüp camın üstünde yıkanıyordu, `onMediaAt` beyaz kalıyor. Alfa da koyu
-  // modunki — siyahla beyazın aynı alfadaki ağırlığı bir değil.
-  const chipInk = glassSurface
-    ? onMediaAt(NOTE_CHIP_INK_ALPHA_DARK)
-    : ink(isLight() ? NOTE_CHIP_INK_ALPHA_LIGHT : NOTE_CHIP_INK_ALPHA_DARK);
-  // Kutunun İKİNCİL mürekkebi — aç/kapa chevron'u. "not bıraktı" satırı ayrı
-  // bir değişkenden besleniyor (bkz. targetLabelInk); cam yolunda ikisi ŞU AN
-  // aynı tona denk geliyor ama bilerek ayrı: satırın tonu göze göre ayarlanan
-  // bir knob, okunki değil.
-  //
-  // Koyu modda bir tık AÇIK: kutunun zemini (cam/blur'lu fotoğraf) koyuda
-  // `textMuted`ı yutuyordu. Açık modda takas TERS yönde çalışırdı — orada
-  // `textSecondary` `textMuted`tan koyu, yani ok ağırlaşır.
-  // CAM YOLUNDA (iOS 26+) iki mod da AYNI ve bir kademe daha açık:
-  // `textSecondary` (#9CA3AF) camın üstünde hâlâ sönük kalıyordu, ok
-  // `neutral200` (#D1D5DB) ile okunuyor. Kaynak koyu palet olduğu için açık
-  // modda da aynı değer.
-  //
-  // Cam yoksa eski davranış: `isLight()` render sırasında okunuyor (palet
-  // mutasyona uğruyor, sabitleme yok).
-  const secondaryInk = glassSurface
-    ? inkOnGlass.neutral200
-    : isLight()
-      ? colors.textMuted
-      : colors.textSecondary;
-  // "…not bıraktı" satırının mürekkebi — YANITLANAN PROMPT ALINTISIYLA AYNI
-  // (`chipInk`). Satır da alıntı da tek bir şeyi anlatıyor: notun neye
-  // yazıldığını. İkisi ayrı tonda çizilince o işaret iki parçaya bölünüyordu;
-  // ortak mürekkep onları tek blok yapıyor, notun kendi metniyse (`colors.text`)
-  // ikisinin de üstünde kalıyor.
-  //
-  // ⚠️ Chevron (`secondaryInk`) hâlâ AYRI değişken: satırın tonunu ayarlamak
-  // oku sürüklememeli.
-  //
-  // Sabit renk DEĞİL: `chipInk` modla ve cam/blur yoluyla dönüyor (bkz. orada).
-  const targetLabelInk = chipInk;
-  // Prompt kartı yer yediği için açık tavan onda daha alçak. Fotoğraf kutunun
-  // İÇİNDE ve yazıdan kısa olduğu için kutunun yüksekliğine katkısı yok.
-  // Chevron akıştan çıktı (mutlak) — payı zaten alt pay içinde, ayrıca sayılmaz.
-  //
-  // ⚠️ Alt pay burada KOŞULSUZ `NOTE_BOX_PAD_BOTTOM`: tavanın bağladığı tek hal
-  // AÇIK kutu, açılabilen kutuda da ok her zaman var (bkz. `padBottom`).
-  const textMaxHeight = noteTextMaxHeight(
-    NOTE_BOX_PAD_TOP +
-      NOTE_BOX_PAD_BOTTOM +
-      (noteTargetLabel ? NOTE_TARGET_LABEL_LINE + NOTE_TARGET_LABEL_GAP : 0) +
-      (showChip ? NOTE_CHIP_HEIGHT + NOTE_CHIP_MARGIN : 0) +
-      // Gönderi kaldırıldığında alıntının altına inen tek satır — hedef
-      // etiketiyle AYNI terim: kutunun tavanı o satırı da saymalı, yoksa not
-      // bir satır eksik yer bulur.
-      (removedNotice ? NOTE_TARGET_LABEL_LINE + NOTE_TARGET_LABEL_GAP : 0),
-  );
-
-  // ── Açılma ölçüleri ────────────────────────────────────────────────────────
-  // Animasyon LAYOUT ANİMASYONUYLA DEĞİL, yazı kabının yüksekliğini kare kare
-  // sürerek yapılıyor. Sebep: açılışta kartın üç ayrı parçası (kutu, fotoğraf +
-  // isim bloğu, alt perde) birlikte hareket etmeli. Layout animasyonu her birini
-  // AYRI zamanlıyor, aralarında senkron garantisi yok — fotoğraf tek karede
-  // zıplarken kutu yumuşak açılıyordu. Yükseklik gerçekten değiştiği için blok
-  // (tabana çivili) kendiliğinden yukarı kayıyor ve fotoğraf onunla birlikte
-  // akıyor; perde ve kimlik bloğu da AYNI `progress` değerinden besleniyor.
-  //
-  // ⚠️ Yükseklikler `satır sayısı × lineHeight` ile HESAPLANMIYOR, metnin kendi
-  // satır geometrisinden okunuyor (bkz. measureText).
-  //
-  // ⚠️ ÖLÇÜM GELMEDEN kap yüksekliği HİÇ VERİLMİYOR (bkz. `measured`). Eskiden
-  // burada `2 × lineHeight` tahmini vardı ve o tahmin gerçek satır adımını
-  // tutmadığı için ilk kare(ler)de üçüncü satırdan yarım bir dilim görünüyordu:
-  // sekme değişimi / listeye ilk giriş gibi her yeni mount'ta "önce bozuk, sonra
-  // düzeliyor". Tahmin yerine o karede kırpmayı `numberOfLines` yapıyor —
-  // yükseklik metnin kendisinden geliyor, yani kaç piksel olduğunu bilmemize
-  // gerek kalmıyor.
-  //
-  // ⚠️ "Ölçüldü" = SIFIRDAN ÇOK SATIR + ölçümün metni ŞU ANKİ notun metni.
-  // İkinci koşul geri dönüştürülen hücrenin bayat ölçümünü eliyor (eski
-  // sıfırlama efektinin işi, ama bu sefer bir kare bile yanlış yükseklik
-  // vermeden — kap ölçüm gelene kadar zaten `numberOfLines` ile kırpılıyor).
-  const measured = textMetrics.count > 0 && textMetrics.text === comment;
-  const collapsedTextHeight = measured ? textMetrics.collapsed : 0;
-  const fullTextHeight = measured ? textMetrics.full : 0;
-  const expandedTextHeight = Math.min(fullTextHeight, textMaxHeight);
-  const overflowing = measured && textMetrics.count > NOTE_COLLAPSED_LINES;
-  const growth = overflowing
-    ? Math.max(0, expandedTextHeight - collapsedTextHeight)
-    : 0;
-  // Kutunun alt payı, okun payını YALNIZ ok çizilirken taşır — ok da yalnız
-  // `overflowing` iken çiziliyor (aşağıda). Sığan notta (tipik olarak fotoğrafa
-  // bırakılmış kısa bir not) alt payda 16px'i dolduran hiçbir şey kalmıyordu:
-  // içeriğin üstünde 22, altında 38 vardı ve kutu gözle görülür biçimde alta
-  // ağır basıyordu. Ok yokken paylar simetrik.
-  //
-  // ⚠️ Kaynak `overflowing`, ayrı bir koşul DEĞİL: pay ile ok tek değerden
-  // beslendiği için ikisi hep aynı karede yerine oturur. Ölçümden önce ikisi de
-  // yok — o karede fazladan boşluk çizilmemiş oluyor.
-  const padBottom = overflowing ? NOTE_BOX_PAD_BOTTOM : NOTE_BOX_PAD_TOP;
-  // Kart, perdesini ve kimlik bloğunu bu büyümeye göre ayarlıyor.
-  useEffect(() => {
-    onExpandInfo?.(growth);
-  }, [growth, onExpandInfo]);
-
-  // Ölçüm gelene kadar UYGULANMIYOR (aşağıda `measured &&`): o karede kap
-  // otomatik yükseklikte, yani `numberOfLines`'ın kırptığı iki satır ne kadarsa
-  // o kadar. Tipik yön tek taraflı (önce yükseklik yok, ölçüm gelince var);
-  // notun metni değişip ölçüm sıfırlandığında (bkz. useEffect) stil geri
-  // çekiliyor ve o karede React yükseklik prop'unu hiç göndermediği için kap
-  // otomatiğe dönüyor — Reanimated'ın yazdığı değer takılı kalmıyor.
-  const textBoxStyle = useAnimatedStyle(
-    () => ({ height: collapsedTextHeight + progress.value * growth }),
-    [collapsedTextHeight, growth],
-  );
-  // Chevron aşağı bakarken kapalı, yukarı bakarken açık. Dönüş kutuyla AYNI
-  // değerden: iki ayrı animasyon olsaydı ok kutudan önce/sonra yerine oturur.
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${progress.value * 180}deg` }],
-  }));
-
+  if (!pressable) return <View style={style}>{content}</View>;
   return (
-    // Not bölgesi = kutunun kendisi; üstünde kuyruk/çıkıntı yok.
-    <View style={{ marginTop: 8 }}>
-      {/* Kutu — CAM zemin. Kabın kendisinde padding YOK: Yoga mutlak çocuğu
-          ebeveynin PADDING kutusuna göre konumlandırır, yani cam katmanları
-          padding kadar içeri kaçar ve kenarlarda dolgusuz bir çerçeve kalırdı.
-          Padding içerideki sarmalayıcıda.
-
-          Kutunun yüksekliği içeriğinden geliyor; içerideki yazı kabı kare kare
-          büyüyüp küçüldüğü için kutu da onunla birlikte açılıp kapanıyor.
-          Tabana çivili olduğundan büyüme YUKARI doğru.
-
-          ⚠️ Buraya `layout={LinearTransition}` EKLEME. Kutunun yüksekliği zaten
-          kare kare değişiyor; üstüne bir de layout geçişi konunca iki animasyon
-          aynı anda çalışıyor ve kutu kendi eğrisinde, kartın geri kalanı (saf
-          layout'la hareket ettiği için) başka bir eğride gidiyordu — kapanışta
-          kutunun alt kenarı bir an sıçrıyordu. */}
-      <View
-        style={{
-          borderRadius: NOTE_BOX_RADIUS,
-          borderCurve: "continuous",
-          overflow: "hidden",
-        }}
-      >
-        {/* ⚠️ Zemin katmanı `absoluteFill` DEĞİL: sabit yükseklikte ve kutunun
-            TABANINA çivili. Kutuyla birlikte boyutlansaydı her karede yeniden
-            ölçülür ve native efekt görünümü layout'un bir kare gerisinde
-            kalırdı: kapanışta camın alt kenarı bir an yukarı sıçrayıp köşe
-            yuvarlaklığı düzleşiyor, soldaki fotoğraf da (saf layout'la hareket
-            ettiği için) camdan önde gidiyordu. Sabit boyutlu zemin hiç yeniden
-            ölçülmüyor; görünen kısmını kutunun kırpması belirliyor, o da tek
-            kaynaktan (yazı kabının yüksekliği) geliyor.
-            Malzeme seçimi (native cam / blur+perde) NoteBoxSurface'ta. */}
-        <NoteBoxSurface />
-
-        {/* Kutunun TAMAMI basılabilir: notu açmak için ince bir bağlantıya
-            nişan almak gerekmiyor. Yazı zaten sığıyorsa `disabled` — o zaman
-            dokunuş buradan geçip karta gider ve profil açılır (basılı ama
-            hiçbir şey yapmayan bir kutu, ölü dokunuş olurdu).
-            `activeOpacity: 1` — geri bildirim açılma animasyonunun kendisi;
-            cam yüzeyi soldurmak kutuyu pasif gösteriyordu. */}
-        <TouchableOpacity
-          activeOpacity={1}
-          disabled={!overflowing}
-          onPress={onToggle}
-          accessibilityRole={overflowing ? "button" : undefined}
-          // Etiket BURADA: ipucu artık yazı değil chevron, sesli okuyucuya
-          // "aşağı ok" diye okunurdu.
-          accessibilityLabel={
-            overflowing
-              ? expanded
-                ? t("note.seeLess")
-                : t("note.seeMore")
-              : undefined
-          }
-          style={{
-            paddingTop: NOTE_BOX_PAD_TOP,
-            // Okun payı yalnız ok varken (bkz. `padBottom`).
-            paddingBottom: padBottom,
-            paddingHorizontal: NOTE_BOX_PAD_H,
-          }}
-        >
-          {/* Prompt hedefi — fotoğraf yerine geçen alıntı, yazının ÜSTÜNDE tam
-          genişlikte. Yalnız CEVAP, başında tırnak: prompt BAŞLIĞI çizilmiyor
-          (gerekçe NOTE_CHIP_* sabitlerinin başında). ÇİZGİ, TIRNAK ve CEVAP
-          ÜÇÜ DE aynı mürekkepte (`chipInk`): burası hedefi hatırlatan tek bir
-          işaret, üç ayrı tonda çizilince blok dağılıyordu. Okunacak yer kutunun
-          asıl metni; cevap beyazken (`colors.text`) notun kendisiyle yarışıp
-          alıntıyı ana metin gibi gösteriyordu, ayrımı artık mürekkep taşıyor.
-          Alıntıyı cam kutudan
-          ayıran şey KONTUR DEĞİL, başındaki dikey çizgi: çerçeve kutunun içinde
-          ikinci bir kutu gibi duruyordu, çizgi ise sohbette yanıtlanan mesajın
-          işaretiyle aynı dil.
-
-          ⚠️ Çizgi DIŞTAKİ kaba mutlak konumlu, yazı sütunu `marginLeft` ile
-          kaçıyor. `paddingLeft` + `left: 0` OLMAZ: Yoga mutlak çocuğu
-          ebeveynin PADDING kutusuna göre yerleştirir, çizgi de yazıyla birlikte
-          içeri kayıp onun üstüne binerdi (aynı tuzak kutunun kendi dolgusunda
-          da var, bkz. yukarıdaki not). */}
-          {showChip && (
-            <View
-              pointerEvents="none"
-              style={{
-                alignSelf: "flex-start",
-                maxWidth: "100%",
-                marginBottom: NOTE_CHIP_MARGIN,
-              }}
-            >
-              {/* Renk kenarlık token'ı DEĞİL, modla dönen şeffaf mürekkep:
-                  sebep sabitin başında. */}
-              <View
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: NOTE_CHIP_LINE_INSET_V,
-                  bottom: NOTE_CHIP_LINE_INSET_V,
-                  width: NOTE_CHIP_LINE_W,
-                  borderRadius: NOTE_CHIP_LINE_W / 2,
-                  backgroundColor: chipInk,
-                }}
-              />
-              {/* Tırnak + cevap TEK satır. Eskiden burada iki katman vardı
-                  (soru sütunu + içinde cevap satırı); soru kalkınca sütunun
-                  taşıdığı tek şey `marginLeft` ve dikey dolgu kaldı, o da bu
-                  satıra taşındı — geometri aynı, bir View eksik. */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "flex-start",
-                  gap: 6,
-                  marginLeft: NOTE_CHIP_LINE_W + NOTE_CHIP_LINE_GAP,
-                  paddingVertical: NOTE_CHIP_PAD_V,
-                }}
-              >
-                <SFIcon
-                  name="quote.opening"
-                  fallback={MessageCircle}
-                  size={NOTE_CHIP_ICON_SIZE}
-                  color={chipInk}
-                  // İkon satırın ortasına otursun: (satır boyu - ikon) / 2.
-                  style={{
-                    marginTop: (NOTE_CHIP_ANSWER_LINE - NOTE_CHIP_ICON_SIZE) / 2,
-                  }}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    color: chipInk,
-                    fontSize: NOTE_TEXT_SIZE,
-                    fontWeight: NOTE_TEXT_WEIGHT,
-                    lineHeight: NOTE_CHIP_ANSWER_LINE,
-                    flexShrink: 1,
-                  }}
-                >
-                  {quote}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Gönderi silinmiş/kaldırılmış: not YİNE OKUNUYOR (kullanıcının
-              ödediği şey o), yalnız bağlamın artık var olmadığını söyleyen bir
-              satır düşüyor.
-
-              ⚠️ ALINTI BLOĞUNUN DIŞINDA. İçindeyken `showChip`e (yani
-              `excerpt`in dolu olmasına) bağlıydı: moderasyon kaldırması metni
-              de götürdüğünde satır HİÇ çizilmiyordu — tam da en çok gerektiği
-              hâlde. Yükseklik hesabı (`noteTextMaxHeight`) bu satırı zaten
-              koşulsuz sayıyor, yani iki taraf ancak böyle tutuyor. */}
-          {!!removedNotice && (
-            <Text
-              numberOfLines={1}
-              style={{
-                color: chipInk,
-                fontSize: NOTE_TARGET_LABEL_SIZE,
-                lineHeight: NOTE_TARGET_LABEL_LINE,
-                fontWeight: "400",
-                marginBottom: NOTE_CHIP_MARGIN,
-              }}
-            >
-              {removedNotice}
-            </Text>
-          )}
-
-          {/* Fotoğraf solda, yazı sağında — birbirlerine göre DİKEYDE ORTALI.
-              Sütunlar ayrı: fotoğraf yazının hizasına değil, yazı bloğunun
-              ortasına oturuyor.
-              Ortalanan blok = "not bıraktı" satırı + notun kendisi. Chevron bu
-              satırın DIŞINDA (aşağıda): sütunun içindeyken kendi yüksekliğini
-              ortalamaya katıyor, fotoğrafı yarım satır yukarı itiyordu. */}
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            {!!photoUri && (
-              <Image
-                source={{ uri: photoUri }}
-                pointerEvents="none"
-                style={{
-                  width: NOTE_THUMB_SIZE,
-                  height: NOTE_THUMB_SIZE,
-                  marginRight: NOTE_THUMB_GAP,
-                  // borderCurve YOK: expo-image'ın ImageStyle'ı kabul etmiyor.
-                  borderRadius: 14,
-                  backgroundColor: colors.surfaceTranslucent,
-                }}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                recyclingKey={photoUri}
-                transition={150}
-              />
-            )}
-
-            <View style={{ flex: 1 }}>
-              {/* Başlık — soldaki fotoğrafın ne olduğunu yazıyla söyler. */}
-              {!!noteTargetLabel && (
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    // Alıntının mürekkebiyle aynı (bkz. targetLabelInk).
-                    color: targetLabelInk,
-                    fontSize: NOTE_TARGET_LABEL_SIZE,
-                    lineHeight: NOTE_TARGET_LABEL_LINE,
-                    fontWeight: "400",
-                    marginBottom: NOTE_TARGET_LABEL_GAP,
-                  }}
-                >
-                  {noteTargetLabel}
-                </Text>
-              )}
-
-              {/* Yazı kabı — yüksekliği ANİMASYONLU, taşan kısmı kırpılıyor. Yazının
-            kendisi hep TAM: kırpmayı `numberOfLines` değil kap yapıyor, böylece
-            açılırken satırlar perde gibi ortaya çıkıyor (numberOfLines
-            animasyon aralarında zıplayarak değişirdi).
-            Kap yüksekliği gerçek layout olduğu için kutu — ve tabana çivili
-            olan blok — kare kare yukarı açılıyor. */}
-              <Animated.View
-                style={[{ overflow: "hidden" }, measured && textBoxStyle]}
-              >
-                {/* Tavana dayanan uzun notlarda (bkz. noteTextMaxHeight) yazı kendi
-                içinde kayıyor: kırpma yok, notun tamamı okunabiliyor. Kapalıyken
-                ve sığan notlarda kaydırma KAPALI — kutuya basmak açıp
-                kapatmalı, kaydırma jestini yutmamalı. */}
-                <ScrollView
-                  scrollEnabled={expanded && fullTextHeight > textMaxHeight}
-                  showsVerticalScrollIndicator={false}
-                  bounces={false}
-                  nestedScrollEnabled
-                  // iOS bir ScrollView'a kendiliğinden içerik payı ekleyebiliyor
-                  // (navigasyon bağlamına göre). Burada o pay yazıyı aşağı iter ve
-                  // kap tam iki satıra ayarlıyken üçüncü satırdan bir dilim
-                  // görünmesine yol açar.
-                  automaticallyAdjustContentInsets={false}
-                  contentInsetAdjustmentBehavior="never"
-                >
-                  {/* Kırpma NORMALDE kabın yüksekliğinden geliyor (açılırken
-                      satırlar perde gibi çıksın diye). Ölçüm gelene kadar kap
-                      yüksekliksiz olduğu için o tek kare(ler)de işi
-                      `numberOfLines` yapıyor — yoksa notun TAMAMI çizilir ve
-                      kutu birden beş satır boyunda açılırdı.
-                      ⚠️ Ölçüm gelince KALKMALI: kapalıyken zararsız ama açılışta
-                      satırlar iki satırda takılı kalırdı. */}
-                  <Text
-                    style={textStyle}
-                    numberOfLines={measured ? undefined : NOTE_COLLAPSED_LINES}
-                  >
-                    {comment}
-                  </Text>
-                </ScrollView>
-                {/* Ölçüm kopyası — görünmez, mutlak konumlu (layout'a girmez, kabın
-              yüksekliğinden de etkilenmez). Tek işi yazının GERÇEK satır
-              sayısını söylemek; kap onu kırptığı için asıl yazıdan okunamıyor. */}
-                <Text
-                  pointerEvents="none"
-                  accessible={false}
-                  accessibilityElementsHidden
-                  importantForAccessibility="no-hide-descendants"
-                  onTextLayout={measureText}
-                  style={[
-                    textStyle,
-                    {
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      top: 0,
-                      opacity: 0,
-                    },
-                  ]}
-                >
-                  {comment}
-                </Text>
-              </Animated.View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Durum ipucu — kutunun ALT ORTASINDA, mutlak. Akıştan çıktığı için
-            kutuya satır eklemiyor; oturduğu yer yazının değil kutunun alt payı,
-            yani son satırla çakışmıyor (bkz. NOTE_CHEVRON_BOTTOM).
-            Yazı yerine CHEVRON: kutuda okunacak tek şey notun kendisi olsun,
-            ipucu kelime kalabalığı yapmasın. Kendi dokunma hedefi yok —
-            `pointerEvents: none`, basılabilir olan altındaki kutunun tamamı;
-            sesli okuyucu için etiket kutunun üstünde (accessibilityLabel).
-            Aşağı bakan ok açılınca yukarı dönüyor; dönüş kutunun açılışıyla
-            AYNI değerden sürülüyor, yani ikisi tam aynı eğride.
-            ⚠️ Dönüş İKİ katmanlı: dıştaki kap kutu kadar GENİŞ ve oku ortalıyor,
-            `rotate` içteki ok kadar dar katmanda. Rotasyon kabın merkezinden
-            hesaplandığı için geniş kabı döndürmek oku ara karelerde yay
-            çizdirirdi. */}
-        {overflowing && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: NOTE_CHEVRON_BOTTOM,
-              alignItems: "center",
-            }}
-          >
-            <Animated.View style={chevronStyle}>
-              <SFIcon
-                name="chevron.down"
-                fallback={ChevronDown}
-                size={NOTE_CHEVRON_SIZE}
-                // Kutunun ikincil katmanı (bkz. secondaryInk): ok, notun
-                // metninden bir kademe sönük — ipucu, içerik değil.
-                color={secondaryInk}
-                strokeWidth={2.4}
-                weight="semibold"
-              />
-            </Animated.View>
-          </View>
-        )}
-      </View>
-    </View>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      style={style}
+    >
+      {content}
+    </TouchableOpacity>
   );
 }
 
@@ -1491,6 +556,12 @@ function LikeCard({
   // İsim satırının üstündeki pill'in metni. Diğer etiketler gibi PROP: kart
   // i18n hook'u tutmuyor, çeviri ekranın elinde (bkz. likeLabel/recoverLabel).
   fireLabel = undefined,
+  // Notlu kartın pill'i: metni ("Sana not bıraktı") ve basınca notu açan
+  // handler. Handler KARTI parametre alıyor (memo için, bkz. aşağıdaki not);
+  // notun metni kartta DEĞİL, ekranın açtığı sheet'te (LikeNoteSheet).
+  noteLabel = undefined,
+  noteOpenLabel = undefined,
+  onNotePress = undefined,
   // Kilitli karttaki "ne arıyor" pilinin etiketi. Diğer etiketler gibi kart
   // i18n hook'u tutmuyor; ekran `t`'ye bağlı SABİT bir çözücü veriyor (kartı
   // parametre alıyor, memo bozulmuyor). Kural likerCardTeaser'da, keşif
@@ -1539,77 +610,28 @@ function LikeCard({
   // Blok kart tabanından bu kadar yukarıda. Üç yerde birden okunuyor (bloğun
   // konumu, perdeyi besleyen ölçüm, kilitli kartın placeholder'ı) — üçü
   // ayrışırsa perde blokla aynı yerde başlamıyor.
-  const blockBottom = item.note?.comment
-    ? CARD_BOTTOM_INSET_NOTE
-    : CARD_BOTTOM_INSET;
+  const blockBottom = CARD_BOTTOM_INSET;
 
-  // ── Not kutusunun açılması ────────────────────────────────────────────────
-  // Durum ve ilerleme kutuda DEĞİL burada: açılış kartın üç parçasını birden
-  // ilgilendiriyor (kutu büyür, kimlik bloğu solar, alt perde uzar) ve üçünün
-  // AYNI eğride gitmesinin tek yolu tek bir paylaşılan değerden beslenmeleri.
-  const [noteExpanded, setNoteExpanded] = useState(false);
-  const noteProgress = useSharedValue(0);
-  // Kutunun açılınca kazanacağı yükseklik (px) — kutu ölçüp buraya bildiriyor.
-  const [noteGrowth, setNoteGrowth] = useState(0);
-  useEffect(() => {
-    noteProgress.value = withTiming(noteExpanded ? 1 : 0, {
-      duration: NOTE_EXPAND_MS,
-      easing: NOTE_EXPAND_EASING,
-    });
-  }, [noteExpanded, noteProgress]);
-  // Animasyon boyunca alt bloğun yüksekliği kare kare değişiyor; `onLayout`
-  // bunu her karede state'e yazsaydı kart saniyede 60 kez render olurdu. Ölçüm
-  // yalnız DURAĞAN kapalı halde alınıyor, açılışın yarattığı fark zaten
-  // `noteGrowth` olarak biliniyor.
-  const noteSettlingRef = useRef(false);
-  const toggleNote = useCallback(() => {
-    noteSettlingRef.current = true;
-    setTimeout(() => {
-      noteSettlingRef.current = false;
-    }, NOTE_EXPAND_MS + 60);
-    setNoteExpanded((v) => !v);
-  }, []);
-  // Kart listeden düşüp yerine yenisi geldiğinde açık kalmış bir kutu, yeni
-  // notu açık gösterirdi.
-  const noteKey = item.note?.comment;
-  useEffect(() => {
-    setNoteExpanded(false);
-  }, [noteKey]);
+  // Kartın pill'i — NOT ÖNCE: sekmeler de aynı sırayla ayrılıyor (bkz.
+  // LikesScreen > likesByTab). Fire ve not aynı kayıtta BİRLİKTE gelemiyor (biri
+  // gönderildikten sonra o kişiye ikincisi gönderilemiyor), sıra yalnız emniyet.
+  // `isNote` tek başına da yetiyor: canlı gelen kartta önizleme boş olabiliyor
+  // (bkz. LikesScreen'in incomingLike dalı) — pill yine not der, ama okunacak
+  // metin olmadığı için basılamaz (chevron yok).
+  const hasNote = !!item.note?.comment || !!item.isNote;
+  const noteReadable = !!item.note?.comment && !!onNotePress;
+  const handleNotePress = useCallback(
+    () => onNotePress?.(item),
+    [onNotePress, item],
+  );
 
-  // Alt bloğun (isim + üniversite + not) kart tabanından ölçülen yüksekliği —
-  // alt perdenin boyu buradan geliyor. `0` yalnız ilk kare.
-  //
-  // ⚠️ BLOK MUTLAK KONUMDA KALMALI. Akışa alıp perdeyi Yoga'ya ölçtürmeyi
-  // denedik (ölçüm/state derdi ortadan kalkıyordu) ama kutunun Reanimated'la
-  // kare kare değişen yüksekliği o zaman ÜST KABA yayılıyor: React commit'i ile
-  // UI-thread'in yazdığı yükseklik bir kare ayrıştığında tüm blok zıplıyor,
-  // açılış "anlık açılıp kapanmış" gibi görünüyordu. Mutlak blokta yükseklik
-  // değişimi kendi alt ağacında kalıyor.
+  // Alt bloğun (isim + üniversite + pill) kart tabanından ölçülen yüksekliği —
+  // alt perdenin boyu buradan geliyor. `0` yalnız ilk kare; o karede perde
+  // tabanında (kartın %33'ü) duruyor, blok ondan kısa olduğu için fark görünmez.
   const [contentHeight, setContentHeight] = useState(0);
-  // Perdenin ölçüm gelmeden önceki TABANI. Notsuz kartta blok kısa olduğu için
-  // taban kartın %33'ü; notlu kartta blok bundan çok daha uzun ve ilk karede
-  // %33'e düşüp `onLayout` ile gerçek boya SIÇRIYORDU — sekmeye her girişte
-  // görünen "perde flash"ının sebebi buydu.
-  // Notlu kartta taban artık kapalı kutunun kendi ölçülerinden hesaplanıyor
-  // (NOTE_CARD_BLUR_FLOOR): ilk kare zaten doğru yerde, `onLayout` yalnız
-  // birkaç piksellik farkı düzeltiyor — o da görünmüyor.
-  const blurFloor = item.note?.comment
-    ? NOTE_CARD_BLUR_FLOOR
-    : CARD_HEIGHT * 0.33;
-  // Perde kutuyla birlikte uzuyor: yükseklik state'ten değil, kutunun sürdüğü
-  // ilerlemeden geliyor — arada bir kare bile kaysa perde zıplıyor gibi
-  // okunuyor.
-  const bottomBlurStyle = useAnimatedStyle(
-    () => ({
-      height: Math.min(
-        CARD_HEIGHT,
-        Math.max(
-          blurFloor,
-          contentHeight + noteProgress.value * noteGrowth + BOTTOM_BLUR_LEAD,
-        ),
-      ),
-    }),
-    [contentHeight, noteGrowth, blurFloor],
+  const bottomBlurHeight = Math.min(
+    CARD_HEIGHT,
+    Math.max(CARD_HEIGHT * 0.33, contentHeight + BOTTOM_BLUR_LEAD),
   );
 
   // Kartta gösterilecek üniversite. `WhoLikedMe` liste yanıtı bu alanı her
@@ -1617,14 +639,6 @@ function LikeCard({
   // Alan kartı kuran map'te `universityNameDisplay`'den dolduruluyor: ham
   // `universityName` DB'deki Türkçe resmî ad, dile göre değişmiyor.
   const universityLabel = item.universityName;
-
-  // İsim/yaş/üniversite — not açılırken yavaşça siliniyor. Kutu onların üstüne
-  // doğru büyüdüğü için ikisi bir arada kalsaydı yazı yazının üstüne binerdi;
-  // açık haldeki tek konu notun kendisi.
-  const identityStyle = useAnimatedStyle(
-    () => ({ opacity: 1 - noteProgress.value }),
-    [],
-  );
 
   // Çıkış — kart yalnız GÖRSEL olarak gider; veriden düşürmeyi ekran yapıyor
   // (bkz. runCardExit), o yüzden burada bitişte çağrılacak bir callback yok.
@@ -1799,8 +813,7 @@ function LikeCard({
                 // beyazı sütlü, siyahı kömür. Sistem malzemesi ikisinin arası:
                 // aynı kalınlıkta bile altındaki fotoğrafın rengini geçiriyor,
                 // yani kart hâlâ "bulanık bir fotoğraf" gibi okunuyor.
-                // Kartın NOT KUTUSU da aynı kaptan besleniyor — tek kartta iki
-                // farklı cam malzemesi olmuyor. Açık modda bir kademe incesi
+                // Açık modda bir kademe incesi
                 // (bkz. lockedVeilTint): chrome'un açık hâli iki katmanda
                 // fotoğrafı tamamen yutuyordu.
                 // ⚠️ Bu tint MODLA DÖNÜYOR (foto üstü örtüler için istisna,
@@ -1950,21 +963,16 @@ function LikeCard({
                   Karartma yerine maskeli hafif blur (üstten transparan → alta doğru).
                   Yükseklik SABİT DEĞİL: alt blok ne kadar yer kaplıyorsa perde
                   onun tepesinden başlıyor (+ nefes payı), yani isim satırı her
-                  zaman perdenin İÇİNDE kalıyor. Not açılıp kapandıkça yükseklik
-                  değişiyor — o değişim kutununkiyle AYNI değerden sürülüyor
-                  (bkz. bottomBlurStyle), yoksa perde kutudan önce/sonra sıçrıyor.
-                  İlk karenin doğru yerde başlaması ise `blurFloor`un işi. */}
-              <Animated.View
+                  zaman perdenin İÇİNDE kalıyor (bkz. bottomBlurHeight). */}
+              <View
                 pointerEvents="none"
-                style={[
-                  {
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                  },
-                  bottomBlurStyle,
-                ]}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: bottomBlurHeight,
+                }}
               >
                 <MaskedView
                   style={{ flex: 1 }}
@@ -2001,68 +1009,60 @@ function LikeCard({
                     style={StyleSheet.absoluteFill}
                   />
                 </MaskedView>
-              </Animated.View>
-              {/* Notlu kartta blok kart tabanına daha yakın oturuyor (bkz.
-                  CARD_BOTTOM_INSET_NOTE): kutu bir satır bile eklendiğinde
-                  fotoğrafın ortasına doğru tırmanıyordu.
-                  Blok tabana çivili: not açılınca yüksekliği büyüyor ve TEPESİ
-                  yukarı kayıyor — fotoğraf da isim de bu yüzden kutuyla
-                  birlikte akıyor. Bunun için ayrı bir animasyon YOK, kutunun
-                  yüksekliği gerçekten kare kare değişiyor.
-                  ⚠️ MUTLAK KONUM ŞART, akışa alma: sebebi contentHeight'ın
-                  yanındaki notta. */}
+              </View>
+              {/* Kimlik bloğu — kart tabanına çivili, pill + isim + üniversite. */}
               <View
                 onLayout={(e) => {
-                  // Açılış/kapanış sırasında ölçme (bkz. noteSettlingRef).
-                  if (noteSettlingRef.current || noteExpanded) return;
                   // Perdenin boyu bloğun TEPESİNDEN kart tabanına: kendi
                   // yüksekliği + tabana uzaklığı (bkz. blockBottom).
                   setContentHeight(e.nativeEvent.layout.height + blockBottom);
                 }}
                 style={{
                   position: "absolute",
-                  left: item.note?.comment
-                    ? CARD_SIDE_INSET
-                    : CARD_SIDE_INSET_PLAIN,
-                  right: item.note?.comment
-                    ? CARD_SIDE_INSET
-                    : CARD_SIDE_INSET_PLAIN,
+                  left: CARD_SIDE_INSET_PLAIN,
+                  right: CARD_SIDE_INSET_PLAIN,
                   bottom: blockBottom,
                 }}
               >
                 {/* Ürün pill'i — isim satırının ÜSTÜNDE. Karttaki tek tür
-                    işareti: köşedeki rozet (Fire kalbi / not balonu)
-                    orası bir aksiyonun yeri olduğu için kaldırılmıştı ve
-                    "Beğeniler"de türü sekme söylüyordu; "Kaçırdıkların" tek
-                    karma liste olduğu için orada hiçbir şey söylemiyordu.
-                    YALNIZ FIRE'DA: notta kartın kendi not kutusu zaten
-                    ne olduğunu anlatıyor, düz beğenide de söylenecek bir şey
-                    yok — kartın listede olması zaten "beğendi" demek.
-                    ⚠️ Kimlik satırları gibi `identityStyle` ile SOLMUYOR,
-                    doğrudan kaldırılıyor. Not açılınca kutu bu satırların
-                    üstüne büyüdüğü için gitmesi gerekiyor; geçişi yumuşatmak
-                    için buraya fade EKLEME — kimlik satırları zaten soluyor,
-                    ikinci bir soluşan katman geçişi bulanıklaştırıyor.
-                    ⚠️ Fire + not aynı kartta olursa blok bu pill kadar
-                    (~32px) uzuyor; NOTE_CARD_BLUR_FLOOR / NOTE_IDENTITY_BLOCK
-                    tahminleri bunu saymıyor. Bilinçli: ölçüm zaten `onLayout`ile
-                    düzeliyor, sapma yalnız ilk karede ve perdede görünmüyor. */}
-                {item.isSuperLike && !!fireLabel && !noteExpanded && (
-                  <FirePill
+                    işareti: köşedeki rozet (Fire kalbi / not balonu) orası bir
+                    aksiyonun yeri olduğu için kaldırılmıştı; "Kaçırdıkların"
+                    tek karma liste olduğu için türü sekme de söylemiyor.
+                    Düz beğenide pill YOK — kartın listede olması zaten
+                    "beğendi" demek. NOT ÖNCE (bkz. hasNote). */}
+                {hasNote && !!noteLabel ? (
+                  <LikeProductPill
+                    label={noteLabel}
+                    accent={modeAccent(mode)}
+                    glyph={
+                      <NoteGlyph
+                        size={LIKE_CARD_PILL_ICON_SIZE}
+                        color={colors.onMediaInverse}
+                      />
+                    }
+                    onPress={noteReadable ? handleNotePress : undefined}
+                    accessibilityLabel={noteOpenLabel}
+                  />
+                ) : item.isSuperLike && !!fireLabel ? (
+                  <LikeProductPill
                     label={fireLabel}
                     accent={modeAccent(mode)}
-                    mode={mode}
+                    glyph={
+                      // Glif modla dönüyor: Flört alev, Arkadaş yıldız.
+                      <FireGlyph
+                        size={LIKE_CARD_PILL_ICON_SIZE}
+                        color={colors.onMediaInverse}
+                        mode={mode}
+                      />
+                    }
                   />
-                )}
-                <Animated.View
-                  style={[
-                    {
-                      flexDirection: "row",
-                      alignItems: "baseline",
-                      maxWidth: "90%",
-                    },
-                    identityStyle,
-                  ]}
+                ) : null}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    maxWidth: "90%",
+                  }}
                 >
                   <Text
                     numberOfLines={1}
@@ -2113,41 +1113,23 @@ function LikeCard({
                       style={{ marginLeft: 4 }}
                     />
                   )}
-                </Animated.View>
+                </View>
                 {/* Üniversite — isim/yaş satırının ALTINDA, aynı bloğun
-                    ikinci satırı. `identityStyle` ile isimle birlikte solar:
-                    not açılınca kutu bu iki satırın üstüne doğru büyüyor. */}
+                    ikinci satırı. */}
                 {!!universityLabel && (
-                  <Animated.Text
+                  <Text
                     numberOfLines={1}
-                    style={[
-                      {
-                        marginTop: LIKE_CARD_UNI_GAP,
-                        maxWidth: "90%",
-                        color: colors.onMedia,
-                        fontSize: LIKE_CARD_UNI_SIZE,
-                        lineHeight: LIKE_CARD_UNI_LINE,
-                        fontWeight: "600",
-                      },
-                      identityStyle,
-                    ]}
+                    style={{
+                      marginTop: LIKE_CARD_UNI_GAP,
+                      maxWidth: "90%",
+                      color: colors.onMedia,
+                      fontSize: LIKE_CARD_UNI_SIZE,
+                      lineHeight: LIKE_CARD_UNI_LINE,
+                      fontWeight: "600",
+                    }}
                   >
                     {universityLabel}
-                  </Animated.Text>
-                )}
-                {/* Not — ismin ve üniversitenin ALTINDA, kendi kutusunda.
-                    Kartın en değerli satırı: kişi bir şey YAZMIŞ. Hedef bilgisi
-                    (hangi fotoğraf / hangi prompt) kutunun solunda duruyor —
-                    notun anlamı neye yazıldığından ayrılamıyor (bkz.
-                    LikeNoteBox). */}
-                {!!item.note?.comment && (
-                  <LikeNoteBox
-                    note={item.note}
-                    expanded={noteExpanded}
-                    onToggle={toggleNote}
-                    progress={noteProgress}
-                    onExpandInfo={setNoteGrowth}
-                  />
+                  </Text>
                 )}
               </View>
             </>

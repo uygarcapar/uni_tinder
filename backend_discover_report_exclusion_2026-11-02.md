@@ -1,6 +1,10 @@
 # Keşif — **şikayet edilen kullanıcılar adaylardan elensin**
 
-> **Durum: BEKLİYOR.** İstemci tarafı bugün yapıldı (§4): şikayet başarıyla
+> **Durum: GEÇERSİZ (2026-11-06).** Ürün kararı tersine döndü: şikayet hiçbir
+> şeyi gizlemiyor, engel gizliyor ve geri alınabiliyor. Bkz.
+> `backend_report_no_hide_2026-11-06.md`. Aşağıdaki metin tarihçe için duruyor.
+>
+> ~~**Durum: BEKLİYOR.**~~ İstemci tarafı bugün yapıldı (§4): şikayet başarıyla
 > kaydedilince kart, engelleme işaretli olsun olmasın desteden düşüyor. Ama bu
 > korumanın penceresi **15 saniye** — kalıcı eleme ancak sunucuda kurulabilir.
 

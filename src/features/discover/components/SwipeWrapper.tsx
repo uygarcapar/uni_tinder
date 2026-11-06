@@ -3,7 +3,7 @@ import { Dimensions, StyleSheet, View } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
-  Easing,
+  // Easing, // uçuş park edildi (bkz. runCoveredExit)
   useAnimatedRef,
   useSharedValue,
   useAnimatedStyle,
@@ -20,7 +20,8 @@ import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import type { AppMode } from "../modeTheme";
 import { runFlameSweep } from "@/features/discover/flameSweep";
-import { flyOutDurationMs } from "@/features/discover/exitFlight";
+// Uçuş park edildi (bkz. runCoveredExit) — geri alırken bu importu aç.
+// import { flyOutDurationMs } from "@/features/discover/exitFlight";
 import uiBus, {
   // `cardChromeAnim` ARTIK OKUNMUYOR: tek kullanıcısı `unwindForExit`ti
   // (çıkış uçuşunda kromu oranlı geri sarmak) ve uçuşla birlikte kalktı.
@@ -190,10 +191,15 @@ const SWIPE_THRESHOLD = 85;
  *    (Fire/Spark · not) kalıyor. Geri al da alevsiz (bkz. DiscoverScreen >
  *    commitRewind).
  *
- * BUGÜNKÜ HÂL:
- *   • `left` / `right` → `flyOut`. Kart ekranı terk ediyor, deste uçuşun
- *     SONUNDA ilerliyor, gelen kartı kullanıcı görüyor.
- *   • `up` (Fire) → `runFlameSweep({ hold })`. Değişim örtünün altında.
+ * 4. 2026-11-06 (aynı gün, sonra) — UÇUŞ PARK EDİLDİ. "Like'ta da dislike'ta
+ *    da alev banner'ı geri gelsin; uçuş silinmesin, comment'te dursun." Kod
+ *    yorum satırı olarak duruyor (bkz. runCoveredExit · flyOut), geri alma
+ *    tarifi: docs/superpowers/specs/2026-11-06-discover-exit-flight-PARKED.md
+ *
+ * BUGÜNKÜ HÂL (4. adımdan sonra):
+ *   • `left` / `right` / `up` → `runFlameSweep({ hold })`. Değişim örtünün
+ *     altında; beğenide eşleşme geliyorsa MatchModal perdesi örtüyor.
+ *   • (park) `left` / `right` → `flyOut` — yorumda.
  *
  * UÇUŞLA BİRLİKTE GERİ GELMEYENLER (hepsi 2026-10-13'te düşmüştü, bilerek
  * dışarıda bırakıldı):
@@ -805,14 +811,25 @@ function SwipeWrapper({
    * beğeninin İSTEĞİ gidip eşleşme bildirimi döndükten sonra açılıyor, yani
    * `onSwipe` (isteği atan taraf) önce çağrılmak zorunda.
    */
-  const runCoveredExit = (direction: SwipeDirection, velocityX = 0) => {
-    // UÇUŞ DALI (beğen · geç): alev yok, kart ekranı terk ediyor.
-    if (direction !== "up") {
-      flyOut(direction, velocityX);
-      return;
-    }
+  const runCoveredExit = (direction: SwipeDirection, _velocityX = 0) => {
+    // ── UÇUŞ DALI YORUMA ALINDI (istek, 2026-11-06 öğleden sonra) ──────────
+    // "Swipe'la sağ sola atma animasyonunu kaldır ama silme, comment'e al;
+    // like'ta da dislike'ta da alev banner'ı geri gelsin." Beğen/geç yine
+    // Fire'ın yolundan gidiyor: kart yerinde, alev örtüyor, deste örtünün
+    // altında ilerliyor. Geri almak için: aşağıdaki üç satırı aç, eşleşme
+    // kapısını `direction === "up"`a geri çevir, flyOut/finishFlight'ı ve
+    // dosya başındaki iki importu yorumdan çıkar, DiscoverScreen'de
+    // SWIPE_BUTTON_LOCK_MS'i 250'ye döndür. Tam tarif:
+    // docs/superpowers/specs/2026-11-06-discover-exit-flight-PARKED.md
+    //
+    // if (direction !== "up") {
+    //   flyOut(direction, _velocityX);
+    //   return;
+    // }
     if (flameCoverUnsub.current) return;
-    if (willMatch?.(profile)) {
+    // Eşleşme dalı yine beğeniyi de kapsıyor (2026-10-13 kuralı geri geldi):
+    // "önce alev modalı gelsin, kart arkasında değişsin".
+    if (direction !== "left" && willMatch?.(profile)) {
       // resetAfterExit: açık panel burada animasyonla kapanmıyor, çünkü
       // kart bu karede desteden düşüyor — asıl iş expand shared value'larını
       // deste ilerlemeden ÖNCE sıfırlamak (yoksa yeni top kart donmuş bir
@@ -837,66 +854,68 @@ function SwipeWrapper({
     );
   };
 
-  /**
-   * ── BEĞEN/GEÇ: KART YİNE YANA UÇUYOR (istek, 2026-11-06) ──────────────────
-   *
-   * "Alev banner'ı yalnız not veya Fire/Spark atınca çıksın; diğerlerinde sağa
-   * sola swipe edince kart eskisi gibi sağa sola uçsun." Yani alev bir KUTLAMA
-   * oldu, bir devir mekanizması değil: kullanıcının bir şey HARCADIĞI iki
-   * eylemde (Fire/Spark · not) kalıyor, destede saniyede bir yapılan beğen/geç
-   * ise kendi hareketine döndü.
-   *
-   * ⚠️ 2026-10-13'teki "değişim hiçbir dalda örtüsüz olmaz" kuralı BU DALDA
-   * BİLEREK DELİNDİ. Kullanıcı gelen kartı görüyor — zaten görmesi isteniyor.
-   * Kural Fire ve notta aynen duruyor.
-   *
-   * ESKİ UÇUŞ TAKIMI GERİ GELMEDİ, yalnız uçuşun kendisi geldi:
-   *   • `EXIT_OVERSHOOT` (1.35) YOK. O fazlalık devri eğrinin erkenine çekmek
-   *     içindi; devir artık uçuşun SONUNDA, çekilecek bir an yok.
-   *   • `exitHandoff` kanalı ve "deste uçuşun 65. ms'sinde ilerler" YOK. Deste
-   *     uçuşun ortasında ilerleseydi giden kart aynı karede geri al yuvasına
-   *     düşer, `!isTopCard` effect'i `tx`i sıfırlar ve kart ekranın ortasına
-   *     geri yapışırdı — eski kurgunun klasik belirtisi. Kart uçuş boyunca üst
-   *     kart kalıyor.
-   *   • `unwindForExit` YOK: kaydırılmış/açık kart olduğu gibi uçuyor,
-   *     temizliği ekran dışındayken oluyor (bkz. resetAfterExit).
-   *
-   * ROZET UÇUŞLA BİRLİKTE SÖNÜYOR: büyük tik/X kartın içinde değil EKRAN
-   * KATINDA (bkz. DiscoverScreen > SwipeOverlay), yani kartla gitmiyor.
-   * Söndürülmeseydi kart ekrandan çıktıktan sonra ortada asılı kalırdı.
-   *
-   * Süre hızdan geliyor (bkz. exitFlight > flyOutDurationMs); eğim bedava —
-   * `dragRotate` zaten `tx`ten türüyor, kart uçarken kendiliğinden EXIT_TILT'e
-   * yatıyor (bkz. animatedStyle).
-   */
-  const flyOut = (direction: SwipeDirection, velocityX: number) => {
-    const duration = flyOutDurationMs(velocityX);
-    const target =
-      direction === "right" ? EXIT_CLEAR_DISTANCE : -EXIT_CLEAR_DISTANCE;
-    overlayOpacity.value = withTiming(0, { duration });
-    tx.value = withTiming(
-      target,
-      { duration, easing: Easing.out(Easing.cubic) },
-      (finished) => {
-        // ⚠️ `finished` KAPISI: animasyon iptal edildiyse (kart örtme anından
-        // önce ağaçtan düştü — deste tazelendi, sekme değişti, tema remount'u)
-        // burada deste ilerletilmemeli; sökülmüş bir ağaçtan `onSwipe`
-        // çağırmak desteyi sahipsiz bir kare ileri sürerdi.
-        if (finished) runOnJS(finishFlight)(direction);
-      },
-    );
-  };
+  // ── PARK EDİLDİ (2026-11-06): beğen/geç uçuşu. Geri almak için yorumdan
+  // çıkar — tarif runCoveredExit'in başında ve PARKED dokümanında.
+  // /**
+  //  * ── BEĞEN/GEÇ: KART YİNE YANA UÇUYOR (istek, 2026-11-06) ──────────────────
+  //  *
+  //  * "Alev banner'ı yalnız not veya Fire/Spark atınca çıksın; diğerlerinde sağa
+  //  * sola swipe edince kart eskisi gibi sağa sola uçsun." Yani alev bir KUTLAMA
+  //  * oldu, bir devir mekanizması değil: kullanıcının bir şey HARCADIĞI iki
+  //  * eylemde (Fire/Spark · not) kalıyor, destede saniyede bir yapılan beğen/geç
+  //  * ise kendi hareketine döndü.
+  //  *
+  //  * ⚠️ 2026-10-13'teki "değişim hiçbir dalda örtüsüz olmaz" kuralı BU DALDA
+  //  * BİLEREK DELİNDİ. Kullanıcı gelen kartı görüyor — zaten görmesi isteniyor.
+  //  * Kural Fire ve notta aynen duruyor.
+  //  *
+  //  * ESKİ UÇUŞ TAKIMI GERİ GELMEDİ, yalnız uçuşun kendisi geldi:
+  //  *   • `EXIT_OVERSHOOT` (1.35) YOK. O fazlalık devri eğrinin erkenine çekmek
+  //  *     içindi; devir artık uçuşun SONUNDA, çekilecek bir an yok.
+  //  *   • `exitHandoff` kanalı ve "deste uçuşun 65. ms'sinde ilerler" YOK. Deste
+  //  *     uçuşun ortasında ilerleseydi giden kart aynı karede geri al yuvasına
+  //  *     düşer, `!isTopCard` effect'i `tx`i sıfırlar ve kart ekranın ortasına
+  //  *     geri yapışırdı — eski kurgunun klasik belirtisi. Kart uçuş boyunca üst
+  //  *     kart kalıyor.
+  //  *   • `unwindForExit` YOK: kaydırılmış/açık kart olduğu gibi uçuyor,
+  //  *     temizliği ekran dışındayken oluyor (bkz. resetAfterExit).
+  //  *
+  //  * ROZET UÇUŞLA BİRLİKTE SÖNÜYOR: büyük tik/X kartın içinde değil EKRAN
+  //  * KATINDA (bkz. DiscoverScreen > SwipeOverlay), yani kartla gitmiyor.
+  //  * Söndürülmeseydi kart ekrandan çıktıktan sonra ortada asılı kalırdı.
+  //  *
+  //  * Süre hızdan geliyor (bkz. exitFlight > flyOutDurationMs); eğim bedava —
+  //  * `dragRotate` zaten `tx`ten türüyor, kart uçarken kendiliğinden EXIT_TILT'e
+  //  * yatıyor (bkz. animatedStyle).
+  //  */
+  // const flyOut = (direction: SwipeDirection, velocityX: number) => {
+  //   const duration = flyOutDurationMs(velocityX);
+  //   const target =
+  //     direction === "right" ? EXIT_CLEAR_DISTANCE : -EXIT_CLEAR_DISTANCE;
+  //   overlayOpacity.value = withTiming(0, { duration });
+  //   tx.value = withTiming(
+  //     target,
+  //     { duration, easing: Easing.out(Easing.cubic) },
+  //     (finished) => {
+  //       // ⚠️ `finished` KAPISI: animasyon iptal edildiyse (kart örtme anından
+  //       // önce ağaçtan düştü — deste tazelendi, sekme değişti, tema remount'u)
+  //       // burada deste ilerletilmemeli; sökülmüş bir ağaçtan `onSwipe`
+  //       // çağırmak desteyi sahipsiz bir kare ileri sürerdi.
+  //       if (finished) runOnJS(finishFlight)(direction);
+  //     },
+  //   );
+  // };
 
-  /**
-   * Uçuş bitti: kart ekran dışında, temizlik ve devir aynı karede.
-   *
-   * SIRA ZORUNLU — önce sıfırlama, sonra `onSwipe`: `overlayDragX`in deste
-   * ilerlemeden önce dinlenmeye dönmesi gerekiyor (gerekçe resetAfterExit'te).
-   */
-  const finishFlight = (direction: SwipeDirection) => {
-    resetAfterExit({ keepTx: true });
-    onSwipe(direction, profile.userId);
-  };
+  // /**
+  //  * Uçuş bitti: kart ekran dışında, temizlik ve devir aynı karede.
+  //  *
+  //  * SIRA ZORUNLU — önce sıfırlama, sonra `onSwipe`: `overlayDragX`in deste
+  //  * ilerlemeden önce dinlenmeye dönmesi gerekiyor (gerekçe resetAfterExit'te).
+  //  */
+  // const finishFlight = (direction: SwipeDirection) => {
+  //   resetAfterExit({ keepTx: true });
+  //   onSwipe(direction, profile.userId);
+  // };
   // Kart örtme anından ÖNCE ağaçtan düşerse (deste tazelendi, sekme değişti,
   // tema remount'u) dinleyici arkada kalmasın.
   useEffect(

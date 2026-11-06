@@ -18,6 +18,8 @@ import profileService from "@/features/profile/profileService";
 import { resolveMainPhotoUri } from "@/shared/utils/photoUri";
 import { feedKeys } from "./feedKeys";
 import feedService from "./feedService";
+import moderationService from "@/shared/services/moderationService";
+import { invalidateRelationSurfaces } from "@/shared/services/relationSurfaces";
 import { dedupeById } from "./feedPolicy";
 import { feedEnabledForSession } from "./feedFlag";
 import type {
@@ -699,15 +701,63 @@ export function useDismissReply() {
   });
 }
 
+/**
+ * Akış kartının üç nokta menüsünden ŞİKAYETSİZ engel (2026-11-06).
+ *
+ * Yalnız `/api/moderation/block` — `UserReports`'a satır yazılmaz, moderasyona
+ * hiçbir şey gitmez. Engel geri alınabilir (Engellenenler listesi) ve kaldırılınca
+ * her şey geri gelir.
+ *
+ * Başarıda yazarın bu cache'teki gönderileri hemen düşer; anonim gönderileri
+ * istemci yazarına bağlayamadığı için ve diğer yüzeyler (deste, beğeniler,
+ * kampüs) için ilişki yüzeyleri tazelenir — sunucu engellenen kişiyi her yerde
+ * süzüyor.
+ */
+export function useFeedBlockAuthor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ authorId }: { authorId: string }) =>
+      moderationService.blockUser(authorId),
+    onSuccess: (_res, { authorId }) => {
+      removeAuthorPostsFromCaches(qc, authorId);
+      invalidateRelationSurfaces(qc);
+    },
+  });
+}
+
+/** Yazarın KİMLİKLİ gönderilerini akış cache'lerinden düşürür (anonimler kimliksiz). */
+export function removeAuthorPostsFromCaches(qc: QueryClient, authorId: string): void {
+  const apply = (data: any) => {
+    if (!data?.pages) return data;
+    let hit = false;
+    const pages = data.pages.map((page: FeedPostPageDto) => {
+      const items = page?.items;
+      if (!Array.isArray(items)) return page;
+      if (!items.some((i) => i?.author?.userId === authorId)) return page;
+      hit = true;
+      return { ...page, items: items.filter((i) => i?.author?.userId !== authorId) };
+    });
+    return hit ? { ...data, pages } : data;
+  };
+  qc.setQueriesData({ queryKey: feedKeys.postsRoot }, apply);
+}
+
 export function useFeedReport() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: FeedReportArgs) => feedService.report(args),
     onSuccess: (_res, args) => {
-      // Şikayet edilen içerik listeden kalkar (sözleşme §8).
-      if (args.targetType === "Post" && args.postId) {
+      // Gönderi şikayeti tek başına HİÇBİR şeyi gizlemiyor (2026-11-06; backend
+      // docs/superpowers/specs/2026-11-06-report-no-hide-design.md). Yalnız
+      // engellendiyse: bu gönderi hemen düşer, yazarın DİĞER gönderileri için
+      // liste tazelenir (sunucu engellenen yazarı süzüyor; istemci anonim
+      // gönderilerin yazarını bilmediği için yerel süzme yapamaz).
+      if (args.targetType === "Post" && args.postId && args.alsoBlock) {
         removePostFromCaches(qc, args.postId);
+        invalidateRelationSurfaces(qc);
       }
+      // Yanıt şikayeti farklı: sunucu bekleyen yanıtı Dismissed'a çekiyor
+      // (gelen istek reddedilmiş sayılır), satır listeden kalkmalı.
       if (args.targetType === "Reply" && args.replyId) {
         removeReplyFromCache(qc, args.replyId);
         qc.invalidateQueries({ queryKey: feedKeys.repliesCount });

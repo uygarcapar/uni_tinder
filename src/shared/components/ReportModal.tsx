@@ -225,13 +225,12 @@ export default function ReportModal({
   showBlockRow = true,
 }: any) {
   const { t } = useTranslation();
-  // "Bildirmek istiyorum ama iletişimi kesmek istemiyorum" senaryosu için
-  // kaldırılabilir; varsayılan İŞARETLİ. Alan sunucuya HER ZAMAN açıkça gider —
-  // varsayılanı uca göre değişiyor (bkz. moderationService.ReportArgs).
-  //
-  // ⚠️ Varsayılan SATIRI İZLİYOR: satır çizilmiyorsa (anonim gönderi) `true`
-  // göndermek, olmayan bir kullanıcıyı engellemeye çalışmak olurdu.
-  const [alsoBlock, setAlsoBlock] = useState(showBlockRow);
+  // Varsayılan İŞARETSİZ (2026-11-06): şikayet tek başına HİÇBİR şeyi gizlemiyor,
+  // yalnız moderasyona gidiyor; gizleme geri alınabilir engelden geliyor. Engel
+  // kullanıcı BİLEREK seçerse olmalı — eskiden işaretliydi ve "yalnız şikayet"
+  // isteyen herkes farkında olmadan engelliyordu. Alan sunucuya HER ZAMAN açıkça
+  // gider — varsayılanı uca göre değişiyor (bkz. moderationService.ReportArgs).
+  const [alsoBlock, setAlsoBlock] = useState(false);
 
   const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<ReportForm>({
     resolver: zodResolver(reportSchema),
@@ -249,7 +248,7 @@ export default function ReportModal({
   // kapanış her koşulda parent'a iletilir.
   const handleClose = () => {
     reset();
-    setAlsoBlock(true);
+    setAlsoBlock(false);
     onClose?.();
   };
 
@@ -277,7 +276,7 @@ export default function ReportModal({
       });
       const finish = () => {
         reset();
-        setAlsoBlock(showBlockRow);
+        setAlsoBlock(false);
         onClose?.();
         onSuccess?.(result);
       };
@@ -303,7 +302,7 @@ export default function ReportModal({
                   onSuccess?.(result);
                 }
                 reset();
-                setAlsoBlock(showBlockRow);
+                setAlsoBlock(false);
                 onClose?.();
               },
             },

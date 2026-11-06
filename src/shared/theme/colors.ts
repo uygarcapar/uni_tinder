@@ -98,6 +98,12 @@ interface Palette {
    * consumable sheet'lerinde modeAccent) — orası `onMedia`.
    */
   shopSurface: string;
+  /**
+   * `shopSurface`ın ARKADAŞ modu karşılığı — aynı derinlikte yeşil. Consumable
+   * sheet'leri (Not / Spark) Friends'te alttaki ışığı yeşil vermeli; seçim
+   * `modeShopSurface(mode)` üzerinden (bkz. modeTheme).
+   */
+  friendsShopSurface: string;
   border: string;
   border2: string;
 
@@ -267,6 +273,7 @@ const darkPalette: Palette = {
   surface5: "#1A1A1A",
   surfaceTranslucent: "rgba(18,18,18,0.8)",
   shopSurface: "#a83220",
+  friendsShopSurface: "#17753f",
   border: "#3A3A3A",
   border2: "#3E3E3E",
 
@@ -316,6 +323,7 @@ const lightPalette: Palette = {
   // Koyudaki #a83220'nin açık karşılığı: aynı sıcak kırmızı ailesi, ama zemin
   // olacak kadar açık. Üstündeki metin `text` (#0B0B0C) ile okunuyor.
   shopSurface: "#FFD3C9",
+  friendsShopSurface: "#C6F1D5",
   border: "#DCDCE0",
   border2: "#D2D2D8",
 
@@ -365,6 +373,8 @@ interface GradientSet {
    * locations={[0, 0.4, 1]}. MODLA DÖNER — sheet'in zemini chrome, foto değil.
    */
   shopBackdrop: Gradient;
+  /** `shopBackdrop`ın Arkadaş modu — son durak `friendsShopSurface`. */
+  friendsShopBackdrop: Gradient;
   /** WelcomeScreen zemini: upsell kartının litPlus tonundan shopSurface koyusuna geçiş. */
   welcomeBackdrop: Gradient;
   /**
@@ -493,6 +503,7 @@ const darkGradients: GradientSet = {
   neutralFade: ["#FFFFFF", "#E5E7EB", "#9CA3AF"],
   fireCard: ["#fff", "#9c9c9c"],
   shopBackdrop: ["#2e2e2e", "#2e2e2e", "#a83220"],
+  friendsShopBackdrop: ["#2e2e2e", "#2e2e2e", "#17753f"],
   // surfaceTranslucent'ın koyusundan primary'nin sıcak tonuna. Son durak
   // düşük alfalı: metin (colors.text = beyaz) üstünde okunur kalsın.
   intentCard: ["rgba(18,18,18,0.8)", "rgba(255,77,61,0.28)"],
@@ -504,6 +515,7 @@ const lightGradients: GradientSet = {
   neutralFade: ["#0B0B0C", "#374151", "#6B7280"],
   fireCard: ["#3A3A3C", "#8E8E93"],
   shopBackdrop: ["#F2F2F7", "#F2F2F7", "#FFD3C9"],
+  friendsShopBackdrop: ["#F2F2F7", "#F2F2F7", "#C6F1D5"],
   // Açıkta metin koyu → gradyan da açık kalmalı, ama sol üst durak BEYAZ
   // olmasın: primary'nin beyazla açılmış tonu (#FFD6CB) ile başlıyor, yoksa
   // kart komşularıyla (surfaceTranslucent) aynı görünüp gradyan yalnızca sağ

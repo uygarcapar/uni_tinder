@@ -7,12 +7,14 @@ import {
   Alert,
 } from "react-native";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { UserX } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import EmptyState from "@/shared/components/EmptyState";
 import moderationService, { BlockedUser } from "@/shared/services/moderationService";
+import { invalidateRelationSurfaces } from "@/shared/services/relationSurfaces";
 import { colors, ink } from "../../../shared/theme/colors";
 
 /**
@@ -22,6 +24,7 @@ import { colors, ink } from "../../../shared/theme/colors";
  */
 export default function BlockedUsersModal({ visible, onClose }: any) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
   const [users, setUsers] = useState<BlockedUser[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -63,6 +66,10 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
             setPendingId(user.userId);
             try {
               await moderationService.unblockUser(user.userId);
+              // Engel geri alınabilir: kişi her yüzeye HEMEN dönmeli. Sunucu
+              // aday havuzlarını düşürüyor; istemci cache'leri de bayatlatılır
+              // ki kullanıcı elle yenilemek zorunda kalmasın.
+              invalidateRelationSurfaces(qc);
               if (!mountedRef.current) return;
               setUsers((prev) => (prev ?? []).filter((u) => u.userId !== user.userId));
             } catch {
@@ -75,7 +82,7 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
         },
       ],
     );
-  }, [t]);
+  }, [t, qc]);
 
   return (
     <AppModal
