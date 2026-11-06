@@ -113,7 +113,15 @@ import {
   type AppMode,
 } from "../modeTheme";
 import { peekAppMode } from "../modePrefs";
-import profileService from "@/features/profile/profileService";
+import profileService, {
+  type OpenModePhotos,
+} from "@/features/profile/profileService";
+import { modePhotosOf } from "@/features/profile/modePhotoFields";
+import {
+  normalizePhotoModeration,
+  summarizeModeration,
+} from "@/features/profile/photoModeration";
+import type { SetupPhotoChoice } from "../components/ModeSetupPhotoSection";
 import {
   CARD_FACE_CORNER_RADIUS,
   CARD_FACE_TOP_CORNER_RADIUS,
@@ -1499,6 +1507,19 @@ export default function DiscoverScreen() {
   const [setupSubmitting, setSetupSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   /**
+   * Foto adımının verisi — İLK AÇILIŞ yolunda dolu, havuz-güncelleme yolunda
+   * NULL (açık profilin fotoğraflarına dokunulmaz). `sourcePhotos` sheet'e
+   * giden GÖRÜNÜR kareler; `allPhotoIds`/`mainPhotoId` ise devralma
+   * payload'ının tamamı — görünmezler de kopyalanır (sunucunun devralma
+   * semantiğiyle birebir), görünürlük eşiğini görünür olanlar sağlar.
+   */
+  const [setupPhotos, setSetupPhotos] = useState<{
+    sourcePhotos: Array<{ photoId: string; photoImageUrl: string | null }>;
+    sourceModeLabel: string;
+    allPhotoIds: string[];
+    mainPhotoId: string;
+  } | null>(null);
+  /**
    * Hangi modların profili AÇIK — sunucunun bilgisi (`/api/profile` → `modes`).
    * `undefined` = henüz bilinmiyor; seçici o durumda satırları seçilebilir
    * çiziyor (olmayan bir kısıt uydurmamak doğru taraf).
@@ -1582,10 +1603,45 @@ export default function DiscoverScreen() {
    * gerekçenin tamamı AppNavigator'daki `swipeRejected` effect'inde.
    */
 
-  const handleOpenModeSetup = useCallback((next: AppMode) => {
-    setSetupError(null);
-    setSetupMode(next);
-  }, []);
+  const handleOpenModeSetup = useCallback(
+    async (next: AppMode) => {
+      setSetupError(null);
+      // Kaynak = açılan modun TERSİ: devralınacak fotoğraflar oradan.
+      const sourceMode: AppMode = next === "Friends" ? "Dating" : "Friends";
+      let photos: NonNullable<typeof setupPhotos> = {
+        sourcePhotos: [],
+        sourceModeLabel: t(`discover.mode.title.${sourceMode}`),
+        allPhotoIds: [],
+        mainPhotoId: "",
+      };
+      try {
+        // TTL cache'li — çoğu zaman anında. Çekilemezse güvenli taraf: foto
+        // bölümü yalnız yeni-kare hâliyle açılır ("mevcutları kullan" yalan
+        // bir önizlemeyle çizilmesin).
+        const profile: any = await profileService.getMyProfile();
+        const all = modePhotosOf(profile, sourceMode);
+        const main = all.find((p: any) => p?.isMainPhoto) ?? all[0];
+        photos = {
+          sourcePhotos: all
+            .filter((p: any) => normalizePhotoModeration(p).isVisibleToOthers)
+            .map((p: any) => ({
+              photoId: String(p.photoId),
+              photoImageUrl: p.photoImageUrl ?? null,
+            })),
+          sourceModeLabel: t(`discover.mode.title.${sourceMode}`),
+          allPhotoIds: all.map((p: any) => String(p.photoId)),
+          mainPhotoId: main ? String(main.photoId) : "",
+        };
+      } catch {
+        // yukarıdaki güvenli taraf
+      }
+      // SIRA: foto verisi sheet görünür olmadan önce yazılmalı — sheet'in
+      // reset effect'i varsayılan seçimi açılış ANINDA hesaplıyor.
+      setSetupPhotos(photos);
+      setSetupMode(next);
+    },
+    [t],
+  );
 
   /**
    * Friends'e girildiğinde havuz sorusu açılıyor mu.
@@ -1610,6 +1666,9 @@ export default function DiscoverScreen() {
       return;
     friendsPoolAsked.current = true;
     setSetupError(null);
+    // Havuz yolu: profil ZATEN AÇIK — foto adımı çizilmez, payload foto
+    // taşımaz (açık profilin fotoğraflarına dokunulmaz).
+    setSetupPhotos(null);
     setSetupMode("Friends");
   }, [friendsPoolProfile, mode, setupMode]);
 
@@ -1622,12 +1681,39 @@ export default function DiscoverScreen() {
       intents: string[];
       prompts: { promptKey: string; answer: string }[];
       interestedIn?: string[];
+      photos?: SetupPhotoChoice;
     }) => {
       if (!setupMode) return;
       setSetupSubmitting(true);
       setSetupError(null);
       try {
-        const result = await profileService.openProfileMode(setupMode, payload);
+        // Sheet'in seçimi → servis payload'ı. Devralmada TÜM slotlar gider
+        // (görünmezler dahil — sunucunun devralma semantiğiyle birebir);
+        // yeni-kare yolunda PickedPhoto alanları multipart dosya şekline
+        // çevrilir. `photos` yoksa (havuz yolu) alan HİÇ eklenmez.
+        let photos: OpenModePhotos | undefined;
+        if (payload.photos?.kind === "existing" && setupPhotos) {
+          photos = {
+            kind: "existing",
+            photoIds: setupPhotos.allPhotoIds,
+            mainPhotoId: setupPhotos.mainPhotoId,
+          };
+        } else if (payload.photos?.kind === "new") {
+          photos = {
+            kind: "new",
+            files: payload.photos.photos.map((p) => ({
+              uri: p.uri,
+              name: p.fileName,
+              type: p.mime,
+            })),
+          };
+        }
+        const result = await profileService.openProfileMode(setupMode, {
+          intents: payload.intents,
+          prompts: payload.prompts,
+          ...(payload.interestedIn ? { interestedIn: payload.interestedIn } : {}),
+          ...(photos ? { photos } : {}),
+        });
         // Açık mod haritası SUNUCUNUN YANITINDAN: `{dating, friends}` dönüyor,
         // yani ayrı bir profil turu atmaya gerek yok. Yanıt beklenmedik şekilde
         // gelirse yerel tahmine düşüyoruz (mod açıldı, en azından o true).
@@ -1642,8 +1728,26 @@ export default function DiscoverScreen() {
           return { ...base, [setupMode]: true };
         });
         setSetupMode(null);
+        setSetupPhotos(null);
         // Profili açtıysa amacı o modu kullanmak.
         setMode(setupMode);
+
+        // Yeni kare yüklendiyse moderasyon SONUCUNU söyle: istek 200 dönse de
+        // kare Review'a düşmüş olabilir ve kullanıcı bunu başka hiçbir yerden
+        // öğrenemez. `open` yanıtı foto taşımıyor (sözleşme: {dating,friends})
+        // → tek `GET /api/profile` turu; başarısızlığı sessiz, bilgi kaybı
+        // yalnız bu Alert.
+        if (payload.photos?.kind === "new") {
+          try {
+            const fresh: any = await profileService.getMyProfile(true);
+            const summary = summarizeModeration(
+              modePhotosOf(fresh, setupMode).map(normalizePhotoModeration),
+            );
+            if (summary) Alert.alert(summary.title, summary.message);
+          } catch {
+            // özet gösterilemedi — moderasyon rozetleri profilde yine görünür
+          }
+        }
       } catch (e: any) {
         // Sheet AÇIK kalıyor ve girilen veri korunuyor (composer kuralı).
         setSetupError(
@@ -1653,7 +1757,7 @@ export default function DiscoverScreen() {
         setSetupSubmitting(false);
       }
     },
-    [setMode, setupMode, t],
+    [setMode, setupMode, setupPhotos, t],
   );
 
   // Filtre modalı açılırken tier'ı canonical kaynaktan teyit et. İki cache de
@@ -3441,6 +3545,15 @@ export default function DiscoverScreen() {
         // `setupMode` null olduğunda sheet görünmüyor, değer önemsiz.
         mode={setupMode ?? mode}
         onSubmit={handleSubmitModeSetup}
+        // İlk açılışta dolu (handleOpenModeSetup kuruyor), havuz yolunda null.
+        photoSetup={
+          setupPhotos
+            ? {
+                sourcePhotos: setupPhotos.sourcePhotos,
+                sourceModeLabel: setupPhotos.sourceModeLabel,
+              }
+            : null
+        }
         // Havuz sorusu YALNIZ sunucu kilidi açıkken çiziliyor. Profili ilk kez
         // açan Non-Binary kullanıcı bu yoldan geçmiyor (profil henüz yok, kilit
         // bilinmiyor) — orada soruyu kayıt adımı soruyor.
