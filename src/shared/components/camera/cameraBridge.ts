@@ -1,3 +1,4 @@
+import type { PreviewFrame } from "@/shared/components/camera/cameraLayout";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
@@ -70,6 +71,32 @@ export type CameraRequest = {
    * tek bilgi. Yoksa satır boş kalır (düğme yine sağda).
    */
   commitHint?: string;
+  /**
+   * Pencere şekli. Verilmezse 'fill' — kampüsün bugünkü tam kanama penceresi.
+   *
+   * NEDEN: kayıtta önizleme yüklenen karenin birebir aynısı olmalı; aksi
+   * halde kullanıcının ekranda gördüğü kadraj ile yüklenen fotoğraf
+   * birbirinden farklı olur. Şekil `cameraLayout`ta tek yerde tanımlı, burada
+   * yalnız seçiliyor.
+   */
+  frame?: PreviewFrame;
+  /**
+   * Dolu ise KAMERA HİÇ AÇILMAZ: ekran doğrudan bu kareyle donmuş başlar.
+   *
+   * NEDEN: galeri fotoğrafı da kamera karesiyle AYNI ekranda onaylanıyor —
+   * iki ayrı onay ekranı aynı kararı iki kez sordurur ve kırpma/gönder
+   * akışını ikiye böler.
+   */
+  source?: CameraShot;
+  /**
+   * Verilirse sağ üstte kırpma butonu çıkar. Dönen kare ekrandakinin YERİNE
+   * geçer; `null` = vazgeçildi, kare aynı kalır.
+   *
+   * NEDEN ÇAĞIRAN AÇIYOR, overlay DEĞİL: kırpıcıyı overlay kendisi açsaydı
+   * `PickedPhoto`, dosya sahipliği ve `presentCropper` photoPicker'ın işi
+   * olmaktan çıkardı. Bu sorumluluk çağıranda kalıyor.
+   */
+  crop?: (shot: CameraShot) => Promise<CameraShot | null>;
 };
 
 export type CameraOutcome =

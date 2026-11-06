@@ -201,23 +201,34 @@ function App() {
                     ÜSTÜNDE değil ALTINDA: kırpma ekranı kendi jestini taşıyor,
                     bu katmanın onu örtmesi için bir sebep yok. */}
                 <PinchZoomOverlay />
+                {/* Uygulama içi kamera — cropper ile AYNI gerekçeyle
+                    BottomSheetModalProvider'ın DIŞINDA (portal host'u
+                    children'dan sonra boyanıyor, içeride kalsa profil
+                    düzenleme modalının altında açılırdı) ve `key={mode}`
+                    remount'unun dışında.
+
+                    Cropper'dan ÖNCE mount ediliyor: kardeşlerde sonraki üste
+                    boyanır, yani cropper kameranın ÜSTÜNDE çıkar. Bu artık
+                    şart, çünkü cropper yalnız kamera kapandıktan sonra değil,
+                    AÇIK bir önizlemenin İÇİNDEN de açılıyor (kayıt akışındaki
+                    kırp düğmesi) — sırası ters olsaydı kırpma ekranı opak
+                    kameranın altında görünmez açılır, `busy` ✕'i kilitlediği
+                    için kullanıcı takılı kalırdı. Bu işi bir zIndex yapmıyor:
+                    CropperOverlay'in kökünde zIndex yok (dosyadaki `zIndex: 1`
+                    kaydet düğmesinin iskeletine ait); karar yalnız mount
+                    sırası. Profil yolu yan etkisi: kameranın 220 ms'lik kapanış
+                    kaydırması sırasında kırpıcı artık onu örtüyor, kamera
+                    kırpıcıyı açığa çıkarmıyor — eski not zaten bunu amaçlıyordu. */}
+                <CameraCaptureOverlay />
                 {/* Kırpma ekranı — BottomSheetModalProvider'ın DIŞINDA olmak
                     ZORUNDA: @gorhom/portal host'unu children'dan sonra render
                     ediyor, yani her bottom sheet provider'ın içindeki her şeyin
                     üstüne boyanıyor. Profil düzenleme modalı (AppModal) da bir
                     sheet olduğu için, cropper içeride kalsaydı modalın ALTINDA
                     açılırdı. `key={mode}` remount'unun da dışında: tema değişimi
-                    kırpma ortasında promise'i düşürmemeli. */}
+                    kırpma ortasında promise'i düşürmemeli. Kamerayı örtebilmesi
+                    için ondan SONRA mount ediliyor (gerekçe yukarıda). */}
                 <CropperOverlay />
-                {/* Uygulama içi kamera — cropper ile AYNI gerekçeyle
-                    BottomSheetModalProvider'ın DIŞINDA (portal host'u
-                    children'dan sonra boyanıyor, içeride kalsa profil
-                    düzenleme modalının altında açılırdı) ve `key={mode}`
-                    remount'unun dışında. Cropper'ın ALTINDA: akış çek → kırp
-                    sırayla gidiyor, kamera kapanmadan kırpıcı açılmıyor, ama
-                    bir kare üst üste bindiğinde üstte kalması gereken kırpma
-                    ekranı. */}
-                <CameraCaptureOverlay />
                 {/* Selfie doğrulama — cropper ile AYNI gerekçeyle
                     BottomSheetModalProvider'ın dışında: kamera, profil
                     düzenleme modalının (o da bir sheet) altında kalmamalı.

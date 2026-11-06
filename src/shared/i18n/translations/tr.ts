@@ -35,6 +35,7 @@ const tr = {
     offline: 'İnternet bağlantısı yok',
     back: 'Geri',
     save: 'Kaydet',
+    add: 'Ekle',
     error: 'Hata',
     info: 'Bilgi',
     no: 'Hayır',

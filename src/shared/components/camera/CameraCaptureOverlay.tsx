@@ -26,7 +26,7 @@ import { useTranslation } from "react-i18next";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import MediaChromeIconButton from "@/shared/components/MediaChromeIconButton";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import { ArrowRight, RefreshCw, X, Zap } from "@/shared/icons";
+import { ArrowRight, Crop, RefreshCw, X, Zap } from "@/shared/icons";
 import { useAppMode } from "@/features/discover/useAppMode";
 import { modeAccent } from "@/features/discover/modeTheme";
 import { colors, isLight, onMediaAt, withAlpha } from "@/shared/theme/colors";
@@ -39,6 +39,7 @@ import {
   type CameraRequest,
   type CameraShot,
 } from "./cameraBridge";
+import { cameraChrome, previewWindow } from "./cameraLayout";
 
 /**
  * Uygulama içi kamera ekranı — profil fotoğrafını UYGULAMADAN çekmek.
@@ -192,6 +193,20 @@ export default function CameraCaptureOverlay() {
 
   const cameraRef = useRef<CameraView>(null);
   const [session, setSession] = useState<Session | null>(null);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * KAMERASIZ ÖNİZLEME — galeriden gelen kare bu ekranda onaylanıyor.
+   * ══════════════════════════════════════════════════════════════════════════
+   * `source` doluysa kamera HİÇ AÇILMIYOR: `CameraView` mount edilmiyor, ekran
+   * doğrudan o kareyle donmuş başlıyor (gerekçe cameraBridge > `source`).
+   *
+   * Canlı akışa dokunan her şey bu modda ÖLÜ olmak zorunda — mercek seçimi,
+   * duraklat/sürdür, deklanşör, çevirme, çift dokunuş ve 3.5sn'lik zaman
+   * aşımı. Sonuncusu en tehlikelisi: hiç açılmayacak bir kameranın "hazır"
+   * event'ini bekler ve oturumu `unavailable` ile kapatırdı — yani galeri
+   * fotoğrafı 3.5sn sonra kendiliğinden çöpe giderdi.
+   */
+  const previewOnly = !!session?.request.source;
   const [facing, setFacing] = useState<CameraType>("back");
   const [flash, setFlash] = useState<FlashChoice>("off");
   const [busy, setBusy] = useState(false);
@@ -219,12 +234,17 @@ export default function CameraCaptureOverlay() {
    * Çözüm: iOS'ta dosya PENCEREYE HİÇ ÇİZİLMİYOR. Ekranda kalan şey basıldığı
    * anda donan karenin ta kendisi; gönderilen dosya yine gerçek çekim.
    *
-   * ÜÇ DURUMDA yine de çiziliyor (yoksa ekran boş/canlı kalırdı):
+   * BEŞ DURUMDA yine de çiziliyor (yoksa ekran boş/canlı kalırdı):
    *   • Android — orada `pausePreview` çekimi kırdığı için akış donmuyor,
    *     donmuş kareyi ancak dosya sağlıyor (gerekçe `handleCapture`da).
    *   • `pausePreview` reddedilirse — donma hiç olmadı.
    *   • Arka plandan dönüşte — askıya alınan oturumun önizleme katmanı ölü bir
    *     kare (çoğu zaman siyah) olarak geliyor, dosya tek güvenilir görüntü.
+   *   • Kamerasız mod (galeri `source`'u) — `present()` bunu `true`ya çekiyor;
+   *     canlı katman hiç yok, dondurulacak kare de yok, pencerede görünebilecek
+   *     tek şey dosya.
+   *   • Başarılı kırpmadan sonra (`handleCrop`) — yeni dosya artık çizilmek
+   *     ZORUNDA: ekrandaki donmuş kare kırpılmamış hâlinde kalırdı.
    */
   const [showStill, setShowStill] = useState(Platform.OS !== "ios");
   /**
@@ -379,8 +399,11 @@ export default function CameraCaptureOverlay() {
       setFlash("off");
       setBusy(false);
       setError(null);
-      setShot(null);
-      setShowStill(Platform.OS !== "ios");
+      // Kamerasız modda kare BAŞTAN elde: `frozen` bununla doğru oluyor ve
+      // dosya ÇİZİLMEK zorunda — `showStill`in iOS'taki `false`u yalnız canlı
+      // akıştan donan kare için geçerli, burada donan bir canlı katman yok.
+      setShot(request.source ?? null);
+      setShowStill(!!request.source || Platform.OS !== "ios");
       setCapturing(false);
       captureGenRef.current += 1;
       pendingCommitRef.current = false;
@@ -454,14 +477,15 @@ export default function CameraCaptureOverlay() {
   // Ön kamerada sanal cihaz/ultra geniş sorunu yok (tek gerçek mercek), orada
   // seçimi expo'ya bırakıyoruz. Arkaya her dönüşte yeniden seçiyoruz: mercek
   // adları kameraya göre değişiyor, bayat bir ad eşleşmeyip varsayılana düşer.
+  // Kamerasız modda mercek listesi soracak bir kamera yok (bkz. `previewOnly`).
   useEffect(() => {
-    if (!open) return;
+    if (!open || previewOnly) return;
     if (facing === "front") {
       setLens(undefined);
       return;
     }
     pickDefaultLens();
-  }, [open, facing, pickDefaultLens]);
+  }, [open, previewOnly, facing, pickDefaultLens]);
 
   /**
    * Arka plana düşerken oturumu KAPATIYORUZ.
@@ -511,7 +535,9 @@ export default function CameraCaptureOverlay() {
    * kamerayı sistem kamerasına çevirirdi.
    */
   useEffect(() => {
-    if (!open) return;
+    // ⚠️ KAMERASIZ MODDA KURULMAZ: `onCameraReady` hiç gelmeyecek ve zaman
+    // aşımı, kullanıcının seçtiği galeri karesini ekranıyla birlikte kapatırdı.
+    if (!open || previewOnly) return;
     const timer = setTimeout(() => {
       if (readyRef.current || !sessionRef.current) return;
       devLog(
@@ -520,8 +546,10 @@ export default function CameraCaptureOverlay() {
       finish({ status: "unavailable" });
     }, 3500);
     return () => clearTimeout(timer);
-  }, [open, finish]);
+  }, [open, previewOnly, finish]);
 
+  // Pencere şekli OTURUMUN: kampüs vermiyor ('fill'), kayıt 'photo' istiyor.
+  const frame = session?.request.frame;
   const layout = useMemo(() => {
     // Butonlar pencerenin üst köşelerinden CHROME_GAP kadar içeride: satır
     // tam buton boyunda, üstündeki pay da güvenli alan + aynı boşluk.
@@ -572,27 +600,42 @@ export default function CameraCaptureOverlay() {
      * döndürmek, kamera oranını değiştirmek DEĞİL (gerekçe `pictureSize`in
      * başında).
      */
-    const winW = screenW;
-    const top = insets.top;
-    // Pencerenin altı = şeridin üstü. Araya ek bir pay KONMUYOR: `footerGap`
-    // zaten o boşluk (eskiden buraya bir de 12 ekleniyordu ve eşitliği bozan
-    // şey oydu).
-    const winH = Math.max(160, screenH - top - footerH);
-    return {
+    /**
+     * PENCERENİN KENDİSİ `previewWindow`da — yukarıdaki sözleşme onun `fill`
+     * dalı (birebir aynı hesap). `photo` dalı kayıt yolunun 3:4 kadrajı:
+     * orada önizlenen kare YÜKLENEN karenin ta kendisi olmak zorunda, yani
+     * yukarıdaki "görülen ⊆ çekilen" toleransı o yolda kabul edilemez.
+     *
+     * İKİSİ DE AYNI TEPEDEN (`insets.top`) başlıyor — `photo` ekranın ortasına
+     * OTURMUYOR (istek: "kampüsteki gibi üst tarafa dayalı gelsin"). Fark yalnız
+     * alt kenar: `fill`de şeridin üstü, `photo`da 3:4'ün bittiği yer; arada
+     * kalan şerit siyah zemin.
+     *
+     * ⚠️ Ölçüler BU EKRANIN chrome'u: başlık satırı ve deklanşör şeridi.
+     * `fill`de pencerenin altı = şeridin üstü; araya ek pay KONMUYOR,
+     * `footerGap` zaten o boşluk (eskiden bir de 12 ekleniyordu ve eşitliği
+     * bozan oydu).
+     */
+    const win = previewWindow({
+      frame: frame ?? "fill",
+      screenW,
+      screenH,
+      insetTop: insets.top,
       headerH,
-      footerGap,
-      winW,
-      winH,
-      left: 0,
-      top,
-    };
-  }, [insets.top, insets.bottom, screenH, screenW]);
+      footerH,
+    });
+    return { headerH, footerGap, ...win };
+  }, [frame, insets.top, insets.bottom, screenH, screenW]);
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
     // Hazırlık bayrağı KAPI DEĞİL (bkz. readyRef): burada yalnız mükerrer
     // basışa ve oturumsuz çağrıya karşı koruma var.
-    if (!camera || busy || capturing || !sessionRef.current) return;
+    // Kamerasız modda `CameraView` mount değil, ref zaten boş; kapı yine de
+    // açıkça yazılı — deklanşör o modda hiç çizilmiyor ama sözleşme bu.
+    if (previewOnly || !camera || busy || capturing || !sessionRef.current) {
+      return;
+    }
 
     /**
      * ⚠️ `busy` DEĞİL `capturing` — ARADAKİ FARK EKRANIN ŞEKLİ.
@@ -741,7 +784,7 @@ export default function CameraCaptureOverlay() {
       if (Platform.OS === "ios") camera.resumePreview?.().catch(() => {});
       setError(t("common.camera.failed"));
     }
-  }, [busy, capturing, facing, flash, lens, finish, t]);
+  }, [previewOnly, busy, capturing, facing, flash, lens, finish, t]);
 
   /**
    * KAMERAYI ÇEVİR — başlıktaki düğme ve önizlemeye ÇİFT DOKUNUŞ aynı yere
@@ -753,12 +796,13 @@ export default function CameraCaptureOverlay() {
    * sıfırlanan bayrak bir daha dolmuyor (bkz. readyRef).
    */
   const handleFlip = useCallback(() => {
-    if (busy) return;
+    // Kamerasız modda çevrilecek bir kamera yok (bkz. `previewOnly`).
+    if (busy || previewOnly) return;
     // Çift dokunuşun TEK geri bildirimi bu: kamera çevrilirken önizleme bir an
     // siyah kalıyor ve dokunuşun sayılıp sayılmadığı görüntüden okunmuyor.
     Haptics.selectionAsync().catch(() => {});
     setFacing((current) => (current === "back" ? "front" : "back"));
-  }, [busy]);
+  }, [busy, previewOnly]);
 
   /**
    * ══════════════════════════════════════════════════════════════════════════
@@ -776,6 +820,19 @@ export default function CameraCaptureOverlay() {
   const frozen = shot !== null || (capturing && !!session?.request.commit);
 
   /**
+   * HANGİ DÜĞME ÇİZİLİYOR — karar `cameraChrome`da, burada yalnız okunuyor.
+   *
+   * Kampüs yolunda (kamerasız değil, kırpma yok) sonuç bugünkü `frozen`
+   * ikilisiyle birebir: canlıyken deklanşör/flaş/çevir, donmuşken yeniden
+   * çek + onay.
+   */
+  const chrome = cameraChrome({
+    previewOnly,
+    frozen,
+    allowCrop: !!session?.request.crop,
+  });
+
+  /**
    * ÇİFT DOKUNUŞ = ÇEVİR. Tek dokunuşa HİÇBİR ŞEY bağlı değil, o yüzden
    * bekleme/çakışma yok.
    *
@@ -785,7 +842,9 @@ export default function CameraCaptureOverlay() {
   const flipTap = useMemo(
     () =>
       Gesture.Tap()
-        .enabled(!frozen && !busy)
+        // Kamerasız modda `frozen` zaten doğru; `previewOnly` kapısı yine de
+        // açık — jestin ömrü kareye değil kameranın varlığına bağlı.
+        .enabled(!previewOnly && !frozen && !busy)
         .numberOfTaps(2)
         .maxDuration(260)
         .maxDistance(24)
@@ -796,17 +855,19 @@ export default function CameraCaptureOverlay() {
           if (e.numberOfPointers > 1) return;
           runOnJS(handleFlip)();
         }),
-    [frozen, busy, handleFlip],
+    [previewOnly, frozen, busy, handleFlip],
   );
 
   /**
    * ATILAN KARENİN DOSYASINI SİL.
    *
-   * ⚠️ TEMİZLİK BU EKRANIN İŞİ, ÇAĞIRANIN DEĞİL — ve yalnız YERİNDE ONAY
-   * yolunda: dosyayı kamera üretti, kullanıcı burada reddetti (yeniden çek /
-   * ✕) ve çağıran onun var olduğunu hiç görmedi. Eskiden bu işi onay sheet'i
-   * kapanırken yapıyordu (`closeComposer`); sheet kalkınca kare sahipsiz
-   * kalıyordu ve her reddedilen çekim diskte 12MP'lik bir dosya bırakıyordu.
+   * ⚠️ TEMİZLİK BU EKRANIN İŞİ, ÇAĞIRANIN DEĞİL: ✕ / yeniden çekte ekran o
+   * anki `shot`ı unutuyor. O dosya üç türden biri olabilir — kameranın ham
+   * karesi, kamerasız modda galeri `source` kopyası ya da çağıranın son kırpma
+   * çıktısı — ve hangisi olursa olsun çağıran (`photoPicker`) `cancelled`
+   * dönüşünde hiçbir şey unutmuyor. Eskiden bu işi onay sheet'i kapanırken
+   * yapıyordu (`closeComposer`); sheet kalkınca kare sahipsiz kalıyordu ve her
+   * reddedilen çekim diskte 12MP'lik bir dosya bırakıyordu.
    *
    * ⚠️ GÖNDERİLEN kare BURADA SİLİNMEZ: onun sahibi `commit` (kampüs yolunda
    * `shareShot`, yüklemeden SONRA siliyor). İki yerden silmek, yüklemenin
@@ -835,10 +896,60 @@ export default function CameraCaptureOverlay() {
     // arka plandan dönüş gibi bir sebeple açılmışsa burada kapanıyor.
     setShowStill(Platform.OS !== "ios");
     // iOS kapısı — gerekçe çekim hatasındaki ikizinde.
-    if (Platform.OS === "ios") {
+    // Kamerasız modda sürdürülecek bir akış yok (düğme orada çizilmiyor da).
+    if (Platform.OS === "ios" && !previewOnly) {
       cameraRef.current?.resumePreview?.().catch(() => {});
     }
-  }, [busy, discard, shot?.uri]);
+  }, [busy, discard, previewOnly, shot?.uri]);
+
+  /**
+   * KIRP — kırpıcıyı ÇAĞIRAN açıyor (gerekçe cameraBridge > `crop`), ekran
+   * yalnız dönen kareyi pencereye koyuyor. `null` = vazgeçildi, kare aynı.
+   *
+   * ⚠️ `busy` BİLEREK: kırpıcı açıkken bu ekranın düğmeleri ölü olmalı. Yan
+   * etkisi onay okunun kırpıcının ARKASINDA göstergeye dönmesi — görünmüyor,
+   * kabul.
+   *
+   * ⚠️🔴 KANCA REDDEDERSE `busy` YİNE BIRAKILIYOR: `await` fırlatsaydı bayrak
+   * sonsuza dek açık kalırdı ve ✕ dahil bütün ekran ölürdü — kullanıcının tek
+   * çıkışı uygulamayı öldürmek olurdu. Hata yalnız loglanıyor, kare aynı
+   * kalıyor (kırpmadan önceki dosya hâlâ geçerli bir seçim).
+   *
+   * ⚠️ OTURUM KİMLİĞİYLE KAPI: kırpma sürerken ekran kapanmışsa (host
+   * söküldü) hiçbir state'e dokunulmuyor — `commitShot`taki kapının ikizi.
+   *
+   * ⚠️ `setShowStill(true)`: kırpılmış dosya artık pencerede ÇİZİLMEK zorunda;
+   * iOS'taki `false` varsayılanı yalnız canlı akıştan donan kare içindi ve o
+   * kare artık kırpılmış dosya DEĞİL.
+   *
+   * ⚠️ `forgetPhoto` BURADA YOK: kırpmadan önceki dosyanın sahibi kanca
+   * (çağıran). Burada silmek, onun hâlâ tuttuğu dosyayı altından çekmek olurdu.
+   */
+  const handleCrop = useCallback(async () => {
+    const owner = sessionRef.current;
+    const crop = owner?.request.crop;
+    if (!crop || !shot || busy) return;
+    setBusy(true);
+    setError(null);
+    let next: CameraShot | null = null;
+    try {
+      next = await crop(shot);
+    } catch (e) {
+      devLog("📸 [camera] kırpma başarısız", e);
+      next = null;
+    } finally {
+      // Oturum aynıysa `busy` burada bırakılıyor. Değiştiyse (ekran kırpma
+      // sürerken kapandı ya da yerine başkası geldi) dokunulmuyor: `busy`yi
+      // kapanış animasyonundan SONRA `dismiss`, yoksa sıradaki `present()`
+      // sıfırlıyor; host söküldüyse sıfırlanacak state de kalmadı.
+      if (sessionRef.current === owner) setBusy(false);
+    }
+    if (sessionRef.current !== owner) return;
+    if (next) {
+      setShot(next);
+      setShowStill(true);
+    }
+  }, [busy, shot]);
 
   /**
    * GÖNDER — iş ÇAĞIRANIN, ekran onun bitmesini bekliyor.
@@ -925,9 +1036,9 @@ export default function CameraCaptureOverlay() {
         sheetStyle,
       ]}
     >
-      {/* Önizleme kutusu: güvenli alanın hemen altından deklanşörün hemen
-          üstüne kadar, tam genişlik, dört köşesi yuvarlak. Oran/kırpma
-          sözleşmesi `layout`ta. */}
+      {/* Önizleme kutusu: kampüste güvenli alanın hemen altından deklanşörün
+          hemen üstüne kadar tam genişlik, kayıtta ortalı 3:4; dört köşesi
+          yuvarlak. Oran/kırpma sözleşmesi `layout`ta. */}
       <View
         style={{
           position: "absolute",
@@ -942,95 +1053,100 @@ export default function CameraCaptureOverlay() {
           backgroundColor: "#000",
         }}
       >
-        <CameraView
-          ref={cameraRef}
-          style={StyleSheet.absoluteFill}
-          facing={facing}
-          // Ön kamerada ekran flaşına çevriliyor — gerekçe `flashModeFor`da.
-          flash={flashModeFor(flash, facing)}
-          mode="picture"
-          /**
-           * ══════════════════════════════════════════════════════════════════
-           * 🔴 KARE ORANI BURADA SABİTLENİYOR — KALDIRMA.
-           * ══════════════════════════════════════════════════════════════════
-           * expo-camera'nın iOS varsayılanı `pictureSize = .high`, yani
-           * `AVCaptureSession.Preset.high` = 1920×1080, 16:9 (portrede 9:16).
-           * Sonuç iki kat bozuktu:
-           *
-           *   • Önizleme: `AVCaptureVideoPreviewLayer`ın videoGravity'si
-           *     `resizeAspectFill`. 9:16 bir akışı 3:4 kutuya doldurmak,
-           *     karenin altını üstünü kesip ORTASINI yakınlaştırmış gibi
-           *     gösteriyordu — "fotonun saçma sapan bir alanı" buydu.
-           *   • Dosya: çekilen kare de 9:16 geliyordu, yani kırpıcı 3:4
-           *     pencereyi o uzun karenin içinden alıyor ve önizlemede görülen
-           *     bölgeyle AYRIŞIYORDU.
-           *
-           * `Photo` preseti sensörün kendi 4:3'ü (portrede 3:4) ve tam
-           * çözünürlük: önizleme akışı da dosya da 3:4 olduğu için kutu
-           * birebir doluyor, kırpıcı da aynı kadrajla açılıyor.
-           *
-           * Android'de `pictureSize` "GENİŞLİKxYÜKSEKLİK" bekliyor ("Photo"
-           * parse edilemez, sessizce en yüksek çözünürlüğe düşer); oranı veren
-           * prop orada `ratio` ve yalnız Android'de geçerli.
-           *
-           * ══════════════════════════════════════════════════════════════════
-           * 🔴 BU PROP `patches/expo-camera+56.0.8.patch`E BAĞLI.
-           * ══════════════════════════════════════════════════════════════════
-           * `Photo` preseti kareyi 2MP'den (1920×1080) SENSÖRÜN TAMAMINA
-           * çıkarıyor — 48MP'lik iPhone'larda 8064×6048. expo-camera o kareyi
-           * işlerken iki kat şişiriyordu ve uygulama deklanşörde loader
-           * dönerken ÖLÜYORDU (jetsam; natif istisna JS'e hata olarak gelmiyor,
-           * o yüzden `catch` bloğu hiç çalışmıyor):
-           *   • `maxPhotoDimensions` daima formatın EN BÜYÜĞÜNE çekiliyordu,
-           *   • `normalizeOrientation` ekran ölçeğiyle render ettiği için
-           *     bitmap PİKSELDE 9 KAT doğuyordu (48MP → ~1.76 GB).
-           * Patch ikisini de düzeltiyor (tavan 12MP + birebir ölçek).
-           *
-           * ⚠️ PATCH TEK BAŞINA YETMİYOR — `package.json`da
-           * `expo.autolinking.ios.buildFromSource: ["expo-camera"]` ŞART.
-           * SDK 56 modülleri varsayılan olarak Expo'nun CDN'inden HAZIR İKİLİ
-           * geliyor (`ios/Pods/ExpoCamera/ExpoCamera.xcframework`), yani
-           * node_modules'daki Swift hiç derlenmiyor: ilk denemede patch
-           * uygulandı, `pod install` + rebuild yapıldı ve crash aynen devam
-           * etti — cihaz log'unda yine `JetsamEvent … reason: "highwater"`
-           * (uygulama 3.4 GB'a çıkıp kill edilmiş). O anahtar YALNIZ bu modülü
-           * kaynağa çeviriyor; `EXPO_USE_PRECOMPILED_MODULES=false` hepsini
-           * çevirip her temiz build'i dakikalarca uzatırdı.
-           *
-           * Doğrulama (pod install sonrası, build'den önce):
-           *   grep -c ExpoCamera.xcframework ios/Pods/Pods.xcodeproj/project.pbxproj  → 0
-           *   grep -c CameraPhotoCapture.swift ios/Pods/Pods.xcodeproj/project.pbxproj → >0
-           *
-           * ⚠️ `npm i` sonrası `postinstall` koşmazsa ya da expo-camera
-           * yükseltilirse patch düşer ve crash SESSİZCE geri gelir. Sürüm
-           * değişirse patch yeniden üretilmeli.
-           */
-          pictureSize={Platform.OS === "ios" ? "Photo" : undefined}
-          ratio={Platform.OS === "android" ? "4:3" : undefined}
-          // 1x mercek — bkz. pickDefaultLens. Verilmezse expo'nun seçtiği sanal
-          // cihaz 0.5x (ultra geniş) açıyla açılıyor.
-          selectedLens={lens}
-          // 🔴 Bkz. dosya başı: ön kamerada DOSYA da aynalanıyor (selfie
-          // doğrulamasının tersi) — profil fotoğrafı, çekerken görülen kare.
-          mirror={facing === "front"}
-          // Sistemin beyaz deklanşör animasyonu kapalı: kendi kırpma ekranımıza
-          // geçiş zaten bir sahne değişimi, iki efekt üst üste biniyordu.
-          animateShutter={false}
-          // Yalnız zaman aşımı ağını susturuyor (bkz. readyRef) — deklanşörü
-          // bu event'e BAĞLAMA, iOS'ta kamera çevrilince bir daha atılmıyor.
-          onCameraReady={() => {
-            readyRef.current = true;
-            // Mercek listesi ancak oturum kurulduktan sonra dolu geliyor;
-            // yukarıdaki effect mount sırasında boş liste görebiliyor.
-            pickDefaultLens();
-          }}
-          // Oturum hiç kurulamadıysa (izin iptali, donanım meşgul) ekranda
-          // siyah bir kutuyla bekletmek yerine sistem kamerasına düşüyoruz.
-          onMountError={(e) => {
-            devLog("📸 [camera] önizleme kurulamadı", e);
-            finish({ status: "unavailable" });
-          }}
-        />
+        {/* KAMERASIZ MODDA MOUNT EDİLMİYOR: donanım hiç tutulmuyor ve
+            `onMountError`/`onCameraReady` gibi oturumu kapatabilen event'ler
+            hiç doğmuyor (gerekçe `previewOnly`de). */}
+        {!previewOnly && (
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing={facing}
+            // Ön kamerada ekran flaşına çevriliyor — gerekçe `flashModeFor`da.
+            flash={flashModeFor(flash, facing)}
+            mode="picture"
+            /**
+             * ══════════════════════════════════════════════════════════════════
+             * 🔴 KARE ORANI BURADA SABİTLENİYOR — KALDIRMA.
+             * ══════════════════════════════════════════════════════════════════
+             * expo-camera'nın iOS varsayılanı `pictureSize = .high`, yani
+             * `AVCaptureSession.Preset.high` = 1920×1080, 16:9 (portrede 9:16).
+             * Sonuç iki kat bozuktu:
+             *
+             *   • Önizleme: `AVCaptureVideoPreviewLayer`ın videoGravity'si
+             *     `resizeAspectFill`. 9:16 bir akışı 3:4 kutuya doldurmak,
+             *     karenin altını üstünü kesip ORTASINI yakınlaştırmış gibi
+             *     gösteriyordu — "fotonun saçma sapan bir alanı" buydu.
+             *   • Dosya: çekilen kare de 9:16 geliyordu, yani kırpıcı 3:4
+             *     pencereyi o uzun karenin içinden alıyor ve önizlemede görülen
+             *     bölgeyle AYRIŞIYORDU.
+             *
+             * `Photo` preseti sensörün kendi 4:3'ü (portrede 3:4) ve tam
+             * çözünürlük: önizleme akışı da dosya da 3:4 olduğu için kutu
+             * birebir doluyor, kırpıcı da aynı kadrajla açılıyor.
+             *
+             * Android'de `pictureSize` "GENİŞLİKxYÜKSEKLİK" bekliyor ("Photo"
+             * parse edilemez, sessizce en yüksek çözünürlüğe düşer); oranı veren
+             * prop orada `ratio` ve yalnız Android'de geçerli.
+             *
+             * ══════════════════════════════════════════════════════════════════
+             * 🔴 BU PROP `patches/expo-camera+56.0.8.patch`E BAĞLI.
+             * ══════════════════════════════════════════════════════════════════
+             * `Photo` preseti kareyi 2MP'den (1920×1080) SENSÖRÜN TAMAMINA
+             * çıkarıyor — 48MP'lik iPhone'larda 8064×6048. expo-camera o kareyi
+             * işlerken iki kat şişiriyordu ve uygulama deklanşörde loader
+             * dönerken ÖLÜYORDU (jetsam; natif istisna JS'e hata olarak gelmiyor,
+             * o yüzden `catch` bloğu hiç çalışmıyor):
+             *   • `maxPhotoDimensions` daima formatın EN BÜYÜĞÜNE çekiliyordu,
+             *   • `normalizeOrientation` ekran ölçeğiyle render ettiği için
+             *     bitmap PİKSELDE 9 KAT doğuyordu (48MP → ~1.76 GB).
+             * Patch ikisini de düzeltiyor (tavan 12MP + birebir ölçek).
+             *
+             * ⚠️ PATCH TEK BAŞINA YETMİYOR — `package.json`da
+             * `expo.autolinking.ios.buildFromSource: ["expo-camera"]` ŞART.
+             * SDK 56 modülleri varsayılan olarak Expo'nun CDN'inden HAZIR İKİLİ
+             * geliyor (`ios/Pods/ExpoCamera/ExpoCamera.xcframework`), yani
+             * node_modules'daki Swift hiç derlenmiyor: ilk denemede patch
+             * uygulandı, `pod install` + rebuild yapıldı ve crash aynen devam
+             * etti — cihaz log'unda yine `JetsamEvent … reason: "highwater"`
+             * (uygulama 3.4 GB'a çıkıp kill edilmiş). O anahtar YALNIZ bu modülü
+             * kaynağa çeviriyor; `EXPO_USE_PRECOMPILED_MODULES=false` hepsini
+             * çevirip her temiz build'i dakikalarca uzatırdı.
+             *
+             * Doğrulama (pod install sonrası, build'den önce):
+             *   grep -c ExpoCamera.xcframework ios/Pods/Pods.xcodeproj/project.pbxproj  → 0
+             *   grep -c CameraPhotoCapture.swift ios/Pods/Pods.xcodeproj/project.pbxproj → >0
+             *
+             * ⚠️ `npm i` sonrası `postinstall` koşmazsa ya da expo-camera
+             * yükseltilirse patch düşer ve crash SESSİZCE geri gelir. Sürüm
+             * değişirse patch yeniden üretilmeli.
+             */
+            pictureSize={Platform.OS === "ios" ? "Photo" : undefined}
+            ratio={Platform.OS === "android" ? "4:3" : undefined}
+            // 1x mercek — bkz. pickDefaultLens. Verilmezse expo'nun seçtiği sanal
+            // cihaz 0.5x (ultra geniş) açıyla açılıyor.
+            selectedLens={lens}
+            // 🔴 Bkz. dosya başı: ön kamerada DOSYA da aynalanıyor (selfie
+            // doğrulamasının tersi) — profil fotoğrafı, çekerken görülen kare.
+            mirror={facing === "front"}
+            // Sistemin beyaz deklanşör animasyonu kapalı: kendi kırpma ekranımıza
+            // geçiş zaten bir sahne değişimi, iki efekt üst üste biniyordu.
+            animateShutter={false}
+            // Yalnız zaman aşımı ağını susturuyor (bkz. readyRef) — deklanşörü
+            // bu event'e BAĞLAMA, iOS'ta kamera çevrilince bir daha atılmıyor.
+            onCameraReady={() => {
+              readyRef.current = true;
+              // Mercek listesi ancak oturum kurulduktan sonra dolu geliyor;
+              // yukarıdaki effect mount sırasında boş liste görebiliyor.
+              pickDefaultLens();
+            }}
+            // Oturum hiç kurulamadıysa (izin iptali, donanım meşgul) ekranda
+            // siyah bir kutuyla bekletmek yerine sistem kamerasına düşüyoruz.
+            onMountError={(e) => {
+              devLog("📸 [camera] önizleme kurulamadı", e);
+              finish({ status: "unavailable" });
+            }}
+          />
+        )}
 
         {/* ÇEKİLEN KARE — pencerenin İÇİNDE, canlı akışın üstünde.
             ⚠️🔴 iOS'ta NORMALDE ÇİZİLMİYOR: ekranda kalan şey deklanşöre
@@ -1103,7 +1219,21 @@ export default function CameraCaptureOverlay() {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           {/* YENİDEN ÇEK — kare donmuşken SAĞ ÜSTTE, alt barda değil.
               Alt bar böylece tek bir eyleme, onaya kalıyor. */}
-          {frozen && (
+          {/* KIRP — "yeniden çek"in SOLUNDA, yalnız çağıranın kancası varsa.
+              ⚠️ `!shot` KAPISI: kamera yolunda kare deklanşörle birlikte
+              donuyor ama dosya yüz milisaniyeler sonra geliyor; o arada
+              düğme çizili ve basış sessizce yutulurdu (`handleCrop` dosyasız
+              dönüyor). Donuk görünmesi "henüz değil" demenin dürüst yolu. */}
+          {chrome.crop && (
+            <MediaChromeIconButton
+              systemImage="crop"
+              fallbackIcon={Crop}
+              label={t("common.cropper.crop")}
+              onPress={handleCrop}
+              disabled={busy || !shot}
+            />
+          )}
+          {chrome.retake && (
             <MediaChromeIconButton
               systemImage="arrow.counterclockwise"
               fallbackIcon={RefreshCw}
@@ -1127,7 +1257,7 @@ export default function CameraCaptureOverlay() {
 
           ÖN KAMERADA DA VAR (istek): ışığı ekran veriyor, gerekçe
           `flashModeFor`da. Kare donmuşken gizli — canlı akışın ayarı. */}
-      {!frozen && (
+      {chrome.flash && (
         <View
           pointerEvents="box-none"
           style={{
@@ -1191,7 +1321,7 @@ export default function CameraCaptureOverlay() {
           </Text>
         )}
 
-        {frozen ? (
+        {chrome.confirm ? (
           /**
            * ── KARE DONMUŞ: ONAY SATIRI ─────────────────────────────────────
            * TEK EYLEM, SAĞDA: gönder. Deklanşör çizilmiyor — donmuş bir karede
@@ -1280,7 +1410,7 @@ export default function CameraCaptureOverlay() {
               )}
             </AnimatedPressable>
           </View>
-        ) : (
+        ) : chrome.shutter ? (
           /**
            * ── CANLI AKIŞ: DEKLANŞÖR + ÇEVİRME ──────────────────────────────
            * Deklanşör ekranın ORTASINDA kalıyor (sistem kamerasının öğrenilmiş
@@ -1359,26 +1489,28 @@ export default function CameraCaptureOverlay() {
               />
             </AnimatedPressable>
 
-            <View
-              style={{
-                position: "absolute",
-                right: 24,
-                top: 0,
-                bottom: 0,
-                justifyContent: "center",
-              }}
-            >
-              <MediaChromeIconButton
-                systemImage="arrow.triangle.2.circlepath.camera"
-                fallbackIcon={RefreshCw}
-                label={t("common.camera.flip")}
-                // Önizlemeye çift dokunuşla AYNI yol (bkz. handleFlip).
-                onPress={handleFlip}
-                disabled={busy}
-              />
-            </View>
+            {chrome.flip && (
+              <View
+                style={{
+                  position: "absolute",
+                  right: 24,
+                  top: 0,
+                  bottom: 0,
+                  justifyContent: "center",
+                }}
+              >
+                <MediaChromeIconButton
+                  systemImage="arrow.triangle.2.circlepath.camera"
+                  fallbackIcon={RefreshCw}
+                  label={t("common.camera.flip")}
+                  // Önizlemeye çift dokunuşla AYNI yol (bkz. handleFlip).
+                  onPress={handleFlip}
+                  disabled={busy}
+                />
+              </View>
+            )}
           </View>
-        )}
+        ) : null}
       </View>
     </Animated.View>
   );
