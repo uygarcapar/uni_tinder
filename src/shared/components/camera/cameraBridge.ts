@@ -1,4 +1,5 @@
 import type { PreviewFrame } from "@/shared/components/camera/cameraLayout";
+import type { SourceRect } from "@/shared/components/cropper/cropGeometry";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
@@ -90,14 +91,28 @@ export type CameraRequest = {
    */
   source?: CameraShot;
   /**
-   * Verilirse sağ üstte kırpma butonu çıkar. Dönen kare ekrandakinin YERİNE
-   * geçer; `null` = vazgeçildi, kare aynı kalır.
+   * Verilirse sağ üstte kırpma butonu çıkar ve ekran KENDİ kırpma kipini açar:
+   * donmuş kare yerinden oynamadan üstüne 3:4 çerçeve biniyor, kullanıcı
+   * kadrajı aynı pencerede seçiyor. ✓'de bu kanca kullanıcının seçtiği KAYNAK
+   * dikdörtgeniyle (`rect`, `shot`un piksel uzayında) çağrılır; dönen kare
+   * ekrandakinin YERİNE geçer. `null`/hata = kare aynı kalır (ekran kipte
+   * kalıp hatayı satır içinde gösterir).
    *
-   * NEDEN ÇAĞIRAN AÇIYOR, overlay DEĞİL: kırpıcıyı overlay kendisi açsaydı
-   * `PickedPhoto`, dosya sahipliği ve `presentCropper` photoPicker'ın işi
-   * olmaktan çıkardı. Bu sorumluluk çağıranda kalıyor.
+   * KIRPICIYI KİMSE AÇMIYOR — ne overlay ne çağıran. Görüntü işleme (kesme,
+   * ara dosya, bir önceki dosyayı unutma) kancanın işi: overlay `PickedPhoto`yu,
+   * dosya sahipliğini ve `ImageManipulator`ı bilmemeye devam ediyor.
    */
-  crop?: (shot: CameraShot) => Promise<CameraShot | null>;
+  crop?: (shot: CameraShot, rect: SourceRect) => Promise<CameraShot | null>;
+  /**
+   * Açılır açılmaz KIRPMA KİPİNE gir — yalnız `source` + `crop` ile anlamlı.
+   *
+   * NEDEN: profil "Düzenle". Kullanıcı ZATEN yüklenmiş bir fotoğrafın kadrajını
+   * değiştirmek için geliyor; önizlemede bir kez daha kırp'a basmak boş bir
+   * adım olurdu (istek: "Düzenle de aynı önizleme ekranını açsın, doğrudan
+   * kırpma kipinde başlasın"). Kipten ✕ ile çıkınca ekran normal önizlemeye
+   * döner — oturum kapanmaz. Ölçü okunamazsa kip açılmaz, önizleme kalır.
+   */
+  startInCrop?: boolean;
 };
 
 export type CameraOutcome =

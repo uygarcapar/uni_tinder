@@ -1,5 +1,5 @@
 import { frameWindow, centerCropRect } from '@/shared/components/cropper/cropGeometry';
-import { cameraChrome, previewWindow } from '@/shared/components/camera/cameraLayout';
+import { cameraChrome, footerStrip, previewWindow } from '@/shared/components/camera/cameraLayout';
 
 describe('previewWindow', () => {
   const phone = { screenW: 393, screenH: 852, insetTop: 59, headerH: 123, footerH: 140 };
@@ -62,22 +62,49 @@ describe('previewWindow', () => {
 
 describe('cameraChrome', () => {
   it('galeri yolunda deklanşör/flaş/çevir/yeniden-çek YOK', () => {
-    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true }))
-      .toEqual({ shutter: false, flash: false, flip: false, retake: false, crop: true, confirm: true });
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: false, reset: false, crop: true, confirm: true, hint: false });
   });
 
   it('canlı akışta deklanşör ve flaş var, onay yok', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: false, allowCrop: true }))
-      .toEqual({ shutter: true, flash: true, flip: true, retake: false, crop: false, confirm: false });
+    expect(cameraChrome({ previewOnly: false, frozen: false, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: true, flash: true, flip: true, retake: false, reset: false, crop: false, confirm: false, hint: false });
   });
 
   it('kare donunca yeniden-çek ve onay gelir, deklanşör gider', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true }))
-      .toEqual({ shutter: false, flash: false, flip: false, retake: true, crop: true, confirm: true });
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: true, reset: false, crop: true, confirm: true, hint: false });
   });
 
   it('kırpma kancası yoksa kırpma butonu HİÇ çizilmez (kampüs)', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: false }).crop).toBe(false);
-    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: false }).crop).toBe(false);
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: false, cropping: false }).crop).toBe(false);
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: false, cropping: false }).crop).toBe(false);
+  });
+
+  it('kırpma kipinde yeniden-çek gider, sıfırla + ipucu gelir, kırp ve onay kalır', () => {
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true, cropping: true }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: false, reset: true, crop: true, confirm: true, hint: true });
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true, cropping: true }).reset).toBe(true);
+  });
+});
+
+describe('footerStrip', () => {
+  it('deklanşör şeridi: kontrol ortada, üstte ve altta EŞİT boşluk', () => {
+    expect(footerStrip({ insetBottom: 34, controlH: 72 })).toEqual({ footerGap: 34, footerH: 140 });
+  });
+
+  it('galeri: deklanşör yok, şerit yalnız ok kadar — pencere 24pt aşağı uzanır', () => {
+    const camera = footerStrip({ insetBottom: 34, controlH: 72 });
+    const gallery = footerStrip({ insetBottom: 34, controlH: 48 });
+    expect(gallery).toEqual({ footerGap: 34, footerH: 116 });
+    const phone = { screenW: 393, screenH: 852, insetTop: 59, headerH: 123 };
+    const winCam = previewWindow({ ...phone, footerH: camera.footerH, frame: 'fill' });
+    const winGal = previewWindow({ ...phone, footerH: gallery.footerH, frame: 'fill' });
+    expect(winGal.winH - winCam.winH).toBe(24);
+    expect(winGal.top).toBe(winCam.top);
+  });
+
+  it('güvenli alanı olmayan cihazda boşluk tabanı 20', () => {
+    expect(footerStrip({ insetBottom: 0, controlH: 48 })).toEqual({ footerGap: 20, footerH: 88 });
   });
 });

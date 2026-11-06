@@ -26,20 +26,37 @@ import { useTranslation } from "react-i18next";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import MediaChromeIconButton from "@/shared/components/MediaChromeIconButton";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import { ArrowRight, Crop, RefreshCw, X, Zap } from "@/shared/icons";
+import {
+  ArrowRight,
+  Check,
+  Crop,
+  RefreshCw,
+  RotateCcw,
+  X,
+  Zap,
+} from "@/shared/icons";
 import { useAppMode } from "@/features/discover/useAppMode";
 import { modeAccent } from "@/features/discover/modeTheme";
 import { colors, isLight, onMediaAt, withAlpha } from "@/shared/theme/colors";
 import { GLASS_ICON_CLEAR_SIZE } from "@/shared/theme/glass";
 import { devLog } from "@/shared/utils/devLog";
 import { forgetPhoto } from "@/shared/utils/photoStore";
+import { CropFrame } from "@/shared/components/cropper/CropFrame";
+import {
+  cropFrameInWindow,
+  cropStageScales,
+  isWholeSource,
+} from "@/shared/components/cropper/cropStage";
+import { OUTPUT_W, toSourceRect } from "@/shared/components/cropper/cropGeometry";
+import { useCropGestures } from "@/shared/components/cropper/useCropGestures";
 import {
   bindCamera,
   type CameraOutcome,
   type CameraRequest,
   type CameraShot,
 } from "./cameraBridge";
-import { cameraChrome, previewWindow } from "./cameraLayout";
+import { cameraChrome, footerStrip, previewWindow } from "./cameraLayout";
+import { resolveShotSize } from "./shotSize";
 
 /**
  * Uygulama içi kamera ekranı — profil fotoğrafını UYGULAMADAN çekmek.
@@ -243,7 +260,11 @@ export default function CameraCaptureOverlay() {
    *   • Kamerasız mod (galeri `source`'u) — `present()` bunu `true`ya çekiyor;
    *     canlı katman hiç yok, dondurulacak kare de yok, pencerede görünebilecek
    *     tek şey dosya.
-   *   • Başarılı kırpmadan sonra (`handleCrop`) — yeni dosya artık çizilmek
+   *   • Kırpma kipine girerken (`handleCrop`) ve başarılı ✓'den sonra
+   *     (`handleApplyCrop`). Kip dosyayı kendi dönüşümüyle çiziyor; bayrak
+   *     girişte açılıyor ki ✕ ile önizlemeye dönüşte pencerede AYNI dosya
+   *     kalsın (donmuş canlı kareye geri dönmek, kipe girip çıkmayı "foto
+   *     değişti" diye okuturdu). ✓'den sonra yeni dosya zaten çizilmek
    *     ZORUNDA: ekrandaki donmuş kare kırpılmamış hâlinde kalırdı.
    */
   const [showStill, setShowStill] = useState(Platform.OS !== "ios");
@@ -272,6 +293,51 @@ export default function CameraCaptureOverlay() {
    * oturumun state'ine yazmaya çalışırdı.
    */
   const [closing, setClosing] = useState(false);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * YERİNDE KIRPMA KİPİ — donmuş karenin ÜSTÜNE 3:4 çerçeve, aynı pencerede.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Kırp düğmesi ayrı bir kırpıcı AÇMIYOR (bkz. cameraBridge > `crop`): fotoğraf
+   * yerinden oynamadan pencerenin içinde çerçeve, ızgara ve karartma beliriyor;
+   * kadraj pinch/pan/çift dokunuşla seçiliyor, ✓ kancayı dikdörtgenle çağırıyor.
+   *
+   * `cropSrc` kipe GİRERKEN ölçülen kaynak (`resolveShotSize`): giriş ölçeği
+   * ona bağlı ve yanlış bir ölçü fotoğrafın kipe girerken sıçraması demek.
+   * Her girişte YENİDEN ölçülüyor — kırpılmış kare yeni bir kaynak. `uri`
+   * kipin ÇİZDİĞİ dosya: ✓'den sonra `shot` yeni kareye geçtiğinde kip katmanı
+   * bir süre daha eski kareyi çizmeye devam ediyor (bkz. `cropLayerHeld`).
+   */
+  const [cropping, setCropping] = useState(false);
+  const [cropSrc, setCropSrc] = useState<{
+    w: number;
+    h: number;
+    uri: string;
+  } | null>(null);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * DEVİR TESLİM — iki katmandan biri EKRANDA OLMADAN diğeri kaldırılmıyor.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Kipe giriş `cover` görüntünün (ya da iOS kamera yolunda DURAKLATILMIŞ canlı
+   * katmanın) yerine YENİ bir `Image` koyuyor. O dosya iOS'ta daha hiç decode
+   * edilmemiş olabiliyor (12MP JPEG) ve eskisini hemen kaldırmak, yenisi
+   * gelene kadar pencereyi SİYAH bırakırdı — "fotoğraf yerinden oynamasın"
+   * kararının tam tersi.
+   *
+   * Bu iki değer expo-image'in `onDisplay`inden yazılıyor (dosya GERÇEKTEN
+   * çizildi) ve çizilen uri'yi tutuyor. Koruma uri'nin kendisinden değil iki
+   * şeyden geliyor: `handleCrop` kaynak değişirken `setCropShownUri(null)`
+   * ile değeri düşürüyor ve okuyan taraf `cropSrc.uri` ile KARŞILAŞTIRIYOR.
+   * (Not: `onDisplay` olayı kaynak taşımıyor; işleyici render anındaki uri'yi
+   * yazıyor, yani eski kaynağın geç gelen olayını ayırt etmiyoruz.)
+   *   • `cropShownUri`: kip görüntüsü çizildi mi. Çizilene kadar kip katmanı
+   *     ŞEFFAF zeminle alttakinin ÜSTÜNDE duruyor; çizilince siyah zemine
+   *     geçiyor. Geometri `startScale`de piksel piksel aynı → devir görünmez.
+   *   • `coverShownUri`: önizlemenin `cover` görüntüsü çizildi mi. Kipten
+   *     çıkışta kip katmanı, `cover` görüntü O ANKİ kareyi çizene kadar
+   *     kalıyor (bkz. `cropLayerHeld`).
+   */
+  const [cropShownUri, setCropShownUri] = useState<string | null>(null);
+  const [coverShownUri, setCoverShownUri] = useState<string | null>(null);
 
   /**
    * ══════════════════════════════════════════════════════════════════════════
@@ -347,6 +413,10 @@ export default function CameraCaptureOverlay() {
     setError(null);
     setShot(null);
     setCapturing(false);
+    setCropping(false);
+    setCropSrc(null);
+    setCropShownUri(null);
+    setCoverShownUri(null);
     setClosing(false);
   }, []);
 
@@ -405,6 +475,10 @@ export default function CameraCaptureOverlay() {
       setShot(request.source ?? null);
       setShowStill(!!request.source || Platform.OS !== "ios");
       setCapturing(false);
+      setCropping(false);
+      setCropSrc(null);
+      setCropShownUri(null);
+      setCoverShownUri(null);
       captureGenRef.current += 1;
       pendingCommitRef.current = false;
       setLens(undefined);
@@ -566,9 +640,15 @@ export default function CameraCaptureOverlay() {
      * ⚠️ TABAN 20: güvenli alanı olmayan cihazda (insets.bottom = 0) düğme
      * ekranın kenarına yapışırdı. Çentiklide ölçü `insets.bottom`un kendisi,
      * yani ev göstergesinin şeridi kadar — düğme onun üstünde kalıyor.
+     *
+     * ⚠️ KAMERASIZ MODDA (galeri / "Düzenle") ŞERİT OK KADAR: deklanşör hiç
+     * çizilmiyor, şeritte yalnız onay oku var. Hesap `footerStrip`te (saf,
+     * testli); pencere o yolda 24pt (iPhone 15) aşağı uzanıyor — gerekçe orada.
      */
-    const footerGap = Math.max(insets.bottom, 20);
-    const footerH = 2 * footerGap + SHUTTER;
+    const { footerGap, footerH } = footerStrip({
+      insetBottom: insets.bottom,
+      controlH: previewOnly ? SEND : SHUTTER,
+    });
     /**
      * ══════════════════════════════════════════════════════════════════════
      * PENCERE GÜVENLİ ALANIN ALTINDAN DEKLANŞÖRE KADAR — 3:4 DEĞİL.
@@ -626,7 +706,69 @@ export default function CameraCaptureOverlay() {
       footerH,
     });
     return { headerH, footerGap, ...win };
-  }, [frame, insets.top, insets.bottom, screenH, screenW]);
+  }, [frame, previewOnly, insets.top, insets.bottom, screenH, screenW]);
+
+  /**
+   * KIRPMA KİPİNİN GEOMETRİSİ — hepsi PENCERENİN kendi uzayında.
+   *
+   * Çerçeve pencerenin içinde ortalı 3:4 (`cropFrameInWindow`); merkezi
+   * pencerenin merkezi. Fotoğraf da pencere merkezine oturtuluyor, yani
+   * `startScale`de görüntü önizlemedeki `cover` çizimin piksel piksel aynısı
+   * (gerekçe `cropStageScales`te).
+   *
+   * Öteleme sınırı: yatay → pencere eni, dikey → çerçeve boyu (kırpıcının
+   * "eksen başına sabit kutu" kuralı). Jest dedektörü pencerenin İÇİNDE, odak
+   * noktası pencere merkezi.
+   *
+   * ⚠️ HOOK KOŞULSUZ ÇAĞRILIYOR (aşağıdaki `if (!session) return null`dan
+   * önce): `cropSrc` yokken yer tutucu geometri veriliyor — `cropping` kapalı
+   * olduğu için bütün tanıyıcılar zaten ölü.
+   */
+  const cropFrame = useMemo(
+    () => cropFrameInWindow({ winW: layout.winW, winH: layout.winH }),
+    [layout.winW, layout.winH],
+  );
+  const cropScales = useMemo(
+    () =>
+      cropSrc
+        ? cropStageScales({
+            srcW: cropSrc.w,
+            srcH: cropSrc.h,
+            winW: layout.winW,
+            winH: layout.winH,
+            frameW: cropFrame.width,
+            frameH: cropFrame.height,
+            outW: OUTPUT_W,
+          })
+        : null,
+    [cropSrc, layout.winW, layout.winH, cropFrame.width, cropFrame.height],
+  );
+  const {
+    gesture: cropGesture,
+    imageStyle: cropImageStyle,
+    gridStyle: cropGridStyle,
+    latest: cropLatest,
+    resetTransform: resetCropTransform,
+    resetGestureFlags: resetCropGestureFlags,
+  } = useCropGestures({
+    // ✓ işlenirken (`busy`) kadraj DONUYOR: yoksa kullanıcı ✓'ye bastıktan
+    // sonra fotoğrafı oynatabilir ve sonuç eski dikdörtgenle çıkardı. Yalnız
+    // tanıyıcıları kapatıyor: kadraj değerleri ve `latest` yerinde kalıyor,
+    // sıçrama yok (`cropping` kapalıyken `peek` false → settleBack kadrajı
+    // OLDUĞU gibi bırakıyor); ✓ başarısız olup `busy` düşünce jestler aynı
+    // kadrajdan devam ediyor.
+    cropping: cropping && !busy,
+    // Kip DIŞINDA hiçbir jest yok: önizlemede pinch bir "bakış" bile değil.
+    peek: false,
+    srcW: cropSrc?.w ?? 1,
+    srcH: cropSrc?.h ?? 1,
+    baseScale: cropScales?.baseScale ?? 1,
+    maxScale: cropScales?.maxScale ?? 2,
+    clampW: layout.winW,
+    clampH: cropFrame.height,
+    focusX: layout.winW / 2,
+    focusY: layout.winH / 2,
+  });
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
@@ -831,6 +973,7 @@ export default function CameraCaptureOverlay() {
     previewOnly,
     frozen,
     allowCrop: !!session?.request.crop,
+    cropping,
   });
 
   /**
@@ -893,6 +1036,11 @@ export default function CameraCaptureOverlay() {
     setCapturing(false);
     setShot(null);
     setError(null);
+    // Kip zaten kapalı (düğme kipte çizilmiyor); ölçü atılan kareye aitti.
+    setCropping(false);
+    setCropSrc(null);
+    setCropShownUri(null);
+    setCoverShownUri(null);
     // Bir sonraki çekim yine donmuş kareyle kalacak (gerekçe `showStill`de);
     // arka plandan dönüş gibi bir sebeple açılmışsa burada kapanıyor.
     setShowStill(Platform.OS !== "ios");
@@ -904,53 +1052,210 @@ export default function CameraCaptureOverlay() {
   }, [busy, discard, previewOnly, shot?.uri]);
 
   /**
-   * KIRP — kırpıcıyı ÇAĞIRAN açıyor (gerekçe cameraBridge > `crop`), ekran
-   * yalnız dönen kareyi pencereye koyuyor. `null` = vazgeçildi, kare aynı.
+   * KIRPMA KİPİNDEN ÇIK (✕ ya da kip açıkken kırp düğmesi).
    *
-   * ⚠️ `busy` BİLEREK: kırpıcı açıkken bu ekranın düğmeleri ölü olmalı. Yan
-   * etkisi onay okunun kırpıcının ARKASINDA göstergeye dönmesi — görünmüyor,
-   * kabul.
+   * Kadraj atılıyor; kare ve dosya DEĞİŞMİYOR, oturum KAPANMIYOR — `discard`
+   * ya da `finish` burada YOK: kipteki ✕ "kırpmaktan vazgeçtim" demek,
+   * "fotoğraftan vazgeçtim" değil. Pencere önizlemenin `cover` çizimine döner.
+   */
+  const exitCrop = useCallback(() => {
+    if (busy) return;
+    setCropping(false);
+    // Kipte kalınan bir ✓ hatası artık ilgisiz.
+    setError(null);
+  }, [busy]);
+
+  /**
+   * KIRP — ekran KENDİ kırpma kipini açıyor (gerekçe cameraBridge > `crop`);
+   * kip açıkken basmak = ✕ (`exitCrop`).
    *
-   * ⚠️🔴 KANCA REDDEDERSE `busy` YİNE BIRAKILIYOR: `await` fırlatsaydı bayrak
-   * sonsuza dek açık kalırdı ve ✕ dahil bütün ekran ölürdü — kullanıcının tek
-   * çıkışı uygulamayı öldürmek olurdu. Hata yalnız loglanıyor, kare aynı
-   * kalıyor (kırpmadan önceki dosya hâlâ geçerli bir seçim).
+   * Kipe ANCAK ölçü kesinleşince giriliyor: `CameraShot` sözleşmesinde ölçü
+   * `0` gelebiliyor ve giriş ölçeği ona bağlı (`resolveShotSize`). Ölçüm
+   * sürerken `busy` açık — düğme donuk, ikinci basış yutuluyor. Okunamazsa kip
+   * açılmıyor, kare aynı kalıyor.
    *
-   * ⚠️ OTURUM KİMLİĞİYLE KAPI: kırpma sürerken ekran kapanmışsa (host
-   * söküldü) hiçbir state'e dokunulmuyor — `commitShot`taki kapının ikizi.
+   * ⚠️🔴 HER GİRİŞTE KADRAJ `startScale`e SIFIRLANIYOR (`resetCropTransform`,
+   * animasyonsuz) ve jest bayrakları boşa çekiliyor: `peek: false` iken kip bir
+   * jestin ortasında kapanırsa görünen dönüşüm `latest`ten ayrışabiliyor —
+   * bir önceki girişin kalıntısıyla açılmak hem görüntüyü sıçratır hem ✓'nin
+   * okuduğu değeri bozardı. `startScale` önizlemedeki `cover` görüntünün
+   * piksel piksel aynısı, yani fotoğraf yerinden oynamıyor.
    *
-   * ⚠️ `setShowStill(true)`: kırpılmış dosya artık pencerede ÇİZİLMEK zorunda;
-   * iOS'taki `false` varsayılanı yalnız canlı akıştan donan kare içindi ve o
-   * kare artık kırpılmış dosya DEĞİL.
+   * ⚠️ OTURUM KİMLİĞİYLE KAPI: ölçüm sürerken ekran kapanmışsa (✕ önce
+   * basıldı, host söküldü) hiçbir state'e dokunulmuyor — `commitShot`taki
+   * kapının ikizi. `busy` de yalnız oturum hâlâ aynıysa bırakılıyor.
    *
-   * ⚠️ `forgetPhoto` BURADA YOK: kırpmadan önceki dosyanın sahibi kanca
-   * (çağıran). Burada silmek, onun hâlâ tuttuğu dosyayı altından çekmek olurdu.
+   * ⚠️ `setShowStill(true)`: kip dosyayı çiziyor; çıkışta da pencerede aynı
+   * dosya kalsın (gerekçe `showStill`de).
    */
   const handleCrop = useCallback(async () => {
+    if (cropping) {
+      exitCrop();
+      return;
+    }
     const owner = sessionRef.current;
-    const crop = owner?.request.crop;
-    if (!crop || !shot || busy) return;
+    if (!owner?.request.crop || !shot || busy) return;
     setBusy(true);
     setError(null);
-    let next: CameraShot | null = null;
+    let size: { width: number; height: number } | null = null;
     try {
-      next = await crop(shot);
+      size = await resolveShotSize(shot);
     } catch (e) {
-      devLog("📸 [camera] kırpma başarısız", e);
-      next = null;
+      devLog("📸 [camera] kırpma için ölçü okunamadı", e);
+      size = null;
     } finally {
-      // Oturum aynıysa `busy` burada bırakılıyor. Değiştiyse (ekran kırpma
+      // Oturum aynıysa `busy` burada bırakılıyor. Değiştiyse (ekran ölçüm
       // sürerken kapandı ya da yerine başkası geldi) dokunulmuyor: `busy`yi
       // kapanış animasyonundan SONRA `dismiss`, yoksa sıradaki `present()`
       // sıfırlıyor; host söküldüyse sıfırlanacak state de kalmadı.
       if (sessionRef.current === owner) setBusy(false);
     }
     if (sessionRef.current !== owner) return;
-    if (next) {
-      setShot(next);
-      setShowStill(true);
+    if (!size) {
+      devLog("📸 [camera] kare ölçüsü yok, kırpma kipi açılmadı");
+      return;
     }
-  }, [busy, shot]);
+    const { startScale } = cropStageScales({
+      srcW: size.width,
+      srcH: size.height,
+      winW: layout.winW,
+      winH: layout.winH,
+      frameW: cropFrame.width,
+      frameH: cropFrame.height,
+      outW: OUTPUT_W,
+    });
+    setCropSrc({ w: size.width, h: size.height, uri: shot.uri });
+    // Devir yeniden başlıyor: önceki girişin `onDisplay`i bu girişin yeni
+    // native görüntüsünü "çizildi" saymamalı (gerekçe `cropShownUri`de).
+    setCropShownUri(null);
+    // `cover` görüntü iOS kamera yolunda BURADA mount oluyor ve kip
+    // katmanının ALTINDA decode ediliyor — ✕'te hazır bekliyor.
+    setShowStill(true);
+    resetCropGestureFlags();
+    resetCropTransform(false, { s: startScale, tx: 0, ty: 0 });
+    setCropping(true);
+  }, [
+    cropping,
+    exitCrop,
+    shot,
+    busy,
+    layout.winW,
+    layout.winH,
+    cropFrame.width,
+    cropFrame.height,
+    resetCropGestureFlags,
+    resetCropTransform,
+  ]);
+
+  /**
+   * AÇILIŞTA KIRPMA KİPİ (`request.startInCrop` — profil "Düzenle").
+   *
+   * Kip, kullanıcının basacağı kırp düğmesiyle AYNI yoldan (`handleCrop`)
+   * açılıyor: ölçü → `startScale` → devir kuralları birebir aynı, ayrı bir
+   * giriş kodu yok. Kamerasız modda kare `present()`te elde olduğu için ilk
+   * boş anda tetikleniyor.
+   *
+   * ⚠️ OTURUM BAŞINA TEK SEFER (`autoCropForRef`): kullanıcı ✕ ile kipten
+   * çıkınca önizleme kalmalı — efekt `cropping` false'a döndüğünde kipi geri
+   * açsaydı ekrandan çıkmanın yolu kalmazdı. Ölçü okunamazsa da yeniden
+   * denenmiyor (önizleme kalır, kırp düğmesi elle hâlâ basılabilir).
+   */
+  const autoCropForRef = useRef<Session | null>(null);
+  useEffect(() => {
+    if (!session || closing) return;
+    if (!session.request.startInCrop || !session.request.crop) return;
+    if (autoCropForRef.current === session) return;
+    if (!shot || busy || cropping) return;
+    autoCropForRef.current = session;
+    handleCrop();
+  }, [session, closing, shot, busy, cropping, handleCrop]);
+
+  /** ⟲ — kadraj girişteki hâline (`startScale`, ortalı) YAYLA döner; başarısız
+   *  bir ✓'den kalan satır içi hata da siliniyor (yeni deneme temiz başlasın). */
+  const handleResetCrop = useCallback(() => {
+    if (busy || !cropScales) return;
+    setError(null);
+    resetCropTransform(true, { s: cropScales.startScale, tx: 0, ty: 0 });
+  }, [busy, cropScales, resetCropTransform]);
+
+  /**
+   * ✓ — ÇERÇEVEDE NE GÖRÜNÜYORSA O KAYDEDİLİR, dokunulmamış ✓ dahil.
+   *
+   * Dikdörtgen jest değerlerinin JS aynasından (`cropLatest`) hesaplanıyor —
+   * `scale.value` okunmuyor (Fabric altında bayat kalabiliyor; kırpıcıyla aynı
+   * kural). Kip `startScale`den başladığı için hiç dokunmadan ✓ fotoğrafın
+   * çerçevede görünen ORTA bölümünü keser: WYSIWYG'in doğrudan sonucu.
+   *
+   * Dikdörtgen kaynağın TAMAMIYSA dosya üretilmiyor (kırpıcının "whole"
+   * kuralı): kip kapanır, kare aynı kalır.
+   *
+   * Görüntü işleme KANCANIN (`crop(shot, rect)`): dönen kare ekrandakinin
+   * YERİNE geçer ve kip kapanır. `null`/hata → hata satır içinde, KİPTE
+   * KALINIYOR (kullanıcı aynı kadrajla tekrar deneyebilir ya da ✕ ile çıkar).
+   *
+   * ⚠️🔴 KANCA REDDEDERSE `busy` YİNE BIRAKILIYOR: `await` fırlatsaydı bayrak
+   * sonsuza dek açık kalırdı ve ✕ dahil bütün ekran ölürdü.
+   *
+   * ⚠️ OTURUM KİMLİĞİYLE KAPI: kırpma sürerken ekran kapanmışsa hiçbir
+   * state'e dokunulmuyor (bkz. `handleCrop`).
+   *
+   * ⚠️ `forgetPhoto` BURADA YOK: kırpmadan önceki dosyanın sahibi kanca
+   * (çağıran). Burada silmek, onun hâlâ tuttuğu dosyayı altından çekmek olurdu.
+   */
+  const handleApplyCrop = useCallback(async () => {
+    const owner = sessionRef.current;
+    const crop = owner?.request.crop;
+    if (!crop || !shot || !cropSrc || !cropScales || !cropping || busy) {
+      return;
+    }
+    const { s, tx, ty } = cropLatest.current;
+    const rect = toSourceRect({
+      srcW: cropSrc.w,
+      srcH: cropSrc.h,
+      winW: cropFrame.width,
+      winH: cropFrame.height,
+      baseScale: cropScales.baseScale,
+      scale: s,
+      tx,
+      ty,
+      aspectW: 3,
+      aspectH: 4,
+    });
+    if (isWholeSource(rect, cropSrc.w, cropSrc.h)) {
+      setCropping(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    let next: CameraShot | null = null;
+    try {
+      next = await crop(shot, rect);
+    } catch (e) {
+      devLog("📸 [camera] kırpma başarısız", e);
+      next = null;
+    } finally {
+      // Gerekçe `handleCrop`taki ikizinde.
+      if (sessionRef.current === owner) setBusy(false);
+    }
+    if (sessionRef.current !== owner) return;
+    if (!next) {
+      setError(t("common.cropper.failed"));
+      return;
+    }
+    setShot(next);
+    setShowStill(true);
+    setCropping(false);
+  }, [
+    shot,
+    cropSrc,
+    cropScales,
+    cropping,
+    busy,
+    cropLatest,
+    cropFrame.width,
+    cropFrame.height,
+    t,
+  ]);
 
   /**
    * GÖNDER — iş ÇAĞIRANIN, ekran onun bitmesini bekliyor.
@@ -1014,6 +1319,26 @@ export default function CameraCaptureOverlay() {
     }
     commitShot(shot);
   }, [busy, capturing, commitShot, shot]);
+
+  /**
+   * KİP KATMANI NE ZAMAN ÇİZİLİYOR — devrin iki yönü (gerekçe `cropShownUri`).
+   *
+   * Kip açıkken her zaman. Kip KAPANDIKTAN sonra da, `cover` görüntü o anki
+   * kareyi henüz çizmediyse ve kip görüntüsü çizilmiş durumdaysa: ✕'te `cover`
+   * zaten kip boyunca altta çizili olduğu için katman hemen düşüyor; ✓'den
+   * sonra ise `shot` yeni kare — `cover` onu decode edene kadar kip katmanı
+   * (jestleri ölü, eski kareyle) yerinde kalıyor, yoksa arada iOS'ta
+   * duraklatılmış KIRPILMAMIŞ kare ya da siyah görünürdü. `cover` hata verirse
+   * de `coverShownUri` yazılıyor — katman asılı kalmasın.
+   */
+  const cropImageShown = !!cropSrc && cropShownUri === cropSrc.uri;
+  const cropLayerHeld =
+    !cropping &&
+    cropImageShown &&
+    !!shot &&
+    showStill &&
+    coverShownUri !== shot.uri;
+  const cropLayer = (cropping || cropLayerHeld) && cropSrc && cropScales;
 
   if (!session) return null;
 
@@ -1160,22 +1485,119 @@ export default function CameraCaptureOverlay() {
             durumlarda bir zıplama olarak okunurdu.
             ⚠️ `transition` YOK: sönümlenerek gelen bir kopya iki görüntüyü üst
             üste bindirip titreme gibi okunuyor. */}
+        {/* ÖNİZLEME KATMANI — kip açıkken de MOUNT KALIYOR: kip görüntüsü
+            çizilene kadar ekranda görünen şey bu (ya da iOS'ta duraklatılmış
+            canlı katman), çizildikten sonra kip katmanının siyah zemini
+            altında hazır bekliyor ve ✕'te tek karelik boşluk olmuyor (gerekçe
+            `cropShownUri`de). */}
         {shot && showStill ? (
           <Image
             source={{ uri: shot.uri }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             cachePolicy="memory"
+            onDisplay={() => setCoverShownUri(shot.uri)}
+            onError={() => setCoverShownUri(shot.uri)}
           />
         ) : null}
+
+        {cropLayer ? (
+          /* KIRPMA KİPİ: önizlemenin ÜSTÜNE kaynak oranında boyutlanmış,
+             pencere merkezine oturtulmuş ve jestlerle dönüştürülen bir
+             görüntü (kırpıcının çizimiyle aynı). Girişte ölçek `startScale` —
+             yani önizlemedekiyle birebir (gerekçe `cropFrame` notunda).
+             ⚠️ ZEMİN ŞEFFAF BAŞLIYOR, kip görüntüsü ÇİZİLİNCE siyaha dönüyor:
+             baştan siyah olsaydı dosya decode edilene kadar pencere kararırdı
+             (devir, `cropShownUri`de). Siyah ise ŞART: kullanıcı 1'e kadar
+             uzaklaşınca fotoğraf çerçevenin üstünde/altında pencereyi
+             doldurmayabiliyor; zeminsiz o bantlarda önizleme görünürdü.
+             ⚠️ Dönüşüm YALNIZ bu görüntüde — pencerenin kendisinde opaklık ya
+             da transform yok (başlıktaki cam butonlar ata zincirinde
+             transform/opaklık görürse sessizce çizilmiyor). */
+          <GestureDetector gesture={cropGesture}>
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: cropImageShown ? "#000" : "transparent" },
+              ]}
+              collapsable={false}
+            >
+              <Animated.View
+                style={[
+                  {
+                    position: "absolute",
+                    left: layout.winW / 2,
+                    top: layout.winH / 2,
+                    width: cropSrc.w * cropScales.baseScale,
+                    height: cropSrc.h * cropScales.baseScale,
+                    marginLeft: (-cropSrc.w * cropScales.baseScale) / 2,
+                    marginTop: (-cropSrc.h * cropScales.baseScale) / 2,
+                  },
+                  cropImageStyle,
+                ]}
+              >
+                {/* Kutu zaten kaynağın TAM oranında; `cover` burada sessizce
+                    ikinci bir kırpma yapardı. Kaynak `cropSrc.uri` — `shot`
+                    DEĞİL: ✓'den sonraki tutma anında `shot` çoktan yeni kare. */}
+                <Image
+                  source={{ uri: cropSrc.uri }}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="fill"
+                  cachePolicy="memory"
+                  onDisplay={() => setCropShownUri(cropSrc.uri)}
+                />
+              </Animated.View>
+            </Animated.View>
+          </GestureDetector>
+        ) : null}
+
+        {/* Karartma + ızgara + köşe tırnakları — pencerenin İÇİNDE, `area`
+            pencerenin kendisi. Yalnız kırpma kancası olan oturumda mount
+            ediliyor (kampüste ağaç bugünküyle aynı); opaklığı `visible`a bağlı
+            animasyonlu, yani kip kapanırken sönerek gidiyor. pointerEvents
+            none — dokunuşlar alttaki jeste geçiyor. */}
+        {session.request.crop ? (
+          <CropFrame
+            visible={cropping}
+            frame={cropFrame}
+            gridStyle={cropGridStyle}
+          />
+        ) : null}
+
+        {/* İPUCU — çerçevenin altındaki bantta ortalı. Bant dar bir cihazda
+            yoksa (çerçeve pencerenin boyunu dolduruyor) çerçevenin alt
+            kenarının içine oturuyor. */}
+        {chrome.hint && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              ...(layout.winH - (cropFrame.top + cropFrame.height) >= 28
+                ? { top: cropFrame.top + cropFrame.height, bottom: 0 }
+                : { bottom: 12 }),
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: onMediaAt(0.7), fontSize: 13 }}>
+              {t("common.cropper.hint")}
+            </Text>
+          </View>
+        )}
 
         {/* ÇİFT DOKUNUŞ KATMANI — pencerenin tamamı, EN ÜSTTE.
             Başlık ve alt bar bu kutunun DIŞINDA ve ağaçta ondan SONRA
             çiziliyor, yani ✕ / flaş / çevir / deklanşör dokunuşları buraya
-            düşmüyor. Jestin kendisi `flipTap`te. */}
-        <GestureDetector gesture={flipTap}>
-          <View style={StyleSheet.absoluteFill} />
-        </GestureDetector>
+            düşmüyor. Jestin kendisi `flipTap`te.
+            ⚠️ KIRPMA KİPİNDE ÇİZİLMİYOR: en üstte durduğu için kırpma jestinin
+            dokunuşlarını önce o alırdı. */}
+        {!cropping && (
+          <GestureDetector gesture={flipTap}>
+            <View style={StyleSheet.absoluteFill} />
+          </GestureDetector>
+        )}
       </View>
 
       {/* Kadrajın dört köşesindeki beyaz L tırnaklar KALDIRILDI: kutu artık
@@ -1205,7 +1627,13 @@ export default function CameraCaptureOverlay() {
           label={t("common.cancel")}
           // ⚠️ Elde duran kare de atılıyor (gerekçe `discard`da): ✕ burada
           // "vazgeçtim" demek, yani o dosyanın tek sahibi kalmıyor.
+          // KIRPMA KİPİNDE yalnız kipten çıkılıyor — kare ve oturum yerinde
+          // (gerekçe `exitCrop`ta).
           onPress={() => {
+            if (cropping) {
+              exitCrop();
+              return;
+            }
             discard(shot?.uri);
             finish({ status: "cancelled" });
           }}
@@ -1224,14 +1652,28 @@ export default function CameraCaptureOverlay() {
               ⚠️ `!shot` KAPISI: kamera yolunda kare deklanşörle birlikte
               donuyor ama dosya yüz milisaniyeler sonra geliyor; o arada
               düğme çizili ve basış sessizce yutulurdu (`handleCrop` dosyasız
-              dönüyor). Donuk görünmesi "henüz değil" demenin dürüst yolu. */}
+              dönüyor). Donuk görünmesi "henüz değil" demenin dürüst yolu.
+              Kip açıkken `active` görünümde ve basmak kipten çıkıyor (= ✕). */}
           {chrome.crop && (
             <MediaChromeIconButton
               systemImage="crop"
               fallbackIcon={Crop}
-              label={t("common.cropper.crop")}
+              label={cropping ? t("common.cancel") : t("common.cropper.crop")}
               onPress={handleCrop}
               disabled={busy || !shot}
+              active={cropping}
+            />
+          )}
+          {/* SIFIRLA — kırpma kipinde "yeniden çek"in YERİNDE: kipteyken
+              kareyi atmak yerine yalnız kadrajı geri alıyor (gerekçe
+              `cameraChrome`da). */}
+          {chrome.reset && (
+            <MediaChromeIconButton
+              systemImage="arrow.counterclockwise"
+              fallbackIcon={RotateCcw}
+              label={t("common.cropper.reset")}
+              onPress={handleResetCrop}
+              disabled={busy}
             />
           )}
           {chrome.retake && (
@@ -1366,11 +1808,15 @@ export default function CameraCaptureOverlay() {
             </Text>
 
             <AnimatedPressable
-              onPress={handleCommit}
+              // KIRPMA KİPİNDE aynı yuvarlak düğme ✓ oluyor: kadrajı kaydeder,
+              // göndermez (gerekçe `handleApplyCrop`ta).
+              onPress={cropping ? handleApplyCrop : handleCommit}
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={
-                session.request.commitLabel ?? t("common.save")
+                cropping
+                  ? t("common.cropper.apply")
+                  : (session.request.commitLabel ?? t("common.save"))
               }
               pressScale={0.96}
               style={{
@@ -1400,8 +1846,8 @@ export default function CameraCaptureOverlay() {
                 // olursa olsun beyaz (chrome butonlarıyla aynı kural).
                 <View pointerEvents="none">
                   <SFIcon
-                    name="arrow.right"
-                    fallback={ArrowRight}
+                    name={cropping ? "checkmark" : "arrow.right"}
+                    fallback={cropping ? Check : ArrowRight}
                     size={20}
                     strokeWidth={2.5}
                     color={colors.onMedia}

@@ -10,6 +10,11 @@ const tr = {
       save: 'Kaydet',
       reset: 'Sıfırla',
       failed: 'Fotoğraf işlenemedi, tekrar dene.',
+      // Kamera ekranının YERİNDE kırpma kipi (bkz. CameraCaptureOverlay):
+      // `hint` pencerenin alt bandındaki tek görünür metin, `apply` ✓
+      // düğmesinin ekran okuyucu adı.
+      hint: 'İki parmakla büyüt · sürükle',
+      apply: 'Kırpmayı kaydet',
     },
     // Uygulama içi kamera. Metinlerin hepsi EKRAN OKUYUCU için — chrome'da
     // yazı yok, kırpma ekranıyla aynı dil (yuvarlak cam butonlar + deklanşör).

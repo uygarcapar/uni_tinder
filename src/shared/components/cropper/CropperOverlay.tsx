@@ -9,14 +9,8 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
+import Animated from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { setStatusBarStyle } from "expo-status-bar";
@@ -45,16 +39,17 @@ import {
   type CropRequest,
 } from "./cropperBridge";
 import {
-  clamp,
   coverScale,
   frameWindow,
-  maxOffset,
   maxZoom,
   toSourceRect,
   OUTPUT_H,
   OUTPUT_QUALITY,
   OUTPUT_W,
 } from "./cropGeometry";
+import { applyCrop } from "./applyCrop";
+import { CropFrame } from "./CropFrame";
+import { useCropGestures } from "./useCropGestures";
 
 /**
  * Uygulama içi 3:4 kırpma ekranı (Apple Photos düzeni).
@@ -84,43 +79,6 @@ const OUT_H = OUTPUT_H;
 const QUALITY = OUTPUT_QUALITY;
 
 /**
- * Ölçek TABANI — ve artık SERT bir taban.
- *
- * Eskiden 0.85'lik bir lastik bölge vardı (bırakınca 1'e yaylanıyordu). O bölge
- * taban ölçeğin tanımıyla çelişiyor: `scale = 1` "fotoğrafın eni ekranın eni"
- * demek, yani 1'in altındaki her değer fotoğrafı sağdan ve soldan ekranın
- * içine çekip iki yanda boşluk açıyor. Parmak kalkınca geri yaylanıyor olması
- * yetmiyordu — en zoom out'ta görülen kare o anda yanlış. Taban 1'de sert:
- * daha fazla uzaklaştırma denemesi hiç hareket etmiyor.
- */
-const MIN_SCALE = 1;
-const SPRING = { damping: 20, stiffness: 180, mass: 0.9 };
-
-/**
- * Tek karede uygulanabilecek en büyük ölçek sıçraması.
- *
- * `scaleChange` = current.scale / previous.scale ve UIPinchGestureRecognizer
- * parmak sayısı değiştiğinde `scale`'i yeniden tabanlıyor. O karede oran
- * saçmalıyor (0.2 gibi) ve görüntü tek frame'de tabana çakılıyordu — kullanıcıya
- * "zoom'um kayboldu" olarak görünen ikinci yol.
- * 60fps'te insan parmağı bir karede %25'ten fazla açamaz.
- */
-const MAX_SCALE_STEP = 1.25;
-
-/**
- * Çift dokunuşun kabul ettiği en fazla ağırlık merkezi kayması (pt).
- *
- * VARSAYILANI BIRAKMA: RNGH'nin iOS tap tanıyıcısında `maxDistSq` NAN, yani
- * mesafe kontrolü HİÇ çalışmıyor (apple/Handlers/RNTapHandler.m:59). Üstelik
- * `_tapsSoFar` her `touchesBegan` çağrısında artıyor — pinch'in iki parmağı
- * ayrı olaylarda indiğinde TEK pinch iki dokunuş sayılıyor ve
- * `_maxNumberOfTouches >= _minPointers` de sağlandığı için çift dokunuş
- * tetikleniyordu. Ölçüt ağırlık merkezi: ikinci parmak inince merkez
- * parmakların ortasına sıçrar, bu da eşiği aşar.
- */
-const TAP_SLOP = 24;
-
-/**
  * Chrome ölçüleri SABİT — Host'lara `matchContents` VERİLMİYOR.
  *
  * SwiftUI intrinsic ölçüsü ikinci Fabric commit'inde geliyor; ilk karede host
@@ -130,17 +88,6 @@ const TAP_SLOP = 24;
  */
 const CTA_W = 132;
 const CTA_H = 52;
-
-/**
- * Ara kırpmaların JPEG kalitesi — final kaydın QUALITY'sinden YÜKSEK.
- *
- * Kullanıcı üst üste kırpabiliyor ve her kırpma yeniden JPEG kodluyor, yani
- * nesil kaybı birikiyor. Ara adımlarda 0.95: dosya biraz büyük ama o dosya
- * yalnız bu ekranda yaşıyor, upload'a giden sürüm son adımda bir kez
- * QUALITY ile kodlanıyor. Ara adımlar ayrıca OUT_W/OUT_H'ye KÜÇÜLTÜLMÜYOR —
- * her kırpmada ölçeklemek çözünürlüğü basamak basamak düşürürdü.
- */
-const STEP_QUALITY = 0.95;
 
 type Session = { request: CropRequest; settle: (outcome: CropOutcome) => void };
 
@@ -180,37 +127,6 @@ export default function CropperOverlay() {
    * kullanıcının kestiği kare. Bayrak olmasa o durum "hiç dokunmadı" sayılırdı.
    */
   const [edited, setEdited] = useState(false);
-
-  const scale = useSharedValue(1);
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const gestureActive = useSharedValue(0);
-  const atEdge = useSharedValue(false);
-  /**
-   * Kadrajın KALICI hâli — "ev".
-   *
-   * Kırpma kipinde her jest bittiğinde buraya yazılıyor; kip DIŞINDAKİ pinch
-   * (peek) bırakılınca buraya geri yaylanıyor. Tabana (1/0/0) geri dönmüyor:
-   * kullanıcı daha önce kırptıysa fotoğrafın yeni hâli bu ve yakından bakmak
-   * onu bozmamalı. Sıfırlamanın tek yolu Sıfırla butonu.
-   */
-  const homeS = useSharedValue(1);
-  const homeX = useSharedValue(0);
-  const homeY = useSharedValue(0);
-  /** Aktif pinch'in son bilinen parmak sayısı (tabanlama sıçramasını yakalar). */
-  const pinchPointers = useSharedValue(0);
-
-  /**
-   * Jest değerlerinin JS tarafındaki AYNASI.
-   *
-   * "Seç" işleyicisinde `scale.value`'yu doğrudan okumuyoruz: Fabric altında
-   * UI thread'den senkron okuma bayat kalabiliyor. Her jest bittiğinde buraya
-   * yazıyoruz; buton zaten ancak aktif jest yokken basılabiliyor.
-   */
-  const latest = useRef({ s: 1, tx: 0, ty: 0 });
-  const commit = useCallback((s: number, x: number, y: number) => {
-    latest.current = { s, tx: x, ty: y };
-  }, []);
 
   // ---------------------------------------------------------------- yerleşim
   const layout = useMemo(() => {
@@ -297,58 +213,6 @@ export default function CropperOverlay() {
     [baseScale, layout.winW],
   );
 
-  // ------------------------------------------------------------------ köprü
-  const present = useCallback((request: CropRequest, settle: (o: CropOutcome) => void) => {
-    scale.value = 1;
-    tx.value = 0;
-    ty.value = 0;
-    // "Ev" de sıfırlanıyor: kadraj oturum başına, sıradaki fotoğrafın kırpması
-    // öncekinin ölçeğini devralmamalı (kayıt akışı 6 fotoğrafı arka arkaya
-    // açıyor).
-    homeS.value = 1;
-    homeX.value = 0;
-    homeY.value = 0;
-    gestureActive.value = 0;
-    atEdge.value = false;
-    pinchPointers.value = 0;
-    latest.current = { s: 1, tx: 0, ty: 0 };
-    setBusy(false);
-    setCropping(false);
-    setEdited(false);
-    setWorking({
-      uri: request.uri,
-      // `?? 1` korunuyor: sistem boyut vermediyse alan 0 gelebiliyor ve
-      // cropGeometry sıfırı kendi içinde karşılıyor (bkz. coverScale).
-      w: request.srcWidth ?? 1,
-      h: request.srcHeight ?? 1,
-    });
-    setSession({ request, settle });
-  }, [scale, tx, ty, homeS, homeX, homeY, gestureActive, atEdge, pinchPointers]);
-
-  useEffect(() => {
-    bindCropper(present);
-    return () => bindCropper(null);
-  }, [present]);
-
-  const open = session !== null;
-  useEffect(() => {
-    if (!open) return;
-    setStatusBarStyle("light", true);
-    return () => setStatusBarStyle(isLight() ? "dark" : "light", true);
-  }, [open]);
-
-  // Sonuçlandırma state updater'ının İÇİNDE yapılamaz: React updater'ı iki kez
-  // çağırabiliyor (StrictMode) ve promise iki kez çözülürdü.
-  const sessionRef = useRef<Session | null>(null);
-  sessionRef.current = session;
-
-  const finish = useCallback((outcome: CropOutcome) => {
-    const current = sessionRef.current;
-    sessionRef.current = null;
-    setSession(null);
-    current?.settle(outcome);
-  }, []);
-
   // ------------------------------------------------------------------ jestler
   const { winCX, winCY } = layout;
 
@@ -379,226 +243,76 @@ export default function CropperOverlay() {
   const clampW = screenW;
   const clampH = layout.winH;
 
-  const edgeHaptic = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  // Jest + dönüşüm makinesi ortak hook'ta (kamera önizlemesinin yerinde
+  // kırpma kipi de onu kullanıyor). `peek: true`: kip DIŞINDA pinch bir bakış,
+  // bırakınca "ev"e geri yaylanıyor (bkz. useCropGestures > settleBack).
+  // `focusX/Y` pencere merkezi — GestureDetector'ın View'ı tam ekran, yani
+  // jest koordinatları ekran koordinatı.
+  const {
+    gesture: gestures,
+    imageStyle,
+    gridStyle,
+    latest,
+    resetTransform,
+    resetGestureFlags,
+  } = useCropGestures({
+    cropping,
+    peek: true,
+    srcW,
+    srcH,
+    baseScale,
+    maxScale,
+    clampW,
+    clampH,
+    focusX: winCX,
+    focusY: winCY,
+  });
+
+  // ------------------------------------------------------------------ köprü
+  const present = useCallback((request: CropRequest, settle: (o: CropOutcome) => void) => {
+    // Kadraj, "ev" ve JS aynası tabana (1/0/0): kadraj oturum başına,
+    // sıradaki fotoğrafın kırpması öncekinin ölçeğini devralmamalı (kayıt
+    // akışı 6 fotoğrafı arka arkaya açıyor). Jest bayrakları da boşa.
+    resetTransform(false);
+    resetGestureFlags();
+    setBusy(false);
+    setCropping(false);
+    setEdited(false);
+    setWorking({
+      uri: request.uri,
+      // `?? 1` korunuyor: sistem boyut vermediyse alan 0 gelebiliyor ve
+      // cropGeometry sıfırı kendi içinde karşılıyor (bkz. coverScale).
+      w: request.srcWidth ?? 1,
+      h: request.srcHeight ?? 1,
+    });
+    setSession({ request, settle });
+  }, [resetTransform, resetGestureFlags]);
+
+  useEffect(() => {
+    bindCropper(present);
+    return () => bindCropper(null);
+  }, [present]);
+
+  const open = session !== null;
+  useEffect(() => {
+    if (!open) return;
+    setStatusBarStyle("light", true);
+    return () => setStatusBarStyle(isLight() ? "dark" : "light", true);
+  }, [open]);
+
+  // Sonuçlandırma state updater'ının İÇİNDE yapılamaz: React updater'ı iki kez
+  // çağırabiliyor (StrictMode) ve promise iki kez çözülürdü.
+  const sessionRef = useRef<Session | null>(null);
+  sessionRef.current = session;
+
+  const finish = useCallback((outcome: CropOutcome) => {
+    const current = sessionRef.current;
+    sessionRef.current = null;
+    setSession(null);
+    current?.settle(outcome);
   }, []);
 
-  /**
-   * KİP DIŞINDA YALNIZ PINCH, o da KALICI DEĞİL.
-   *
-   * Kaydırma ve çift dokunuş `enabled(cropping)` ile kapalı: kip dışında
-   * yapılmış bir kadraj değişikliği, çerçeve hiç açılmamışken sessizce çıktıya
-   * geçerdi ("crop'a basmadan zoom yapıyor olmam croplamasın").
-   *
-   * Pinch ise HER ZAMAN açık ama kip kapalıyken bir BAKIŞ (peek): parmaklar
-   * kalkınca `settleBack` kadrajı tabana geri yaylandırıyor, yani fotoğrafa
-   * yakından bakmak çıktıyı değiştirmiyor. Kalıcı kadraj yalnız kırpma kipinde.
-   *
-   * Kapı `enabled` ile kuruluyor; `ComposedGesture`da o metot YOK, bu yüzden
-   * tanıyıcılara ayrı ayrı veriliyor.
-   */
-  const gestures = useMemo(() => {
-    const clampTranslate = (notify: boolean) => {
-      "worklet";
-      const pps = baseScale * scale.value;
-      const mx = maxOffset(srcW * pps, clampW);
-      const my = maxOffset(srcH * pps, clampH);
-      const nx = clamp(tx.value, -mx, mx);
-      const ny = clamp(ty.value, -my, my);
-      const hit = nx !== tx.value || ny !== ty.value;
-      tx.value = nx;
-      ty.value = ny;
-      // Haptik KENAR BAŞINA bir kez — her frame'de tetiklenirse titreşim
-      // sürekli çalar ve jest tökezler.
-      if (notify) {
-        if (hit && !atEdge.value) {
-          atEdge.value = true;
-          runOnJS(edgeHaptic)();
-        } else if (!hit && atEdge.value) {
-          atEdge.value = false;
-        }
-      }
-    };
-
-    const settleBack = () => {
-      "worklet";
-      gestureActive.value = 0;
-      atEdge.value = false;
-      // Kip KAPALIYSA jest bir bakıştı: kadraj "ev"e geri dönüyor (taban değil,
-      // kullanıcının en son kırptığı hâl). `cropping` worklet'e memo kurulurken
-      // DEĞERİYLE yakalanıyor ve memo bu state'e bağımlı, yani kip değişiminde
-      // zincir yeniden kuruluyor.
-      if (!cropping) {
-        scale.value = withSpring(homeS.value, SPRING);
-        tx.value = withSpring(homeX.value, SPRING);
-        ty.value = withSpring(homeY.value, SPRING);
-        runOnJS(commit)(homeS.value, homeX.value, homeY.value);
-        return;
-      }
-      if (scale.value < MIN_SCALE) {
-        // Taban sert olduğu için buraya normalde HİÇ girilmiyor; yay (underdamped
-        // SPRING) 1'in bir tık altına sarktığında devreye giren emniyet kemeri.
-        // Hedefleri ÖNCE hesaplıyoruz: `withSpring` atandığı anda `.value`
-        // animasyonun okunması güvenilmez oluyor.
-        const mx = maxOffset(srcW * baseScale, clampW);
-        const my = maxOffset(srcH * baseScale, clampH);
-        const targetX = clamp(tx.value, -mx, mx);
-        const targetY = clamp(ty.value, -my, my);
-        scale.value = withSpring(MIN_SCALE, SPRING);
-        tx.value = withSpring(targetX, SPRING);
-        ty.value = withSpring(targetY, SPRING);
-        homeS.value = MIN_SCALE;
-        homeX.value = targetX;
-        homeY.value = targetY;
-        runOnJS(commit)(MIN_SCALE, targetX, targetY);
-        return;
-      }
-      // Kırpma kipinde biten her jest kadrajı KALICI yapıyor: hem "ev" hem de
-      // onayın okuduğu `latest` buradan yazılıyor.
-      homeS.value = scale.value;
-      homeX.value = tx.value;
-      homeY.value = ty.value;
-      runOnJS(commit)(scale.value, tx.value, ty.value);
-    };
-
-    /**
-     * ARTIMLI payload şart: `Simultaneous` altında kendi snapshot'ından
-     * `startTx + translationX` hesaplayan bir pan, pinch'in aynı karedeki
-     * yazımlarını her frame silerdi.
-     */
-    const pan = Gesture.Pan()
-      .enabled(cropping)
-      .onStart(() => {
-        "worklet";
-        gestureActive.value = 1;
-      })
-      .onChange((e) => {
-        "worklet";
-        tx.value += e.changeX;
-        ty.value += e.changeY;
-        clampTranslate(true);
-      })
-      .onFinalize(settleBack);
-
-    // `enabled` YOK: kip dışında da yakınlaştırılabiliyor, bırakınca geri
-    // dönüyor (bkz. settleBack).
-    const pinch = Gesture.Pinch()
-      .onStart((e) => {
-        "worklet";
-        gestureActive.value = 1;
-        pinchPointers.value = e.numberOfPointers;
-      })
-      .onChange((e) => {
-        "worklet";
-        // Parmak eklenip çıkarıldığı KAREYİ atla: hem `scaleChange` hem odak
-        // noktası o karede süreksiz. Bir sonraki karede yeni tabandan devam
-        // ediyoruz — kullanıcı ölçeğini kaybetmiyor.
-        if (e.numberOfPointers !== pinchPointers.value) {
-          pinchPointers.value = e.numberOfPointers;
-          return;
-        }
-        if (!Number.isFinite(e.scaleChange) || e.scaleChange <= 0) return;
-        const prev = scale.value;
-        const step = clamp(e.scaleChange, 1 / MAX_SCALE_STEP, MAX_SCALE_STEP);
-        const next = clamp(prev * step, MIN_SCALE, maxScale);
-        const k = next / prev;
-        // Parmakların altındaki nokta sabit kalsın: f = t + p·s, p sabit
-        // tutulunca t' = f + (t − f)·(s'/s).
-        const fx = e.focalX - winCX;
-        const fy = e.focalY - winCY;
-        scale.value = next;
-        tx.value = fx + (tx.value - fx) * k;
-        ty.value = fy + (ty.value - fy) * k;
-        // Taban sert: ölçek 1'in altına inemediği için her karede clamp'leniyor
-        // (eski lastik bölgede, geri yaylanırken görüntü kenara yapışmasın diye
-        // atlanıyordu).
-        clampTranslate(false);
-      })
-      .onFinalize(settleBack);
-
-    const doubleTap = Gesture.Tap()
-      .enabled(cropping)
-      .numberOfTaps(2)
-      .maxDuration(260)
-      .maxDistance(TAP_SLOP)
-      .onEnd((e) => {
-        "worklet";
-        // İkinci savunma hattı: tanıyıcı yine de iki parmakla biterse bu bir
-        // pinch'tir, çift dokunuş değil.
-        if (e.numberOfPointers > 1) return;
-        const target = scale.value > 1.05 ? MIN_SCALE : Math.min(2.2, maxScale);
-        const k = target / scale.value;
-        const fx = e.x - winCX;
-        const fy = e.y - winCY;
-        const nextX = fx + (tx.value - fx) * k;
-        const nextY = fy + (ty.value - fy) * k;
-        const pps = baseScale * target;
-        const mx = maxOffset(srcW * pps, clampW);
-        const my = maxOffset(srcH * pps, clampH);
-        const finalX = clamp(nextX, -mx, mx);
-        const finalY = clamp(nextY, -my, my);
-        scale.value = withSpring(target, SPRING);
-        tx.value = withSpring(finalX, SPRING);
-        ty.value = withSpring(finalY, SPRING);
-        // Çift dokunuş yalnız kipin İÇİNDE açık → sonucu kalıcı.
-        homeS.value = target;
-        homeX.value = finalX;
-        homeY.value = finalY;
-        runOnJS(commit)(target, finalX, finalY);
-      });
-
-    return Gesture.Simultaneous(pinch, pan, doubleTap);
-  }, [
-    cropping,
-    baseScale, maxScale, srcW, srcH, clampW, clampH, winCX, winCY,
-    scale, tx, ty, homeS, homeX, homeY,
-    gestureActive, atEdge, pinchPointers, commit, edgeHaptic,
-  ]);
-
-  const imageStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: tx.value },
-      { translateY: ty.value },
-      { scale: scale.value },
-    ] as const,
-  }));
-
-  const gridStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(gestureActive.value ? 1 : 0.25, { duration: 160 }),
-  }));
-
-  /**
-   * Çerçeve katmanının (karartma + ızgara + köşe tırnakları) iniş/kalkışı.
-   *
-   * Katman AĞAÇTA KALIYOR, yalnız opaklığı dönüyor: koşullu render'da karartmanın
-   * dört dikdörtgeni ilk karede birden belirip göz kırpıyordu. Katmanın içinde
-   * cam YOK — üstteki butonlar bu View'ın KARDEŞİ, yoksa animasyonlu opaklık
-   * liquid glass'ı sessizce düşürürdü (bkz. shared/theme/glass.ts notları).
-   */
-  const frameStyle = useAnimatedStyle(
-    () => ({ opacity: withTiming(cropping ? 1 : 0, { duration: 180 }) }),
-    [cropping],
-  );
-
   // ------------------------------------------------------------------ eylemler
-  /**
-   * Kadrajı tabana (tam genişlik, ortalanmış) döndürür — "ev" dahil.
-   *
-   * `animated` AYRIMI ŞART: fotoğrafın KENDİSİ de değiştiğinde (kırpma uygulandı
-   * ya da Sıfırla özgün dosyaya döndü) yay kullanılamaz — yeni görüntü eski
-   * kadrajın altında bir an yanlış ölçekte/yerde durur, sonra yerine kayar.
-   * Fotoğraf aynı kalıyorsa (kadrajı yalnız geri alma) yay doğru geri bildirim.
-   */
-  const resetTransform = useCallback((animated: boolean) => {
-    scale.value = animated ? withSpring(MIN_SCALE, SPRING) : MIN_SCALE;
-    tx.value = animated ? withSpring(0, SPRING) : 0;
-    ty.value = animated ? withSpring(0, SPRING) : 0;
-    homeS.value = MIN_SCALE;
-    homeX.value = 0;
-    homeY.value = 0;
-    latest.current = { s: MIN_SCALE, tx: 0, ty: 0 };
-  }, [scale, tx, ty, homeS, homeX, homeY]);
-
   /**
    * Ara dosyayı (uygulanmış bir kırpmanın çıktısı) siler.
    *
@@ -619,7 +333,7 @@ export default function CropperOverlay() {
    * ayrı bir buton — Sıfırla.
    *
    * Kipe İLK girişte kadraj zaten tabanda: kip dışındaki pinch kalıcı değil
-   * (bkz. settleBack), yani "kırpma en zoom out'tan başlar" kuralı kendiliğinden
+   * (bkz. useCropGestures > settleBack), yani "kırpma en zoom out'tan başlar" kuralı kendiliğinden
    * tutuyor; ikinci girişte ise kullanıcı bıraktığı yerden devam ediyor.
    */
   const handleToggleCrop = () => {
@@ -681,7 +395,7 @@ export default function CropperOverlay() {
    * Sonrası baştan fotoğraf eklemiş gibi: yeni foto çerçevenin tamamı olduğu
    * için kadraj kimliğe dönüyor, kip kapanıyor ve kullanıcı istiyorsa onun
    * ÜSTÜNE tekrar kırpabiliyor. Ara adım OUT_W/OUT_H'ye küçültülmüyor ve
-   * STEP_QUALITY ile kodlanıyor (bkz. o sabit).
+   * STEP_QUALITY ile kodlanıyor (bkz. applyCrop.ts).
    *
    * Kadraj kimlikse hiç kodlama YAPILMIYOR: kare fotoğrafın tamamı demek, tek
    * etkisi bir nesil JPEG kaybı olurdu.
@@ -700,12 +414,10 @@ export default function CropperOverlay() {
     }
 
     setBusy(true);
-    const context = ImageManipulator.manipulate(working.uri);
-    let ref: Awaited<ReturnType<typeof context.renderAsync>> | null = null;
     try {
-      context.crop(rect);
-      ref = await context.renderAsync();
-      const result = await ref.saveAsync({ compress: STEP_QUALITY, format: SaveFormat.JPEG });
+      // Kesme + kodlama + release ortak yardımcıda (kamera önizlemesi de
+      // kullanıyor); hata orada FIRLATILIYOR, toast burada.
+      const result = await applyCrop(working.uri, rect);
       resetTransform(false);
       dropStale(working.uri, session.request.uri);
       setWorking({
@@ -724,8 +436,6 @@ export default function CropperOverlay() {
       devLog("✂️ [cropper] kırpma uygulanamadı", error);
       showInfoToast({ message: t("common.cropper.failed"), variant: "error" });
     } finally {
-      ref?.release?.();
-      context.release?.();
       setBusy(false);
     }
   };
@@ -778,7 +488,6 @@ export default function CropperOverlay() {
   const dispW = srcW * baseScale;
   const dispH = srcH * baseScale;
 
-  const scrim = scrimAt(0.72);
   const winLeft = layout.winCX - layout.winW / 2;
   const winTop = layout.winCY - layout.winH / 2;
 
@@ -814,37 +523,16 @@ export default function CropperOverlay() {
         </Animated.View>
       </GestureDetector>
 
-      {/* Karartma: pencerenin dört yanına dikdörtgen. Yuvarlak delik svg
-          maskesi gerektirirdi; Apple Photos da keskin köşe kullanıyor.
-          Tamamı KIRPMA KİPİNE bağlı — kip kapalıyken fotoğraf çıplak. */}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, frameStyle]}>
-        <View style={{ position: "absolute", left: 0, right: 0, top: 0, height: winTop, backgroundColor: scrim }} />
-        <View style={{ position: "absolute", left: 0, right: 0, top: winTop + layout.winH, bottom: 0, backgroundColor: scrim }} />
-        <View style={{ position: "absolute", left: 0, width: winLeft, top: winTop, height: layout.winH, backgroundColor: scrim }} />
-        <View style={{ position: "absolute", right: 0, width: winLeft, top: winTop, height: layout.winH, backgroundColor: scrim }} />
-
-        <Animated.View
-          style={[
-            { position: "absolute", left: winLeft, top: winTop, width: layout.winW, height: layout.winH },
-            gridStyle,
-          ]}
-        >
-          {[1, 2].map((i) => (
-            <View
-              key={`v${i}`}
-              style={{ position: "absolute", top: 0, bottom: 0, left: (layout.winW * i) / 3, width: StyleSheet.hairlineWidth, backgroundColor: onMediaAt(0.28) }}
-            />
-          ))}
-          {[1, 2].map((i) => (
-            <View
-              key={`h${i}`}
-              style={{ position: "absolute", left: 0, right: 0, top: (layout.winH * i) / 3, height: StyleSheet.hairlineWidth, backgroundColor: onMediaAt(0.28) }}
-            />
-          ))}
-        </Animated.View>
-
-        <CornerTicks left={winLeft} top={winTop} width={layout.winW} height={layout.winH} />
-      </Animated.View>
+      {/* Karartma + ızgara + köşe tırnakları. Tamamı KIRPMA KİPİNE bağlı —
+          kip kapalıyken fotoğraf çıplak. Katman başlıktaki cam butonların
+          KARDEŞİ (ATASI DEĞİL): kendi opaklığı animasyonlu ve ata zincirinde
+          animasyonlu opaklık liquid glass'ı sessizce düşürürdü (bkz.
+          shared/theme/glass.ts notları). */}
+      <CropFrame
+        visible={cropping}
+        frame={{ left: winLeft, top: winTop, width: layout.winW, height: layout.winH }}
+        gridStyle={gridStyle}
+      />
 
       {/* ------------------------------------------------------------ başlık */}
       <View
@@ -1058,28 +746,5 @@ function ChromeConfirmButton({
       </Text>
       {skeleton}
     </AnimatedPressable>
-  );
-}
-
-/** Çerçevenin dört köşesindeki L biçimli tırnaklar. */
-function CornerTicks({ left, top, width, height }: { left: number; top: number; width: number; height: number }) {
-  const LEN = 22;
-  const THICK = 2;
-  const tick = onMediaAt(0.95);
-  const corners = [
-    { x: left, y: top, hx: 0, hy: 0, vx: 0, vy: 0 },
-    { x: left + width - LEN, y: top, hx: 0, hy: 0, vx: LEN - THICK, vy: 0 },
-    { x: left, y: top + height - LEN, hx: 0, hy: LEN - THICK, vx: 0, vy: 0 },
-    { x: left + width - LEN, y: top + height - LEN, hx: 0, hy: LEN - THICK, vx: LEN - THICK, vy: 0 },
-  ];
-  return (
-    <>
-      {corners.map((c, i) => (
-        <View key={i} style={{ position: "absolute", left: c.x, top: c.y, width: LEN, height: LEN }}>
-          <View style={{ position: "absolute", left: c.hx, top: c.hy, width: LEN, height: THICK, backgroundColor: tick }} />
-          <View style={{ position: "absolute", left: c.vx, top: c.vy, width: THICK, height: LEN, backgroundColor: tick }} />
-        </View>
-      ))}
-    </>
   );
 }

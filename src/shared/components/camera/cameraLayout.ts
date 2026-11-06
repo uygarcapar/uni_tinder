@@ -14,6 +14,30 @@
 export type PreviewFrame = 'fill' | 'photo';
 
 /**
+ * Alt şerit — pencerenin altı ile ekranın altı arasındaki bant.
+ *
+ * İçindeki TEK kontrol (canlı kamerada deklanşör, galeri önizlemesinde onay
+ * oku) şeridin TAM ORTASINDA: altındaki boşluk (ekranın alt kenarına) ile
+ * üstündeki boşluk (pencerenin alt kenarına) EŞİT. Boşluk `insetBottom`un
+ * kendisi (ev göstergesinin şeridi), güvenli alanı olmayan cihazda taban 20 —
+ * yoksa kontrol ekranın kenarına yapışırdı.
+ *
+ * ⚠️ `controlH` ÇAĞIRANIN: galeriden gelen fotoğrafta deklanşör YOK, şeritte
+ * yalnız ok duruyor. Şeridi deklanşöre (72pt) göre ayırmak, pencerenin altında
+ * hiçbir şeyin durmadığı boş bir bant bırakıyordu — istek birebir: "deklanşör
+ * olmadığı için fotoğrafın görünen kısmı alt kenara daha fazla yaklaşsın".
+ * Okla (48pt) ölçülen şerit pencereyi 24pt aşağı uzatıyor; ok yine pencerenin
+ * DIŞINDA, kendi şeridinde (kullanıcı seçimi: ok fotoğrafın üstüne binmesin).
+ */
+export function footerStrip(a: {
+  insetBottom: number;
+  controlH: number;
+}): { footerGap: number; footerH: number } {
+  const footerGap = Math.max(a.insetBottom, 20);
+  return { footerGap, footerH: 2 * footerGap + a.controlH };
+}
+
+/**
  * Önizleme penceresi. `insetTop`/`footerH` KAMERA ekranının kendi ölçüleri.
  *
  * İKİ PENCERE DE ÜSTE DAYALI ve aynı tepeden (güvenli alanın hemen altı)
@@ -63,34 +87,46 @@ export function previewWindow(a: {
 /**
  * Önizleme anındaki düğmeler. `previewOnly` = galeri/kamera fotoğrafı (canlı
  * akış yok); `frozen` = bir kare ekranda donmuş ve onay bekliyor; `allowCrop`
- * = çağıranın kırpma kancası var mı.
+ * = çağıranın kırpma kancası var mı; `cropping` = kırpma kipi açık (çerçeve
+ * donmuş karenin üstünde).
  *
  * Kırpma düğmesi yalnız kanca varsa çizilir — kampüs akışında kırpıcı yok ve
  * boş bir düğme kullanıcıyı yanıltır.
+ *
+ * NEDEN kırpma kipinde `retake` gider: kipteyken "yeniden çek" kadrajı değil
+ * tüm kareyi atar; kullanıcı yanlışlıkla kareyi kaybetmesin diye yerine
+ * `reset` (kadrajı sıfırla) gelir. `reset` ve `hint` yalnız donmuş + kırpma
+ * kancası varken anlamlı; dışında kip zaten kapalı sayılır.
  */
 export function cameraChrome(a: {
   previewOnly: boolean;
   frozen: boolean;
   allowCrop: boolean;
+  cropping: boolean;
 }): {
   shutter: boolean;
   flash: boolean;
   flip: boolean;
   retake: boolean;
+  reset: boolean;
   crop: boolean;
   confirm: boolean;
+  hint: boolean;
 } {
-  const { previewOnly, frozen, allowCrop } = a;
+  const { previewOnly, frozen, allowCrop, cropping } = a;
   // Canlı akış: deklanşör, flaş, kamera çevirme. Yalnız kare canlıyken.
   const live = !previewOnly && !frozen;
+  const cropMode = cropping && frozen && allowCrop;
   return {
     shutter: live,
     flash: live,
     flip: live,
     // Yeniden çekim yalnız canlı kameradan donmuş kareye özgü; galeri
-    // fotoğrafının "yeniden çek"i yok.
-    retake: !previewOnly && frozen,
+    // fotoğrafının "yeniden çek"i yok. Kırpma kipinde yerini `reset` alır.
+    retake: !previewOnly && frozen && !cropping,
+    reset: cropMode,
     crop: allowCrop && frozen,
     confirm: frozen,
+    hint: cropMode,
   };
 }
