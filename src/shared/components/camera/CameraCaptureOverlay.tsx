@@ -234,12 +234,17 @@ export default function CameraCaptureOverlay() {
    * Çözüm: iOS'ta dosya PENCEREYE HİÇ ÇİZİLMİYOR. Ekranda kalan şey basıldığı
    * anda donan karenin ta kendisi; gönderilen dosya yine gerçek çekim.
    *
-   * ÜÇ DURUMDA yine de çiziliyor (yoksa ekran boş/canlı kalırdı):
+   * BEŞ DURUMDA yine de çiziliyor (yoksa ekran boş/canlı kalırdı):
    *   • Android — orada `pausePreview` çekimi kırdığı için akış donmuyor,
    *     donmuş kareyi ancak dosya sağlıyor (gerekçe `handleCapture`da).
    *   • `pausePreview` reddedilirse — donma hiç olmadı.
    *   • Arka plandan dönüşte — askıya alınan oturumun önizleme katmanı ölü bir
    *     kare (çoğu zaman siyah) olarak geliyor, dosya tek güvenilir görüntü.
+   *   • Kamerasız mod (galeri `source`'u) — `present()` bunu `true`ya çekiyor;
+   *     canlı katman hiç yok, dondurulacak kare de yok, pencerede görünebilecek
+   *     tek şey dosya.
+   *   • Başarılı kırpmadan sonra (`handleCrop`) — yeni dosya artık çizilmek
+   *     ZORUNDA: ekrandaki donmuş kare kırpılmamış hâlinde kalırdı.
    */
   const [showStill, setShowStill] = useState(Platform.OS !== "ios");
   /**
@@ -850,11 +855,13 @@ export default function CameraCaptureOverlay() {
   /**
    * ATILAN KARENİN DOSYASINI SİL.
    *
-   * ⚠️ TEMİZLİK BU EKRANIN İŞİ, ÇAĞIRANIN DEĞİL — ve yalnız YERİNDE ONAY
-   * yolunda: dosyayı kamera üretti, kullanıcı burada reddetti (yeniden çek /
-   * ✕) ve çağıran onun var olduğunu hiç görmedi. Eskiden bu işi onay sheet'i
-   * kapanırken yapıyordu (`closeComposer`); sheet kalkınca kare sahipsiz
-   * kalıyordu ve her reddedilen çekim diskte 12MP'lik bir dosya bırakıyordu.
+   * ⚠️ TEMİZLİK BU EKRANIN İŞİ, ÇAĞIRANIN DEĞİL: ✕ / yeniden çekte ekran o
+   * anki `shot`ı unutuyor. O dosya üç türden biri olabilir — kameranın ham
+   * karesi, kamerasız modda galeri `source` kopyası ya da çağıranın son kırpma
+   * çıktısı — ve hangisi olursa olsun çağıran (`photoPicker`) `cancelled`
+   * dönüşünde hiçbir şey unutmuyor. Eskiden bu işi onay sheet'i kapanırken
+   * yapıyordu (`closeComposer`); sheet kalkınca kare sahipsiz kalıyordu ve her
+   * reddedilen çekim diskte 12MP'lik bir dosya bırakıyordu.
    *
    * ⚠️ GÖNDERİLEN kare BURADA SİLİNMEZ: onun sahibi `commit` (kampüs yolunda
    * `shareShot`, yüklemeden SONRA siliyor). İki yerden silmek, yüklemenin
@@ -925,8 +932,10 @@ export default function CameraCaptureOverlay() {
       devLog("📸 [camera] kırpma başarısız", e);
       next = null;
     } finally {
-      // Ekran kırpma sürerken kapandıysa ya da yerine başka oturum geldiyse
-      // dokunulacak bir state yok — `dismiss` zaten temizledi.
+      // Oturum aynıysa `busy` burada bırakılıyor. Değiştiyse (ekran kırpma
+      // sürerken kapandı ya da yerine başkası geldi) dokunulmuyor: `busy`yi
+      // kapanış animasyonundan SONRA `dismiss`, yoksa sıradaki `present()`
+      // sıfırlıyor; host söküldüyse sıfırlanacak state de kalmadı.
       if (sessionRef.current === owner) setBusy(false);
     }
     if (sessionRef.current !== owner) return;
