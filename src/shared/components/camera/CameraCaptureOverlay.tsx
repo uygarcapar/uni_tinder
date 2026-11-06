@@ -1662,6 +1662,8 @@ export default function CameraCaptureOverlay() {
               onPress={handleCrop}
               disabled={busy || !shot}
               active={cropping}
+              // Açık kip MODUN vurgusuyla — alttaki ✓ dolgusuyla tek renk.
+              activeColor={accent}
             />
           )}
           {/* SIFIRLA — kırpma kipinde "yeniden çek"in YERİNDE: kipteyken
@@ -1845,9 +1847,12 @@ export default function CameraCaptureOverlay() {
                 // Mürekkep `onMedia`: zemin kırmızı/yeşil dolgu, yani tema ne
                 // olursa olsun beyaz (chrome butonlarıyla aynı kural).
                 <View pointerEvents="none">
+                  // OK YALNIZ KAMPÜS ANINDA (kare bir yere GÖNDERİLİYOR).
+                  // Kırpma kancalı yol (profil/kayıt — kamera ya da galeri)
+                  // kareyi kaydediyor, yani orada onay hep ✓.
                   <SFIcon
-                    name={cropping ? "checkmark" : "arrow.right"}
-                    fallback={cropping ? Check : ArrowRight}
+                    name={cropping || session.request.crop ? "checkmark" : "arrow.right"}
+                    fallback={cropping || session.request.crop ? Check : ArrowRight}
                     size={20}
                     strokeWidth={2.5}
                     color={colors.onMedia}

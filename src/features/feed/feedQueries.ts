@@ -486,7 +486,7 @@ export function useCreatePost() {
       });
       // Akışa eklemiyoruz: yalnız `Published` akışta görünür ve sıralama
       // sunucunun (popular/top'ta başa koymak yanlış olurdu). Published ise
-      // sonraki tazelemede gelir.
+      // çağıran (FeedScreen > handleSendPost) akışı hemen refetch ediyor.
     },
     onError: (e) => {
       emitFeedPaywall(feedErrorEnvelope(e));

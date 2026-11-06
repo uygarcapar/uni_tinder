@@ -1215,8 +1215,7 @@ export default function MessagesScreen() {
               <View className="flex-1 items-center justify-center pb-[40%]">
                 <EmptyState
                   Icon={MessageCircle}
-                  sf="message"
-                  iconStrokeWidth={1.3}
+                  iconStrokeWidth={1}
                   text={
                     tabKey === "closed"
                       ? t("chat.messages.noClosed")
@@ -1229,8 +1228,7 @@ export default function MessagesScreen() {
               <View className="flex-1 items-center justify-center pb-[40%]">
                 <EmptyState
                   Icon={MessageCircle}
-                  sf="message"
-                  iconStrokeWidth={1.3}
+                  iconStrokeWidth={1}
                   text={t("chat.messages.empty")}
                   topOffset={0}
                   buttonLabel={t("chat.messages.findMatch")}

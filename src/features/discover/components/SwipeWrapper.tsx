@@ -174,6 +174,10 @@ const FADE_IN_DURATION = 100;
  */
 const SWIPE_THRESHOLD = 85;
 
+/** Keşif kartında sağa/sola sürükleme jesti. 2026-11-06'dan beri KAPALI —
+ * beğen/geç yalnız butonlardan, alev banner'ı altında (bkz. horizontalPan). */
+const HORIZONTAL_SWIPE_ENABLED = false;
+
 /*
  * ── ÇIKIŞIN İKİ MODELİ: UÇUŞ (beğen/geç) · ALEV (Fire) ─────────────────────
  *
@@ -1164,7 +1168,11 @@ function SwipeWrapper({
    * titriyor ya da Fire çekişi hiç aktive olmuyor.
    */
   const horizontalPan = Gesture.Pan()
-    .enabled(isTopCard)
+    // YATAY JEST KAPALI (istek 2026-11-06, uçuşun park edilmesiyle aynı gün):
+    // sağa/sola kaydırma yok, beğen/geç YALNIZ tik/X butonlarından ve alev
+    // banner'ı altında devrediyor. Kod yerinde duruyor — geri açmak için
+    // `HORIZONTAL_SWIPE_ENABLED`ı true yap.
+    .enabled(HORIZONTAL_SWIPE_ENABLED && isTopCard)
     .activeOffsetX([-10, 10])
     .failOffsetY([-15, 15])
     .onUpdate((event) => {

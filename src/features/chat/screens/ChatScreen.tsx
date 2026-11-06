@@ -108,6 +108,7 @@ import { prepareSearchQuery, SEARCH_DEBOUNCE_MS } from "@/features/chat/messageS
 import { ChatTypingRow } from "@/features/chat/components/ChatBottomSpacer";
 import MessageSkeleton from "@/features/chat/components/MessageSkeleton";
 import MessageActionSheet from "@/features/chat/components/MessageActionSheet";
+import ReactionDetailsSheet from "@/features/chat/components/ReactionDetailsSheet";
 import ConversationOptionsSheet from "@/features/chat/components/ConversationOptionsSheet";
 import HiddenHistoryBanner, {
   HIDDEN_HISTORY_ROW_ID,
@@ -444,6 +445,9 @@ function ChatScreen({
   const [editing, setEditing] = useState<any>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
   const [actionLayout, setActionLayout] = useState<any>(null);
+  // Tepki kapsülüne dokunulan mesaj (ReactionDetailsSheet). Kopya bayatlayabilir
+  // — sheet açıkken hub event'i gelirse; render'da store'dan tazeleniyor.
+  const [reactionSheetTarget, setReactionSheetTarget] = useState<any>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
@@ -2370,6 +2374,7 @@ function ChatScreen({
             onLongPress={(layout: any) => handleLongPressMessage(item, layout)}
             onReplyTap={handleScrollToReplyTarget}
             onRetryTap={() => handleRetrySend(item)}
+            onReactionTap={setReactionSheetTarget}
             i18nResolver={i18nResolver}
             mode={convMode}
           />
@@ -2850,6 +2855,27 @@ function ChatScreen({
         onEdit={() => handleEditRequest(actionTarget)}
         onDelete={(forEveryone: boolean) => handleDelete(actionTarget, forEveryone)}
         mode={convMode}
+      />
+      <ReactionDetailsSheet
+        visible={!!reactionSheetTarget}
+        // Taze kayıt: sheet açıkken karşı taraf tepkisini değiştirebilir (hub)
+        // — dokunuş anındaki kopyayı göstermek bayat bir satır bırakırdı.
+        message={
+          (reactionSheetTarget &&
+            messages.find(
+              (m) =>
+                m.id === reactionSheetTarget.id ||
+                (!!reactionSheetTarget.clientMessageId &&
+                  m.clientMessageId === reactionSheetTarget.clientMessageId),
+            )) ||
+          reactionSheetTarget
+        }
+        myUserId={myUserId}
+        partnerName={partner?.displayName}
+        // Kaldırma = aynı emojiye yeniden basmak (toggle-off) — kuyruk ve geri
+        // alma handlePickReaction'da, ikinci bir yol yazılmıyor.
+        onRemove={(emoji: string) => handlePickReaction(reactionSheetTarget, emoji)}
+        onClose={() => setReactionSheetTarget(null)}
       />
       <ConversationOptionsSheet
         visible={optionsOpen}

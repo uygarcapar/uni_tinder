@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -13,10 +13,13 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSpring,
+  withSequence,
   interpolate,
   Extrapolation,
   runOnJS,
   Easing,
+  useAnimatedReaction,
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
@@ -42,6 +45,16 @@ import { colors, withAlpha, scrimAt } from "../../../shared/theme/colors";
 import { thinBlurTint } from "@/shared/theme/blur";
 import { utcTime } from "@/shared/utils/dateUtc";
 import { ContentType } from "@/features/chat/contentType";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import {
+  DRAG_IDLE,
+  DRAG_RELEASED,
+  DRAG_TRACKING,
+  MENU_PANEL_DRAG_MIN_DISTANCE,
+  menuDragPhase,
+  menuDragX,
+  menuDragY,
+} from "@/features/chat/messageMenuDrag";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -56,11 +69,41 @@ const REACTIONS_HEIGHT = 64;
 // (6 emoji × 53.2 + 16 pill padding + 24 kenar boşluğu ≈ 359pt).
 const EMOJI_SIZE = 36;
 const EMOJI_PAD_H = 5;
+// Emoji satırının yatay iç boşluğu — isabet testi slotları bundan hesaplıyor,
+// render'daki paddingHorizontal ile AYNI kalmalı.
+const REACTION_ROW_PAD = 8;
+
+// ── Kaydırıp bırakarak seçim ────────────────────────────────────────────────
+// Hedef kodları: 0..QUICK_EMOJIS.length-1 emoji, ROW_TARGET_BASE+i aksiyon
+// satırı, -1 hiçbiri.
+const ROW_TARGET_BASE = 100;
+// Emoji satırının isabet alanı pill'den GENİŞ: parmak kaldırılan emojiyi
+// görmek için doğal olarak biraz yukarı kayıyor, orada seçim düşmemeli.
+const EMOJI_HIT_ABOVE = 44;
+const EMOJI_HIT_BELOW = 10;
+const EMOJI_HIT_SIDE = 12;
+// Üstüne gelinen emojinin parmağın ÜSTÜNE kalkmış büyük kopyası (WhatsApp).
+// Ayrı, büyük fontla çiziliyor (ölçeklenmiş 36pt bulanık olurdu) ve
+// kalkmamışken pill'deki emojiyle birebir aynı boyda olsun diye küçültülüyor.
+const LIFTED_EMOJI_SIZE = 58;
+const LIFTED_BOX = 84;
+// Kalkış: emojinin merkezi pill merkezinden bu kadar yukarı (pill yarı
+// yüksekliğine ek) — parmak pill'in üstündeyken emoji parmağın ucunu aşar.
+const LIFTED_RAISE = 30;
+const LIFT_SPRING = { dampingRatio: 0.62, duration: 320 } as const;
 const GAP = 10;
 const SAFE_TOP = 60;
 const SAFE_BOTTOM = 40;
 const SIDE_MARGIN = 12;
-const ACTION_ROW_H = 47;
+// Satır yüksekliği AÇIKÇA veriliyor (içerikten türemiyor): menü yüksekliği
+// ölçülmeden satır sayısından hesaplanıyor (bkz. actionsH), tahmin tutmazsa
+// panel balonun üstüne biner.
+const ACTION_ROW_H = 46;
+// Bölüm ayracı (iOS menüsündeki grup çizgisi): ortasında hairline olan şerit.
+// Satır arası çizgi YOK — iOS 26 menüsü gibi yalnız gruplar ayrılır.
+const SECTION_DIVIDER_H = 9;
+// Aksiyon menüsünün genişlik tabanı — sistem menüsünün dar halinden (≈250pt).
+const ACTIONS_MIN_W = 240;
 // Aksiyon menüsünün köşe yarıçapı ve ilk/son satırın panel kenarına olan boşluğu.
 // Menü yüksekliği ölçülmüyor, satır sayısından HESAPLANIYOR (bkz. actionsH) —
 // bu yüzden padding'i buradaki sabitten beslemek zorunlu.
@@ -123,6 +166,17 @@ const PANEL_MIN_SCALE_GLASS = 0.18;
 // tersi alınamayan dönüşüm matrisinden şikâyet ediyor, gözle farkı yok.
 const PANEL_EXIT_SCALE = 0.01;
 
+// ── Klonun "kalkışı" ────────────────────────────────────────────────────────
+// Sistem bağlam menüsündeki his: basılı tutulan görünüm hafif küçülür, menü
+// açılırken bir tık BÜYÜYEREK kalkar ve yerine oturur. Klon gerçek balonun
+// küçüldüğü ölçekten (layout.pressScale) doğar, LIFT_PEAK'e hızlı çıkar, yayla
+// 1'e iner. Peak küçük tutulmalı: büyük değerde klon üstteki emoji satırına
+// ve alttaki menüye değiyor (paneller ölçek 1'e göre konumlanıyor).
+const LIFT_PEAK = 1.035;
+// Konum hareketi kritik sönümlü yay (taşma YOK): hedefe taşan bir konum,
+// paneller balona yapışık açıldığı için onları da sarsıyordu.
+const MOVE_SPRING = { dampingRatio: 1, duration: 380 } as const;
+
 /**
  * Düzenleme penceresi — İSTEMCİ TARAFI tahmin, yalnız "Düzenle"yi menüde
  * GÖSTERİP GÖSTERMEME kararı için. Sunucunun kendi penceresi (UT-6723,
@@ -158,6 +212,9 @@ export default function MessageActionSheet({
 }: any) {
   const { t } = useTranslation();
   const progress = useSharedValue(0);
+  // Klonun ölçeği (bkz. LIFT_PEAK) — konumdan AYRI değer: konum taşmasız,
+  // ölçek ise bilerek bir tık taşan bir eğri izliyor.
+  const lift = useSharedValue(1);
   const closingRef = useRef(false);
   // Emoji pill'inin GERÇEK yüksekliği (onLayout) — tahmin yerine ölçüm, yoksa
   // balonla arasındaki boşluk menü boşluğuyla birebir aynı olmuyor.
@@ -179,6 +236,38 @@ export default function MessageActionSheet({
   // dayansın ki büyüyen balon aksiyon menüsünün üstüne binmesin.
   const [cloneH, setCloneH] = useState(0);
 
+  // ── Kaydırıp bırakarak seçim (bkz. messageMenuDrag.ts) ───────────────────
+  // Panellerin SON (dönüşümsüz) çerçeveleri, Modal köküne göre = pencere
+  // koordinatı. onLayout dönüşümleri saymadığı için açılış animasyonu sürerken
+  // de doğru; isabet testi yine de açılış oturana kadar kapalı.
+  const reactRect = useSharedValue({ x: 0, y: 0, w: 0, h: 0 });
+  const actionsRect = useSharedValue({ x: 0, y: 0, w: 0, h: 0 });
+  // Parmağın altındaki hedef (bkz. ROW_TARGET_BASE).
+  const hover = useSharedValue(-1);
+  const rows = menuRows(message, isOwn);
+  const rowKey = rows.ids.join(",");
+  // Satır yükseklikleri sabit → üst kenarlar ölçmeden hesaplanır.
+  const rowTops = useMemo(() => {
+    const ids = rowKey ? rowKey.split(",") : [];
+    const start = ids.indexOf("deleteMe");
+    return ids.map(
+      (_, i) =>
+        ACTIONS_PAD_V +
+        i * ACTION_ROW_H +
+        (start >= 0 && i >= start ? SECTION_DIVIDER_H : 0),
+    );
+  }, [rowKey]);
+  // Bırakınca çalışacak iş JS'te; worklet her render'da değişmeyen bir
+  // fonksiyon görsün diye güncel hali ref'te.
+  // Menü açıkken yeni dokunuşla kaydırma — panel başına ayrı örnek (bkz.
+  // messageMenuDrag.ts MENU_PANEL_DRAG_MIN_DISTANCE).
+  const reactionsDrag = useMemo(() => panelDragGesture(), []);
+  const actionsDrag = useMemo(() => panelDragGesture(), []);
+  const commitRef = useRef<(target: number) => void>(() => {});
+  const commitTarget = useCallback((target: number) => {
+    commitRef.current(target);
+  }, []);
+
   useEffect(() => {
     if (visible) {
       closingRef.current = false;
@@ -186,17 +275,91 @@ export default function MessageActionSheet({
       exitY.value = -1;
       closing.value = 0;
       setCloneH(0);
+      hover.value = -1;
+      reactRect.value = { x: 0, y: 0, w: 0, h: 0 };
+      actionsRect.value = { x: 0, y: 0, w: 0, h: 0 };
       // Gerçek balonu gizle — görünen artık aşağıdaki klon. Kapanışta
       // (visible=false) klon yerine oturduğu anda geri gösterilir.
       layout?.setHidden?.(true);
-      progress.value = withTiming(1, {
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
-      });
+      progress.value = withSpring(1, MOVE_SPRING);
+      lift.value = layout?.pressScale ?? 1;
+      lift.value = withSequence(
+        withTiming(LIFT_PEAK, {
+          duration: 150,
+          easing: Easing.out(Easing.quad),
+        }),
+        withSpring(1, { dampingRatio: 0.7, duration: 360 }),
+      );
     } else {
       layout?.setHidden?.(false);
     }
-  }, [visible, layout, progress, exitX, exitY, closing]);
+  }, [visible, layout, progress, lift, exitX, exitY, closing, hover, reactRect, actionsRect]);
+
+  // Parmak takibi → hedef. Okuyucu YALNIZ burası (Modal), listedeki balonlar
+  // kanala sadece yazar.
+  const emojiCount = QUICK_EMOJIS.length;
+  useAnimatedReaction(
+    () => ({
+      phase: menuDragPhase.value,
+      x: menuDragX.value,
+      y: menuDragY.value,
+    }),
+    (cur, prev) => {
+      if (!visible) return;
+      if (cur.phase === DRAG_TRACKING) {
+        // Açılış oturmadan ya da kapanırken seçim yok: paneller henüz/artık
+        // ölçülen yerlerinde değil.
+        const ready = progress.value > 0.9 && closing.value === 0;
+        let next = -1;
+        if (ready) {
+          const r = reactRect.value;
+          const a = actionsRect.value;
+          if (
+            r.w > 0 &&
+            cur.x >= r.x - EMOJI_HIT_SIDE &&
+            cur.x <= r.x + r.w + EMOJI_HIT_SIDE &&
+            cur.y >= r.y - EMOJI_HIT_ABOVE &&
+            cur.y <= r.y + r.h + EMOJI_HIT_BELOW
+          ) {
+            const slotW = (r.w - REACTION_ROW_PAD * 2) / emojiCount;
+            const slot = Math.floor((cur.x - r.x - REACTION_ROW_PAD) / slotW);
+            next = Math.min(emojiCount - 1, Math.max(0, slot));
+          } else if (
+            a.w > 0 &&
+            cur.x >= a.x &&
+            cur.x <= a.x + a.w &&
+            cur.y >= a.y &&
+            cur.y <= a.y + a.h
+          ) {
+            const ly = cur.y - a.y;
+            for (let i = 0; i < rowTops.length; i++) {
+              if (ly >= rowTops[i] && ly < rowTops[i] + ACTION_ROW_H) {
+                next = ROW_TARGET_BASE + i;
+                break;
+              }
+            }
+          }
+        }
+        if (next !== hover.value) {
+          hover.value = next;
+          if (next >= 0) runOnJS(hoverHaptic)();
+        }
+      } else if (
+        cur.phase === DRAG_RELEASED &&
+        prev?.phase === DRAG_TRACKING
+      ) {
+        const target = hover.value;
+        menuDragPhase.value = DRAG_IDLE;
+        // Hedef yoksa (parmak balonda ya da boşlukta kalktı) menü AÇIK kalır —
+        // sistem menüsüyle aynı; kullanıcı dokunarak seçer.
+        // Satır vurgusu kapanış boyunca yanık kalır (sistem menüsü gibi);
+        // kalkmış emoji ise pill küçülürken havada asılı kalmasın diye iner.
+        if (target < ROW_TARGET_BASE) hover.value = -1;
+        if (target >= 0) runOnJS(commitTarget)(target);
+      }
+    },
+    [visible, rowTops, emojiCount],
+  );
 
   // Kapanış: önce klon geldiği yoldan geriye kayar (progress → 0), blur ve
   // paneller söner; animasyon BİTİNCE parent state'i temizlenir. onClose'u
@@ -248,18 +411,7 @@ export default function MessageActionSheet({
 
   if (!message) return null;
 
-  const canDelete = isOwn && !message.isSystemMessage && !message.deletedAt;
-  // Her kapı AYRI bir reddin karşılığı: sahiplik dışı/sistem/silinmiş/sesli/
-  // henüz gönderilmemiş/pencere dolmuş — biri bile eksik kontrol edilirse
-  // menü sunucunun KESİN reddedeceği bir eylemi sunar (bkz. dosya başı
-  // EDIT_WINDOW_MS notu — pencere burada yalnız GÖRÜNÜRLÜK, otorite sunucuda).
-  const canEdit =
-    isOwn &&
-    !message.isSystemMessage &&
-    !message.deletedAt &&
-    message.contentType === ContentType.Text &&
-    !message._pending &&
-    Date.now() - utcTime(message.sentAt) < EDIT_WINDOW_MS;
+  const canDelete = rows.ids.includes("deleteMe");
 
   // Fallback (layout null): ekran ortası
   const pill = isValidRect(layout)
@@ -276,9 +428,10 @@ export default function MessageActionSheet({
 
   // Aksiyon menüsü yüksekliği satır sayısından hesaplanır (measure beklemeden
   // hedef konumu bilmemiz gerekiyor).
-  const actionRows =
-    1 + (message.content ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 2 : 0);
-  const actionsH = actionRows * ACTION_ROW_H + ACTIONS_PAD_V * 2;
+  const actionsH =
+    rows.ids.length * ACTION_ROW_H +
+    ACTIONS_PAD_V * 2 +
+    (canDelete ? SECTION_DIVIDER_H : 0);
 
   // ── Sabit hedef konum: tüm stack (emoji + balon + menü) güvenli alanda dikey
   // ortalanır. Balon her uzun basışta ekranın AYNI bölgesine gelir.
@@ -317,6 +470,56 @@ export default function MessageActionSheet({
       Haptics.selectionAsync().catch(() => {});
     });
   };
+  const pickEmoji = (emoji: string) =>
+    runAction(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      onPickReaction?.(emoji);
+    });
+
+  // Satırların TEK tanımı: hem render hem kaydırıp-bırakma aynı listeden.
+  const rowDefs: Record<RowId, RowDef> = {
+    reply: {
+      label: t("chat.actions.reply"),
+      symbol: "arrowshape.turn.up.left",
+      fallback: Reply,
+      onPress: () => runAction(onReply),
+    },
+    copy: {
+      label: t("chat.actions.copy"),
+      symbol: "doc.on.doc",
+      fallback: Copy,
+      onPress: handleCopy,
+    },
+    edit: {
+      label: t("chat.actions.edit"),
+      symbol: "pencil",
+      fallback: Pencil,
+      onPress: () => runAction(onEdit),
+    },
+    deleteMe: {
+      label: t("chat.actions.deleteForMe"),
+      symbol: "trash",
+      fallback: Trash2,
+      destructive: true,
+      onPress: () => runAction(() => onDelete?.(false)),
+    },
+    deleteAll: {
+      label: t("chat.actions.deleteForEveryone"),
+      symbol: "trash",
+      fallback: Trash2,
+      destructive: true,
+      onPress: () => runAction(() => onDelete?.(true)),
+    },
+  };
+
+  commitRef.current = (target: number) => {
+    if (target >= ROW_TARGET_BASE) {
+      const id = rows.ids[target - ROW_TARGET_BASE];
+      if (id) rowDefs[id].onPress();
+    } else if (QUICK_EMOJIS[target]) {
+      pickEmoji(QUICK_EMOJIS[target]);
+    }
+  };
 
   return (
     <Modal
@@ -326,6 +529,10 @@ export default function MessageActionSheet({
       statusBarTranslucent
       onRequestClose={handleClose}
     >
+      {/* RN Modal ayrı bir kök: RNGH jestleri burada ancak kendi kök
+          view'ıyla çalışır. absoluteFill → çocukların konumları (ve onLayout
+          çerçeveleri) hâlâ pencereye göre. */}
+      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
       {/* Dismiss layer — full screen şeffaf */}
       <Pressable onPress={handleClose} style={StyleSheet.absoluteFill} />
 
@@ -359,6 +566,7 @@ export default function MessageActionSheet({
         targetY={targetY}
         bubbleBg={bubbleBg}
         progress={progress}
+        lift={lift}
         onMeasured={setCloneH}
         t={t}
       />
@@ -373,6 +581,7 @@ export default function MessageActionSheet({
         isOwn={isOwn}
         anchor="bottom"
         emergeGap={GAP}
+        onFrame={reactRect}
         glass={glass}
         pill={pill}
         exitX={exitX}
@@ -381,6 +590,7 @@ export default function MessageActionSheet({
         targetX={targetX}
         targetY={targetY}
       >
+        <GestureDetector gesture={reactionsDrag}>
         <View
           onLayout={(e: any) => {
             const h = Math.round(e.nativeEvent.layout.height);
@@ -397,30 +607,24 @@ export default function MessageActionSheet({
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                paddingHorizontal: 8,
+                paddingHorizontal: REACTION_ROW_PAD,
                 paddingVertical: 8,
               }}
             >
-              {QUICK_EMOJIS.map((emoji) => (
+              {QUICK_EMOJIS.map((emoji, i) => (
             <TouchableOpacity
               key={emoji}
-              onPress={() =>
-                runAction(() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-                    () => {},
-                  );
-                  onPickReaction?.(emoji);
-                })
-              }
+              onPress={() => pickEmoji(emoji)}
               hitSlop={6}
               style={{ paddingHorizontal: EMOJI_PAD_H, paddingVertical: 2 }}
             >
-              <Text style={{ fontSize: EMOJI_SIZE }}>{emoji}</Text>
+              <PillEmoji emoji={emoji} index={i} hover={hover} />
             </TouchableOpacity>
           ))}
             </View>
           </PanelSurface>
         </View>
+        </GestureDetector>
       </FloatingPanel>
 
       {/* Actions list — hedef konumun altında, kendi tarafına hizalı.
@@ -432,6 +636,7 @@ export default function MessageActionSheet({
         isOwn={isOwn}
         anchor="top"
         emergeGap={-GAP}
+        onFrame={actionsRect}
         glass={glass}
         pill={pill}
         exitX={exitX}
@@ -439,8 +644,9 @@ export default function MessageActionSheet({
         closing={closing}
         targetX={targetX}
         targetY={targetY}
-        minWidth={200}
+        minWidth={ACTIONS_MIN_W}
       >
+        <GestureDetector gesture={actionsDrag}>
         <View
           style={{
             borderRadius: ACTIONS_RADIUS,
@@ -456,50 +662,179 @@ export default function MessageActionSheet({
             glass={glass}
             paddingVertical={ACTIONS_PAD_V}
           >
-          <ActionRow
-            icon={<SFIcon name="arrowshape.turn.up.left.fill" fallback={Reply} size={20} color={colors.text} />}
-            label={t("chat.actions.reply")}
-            separator={rowSeparator(glass)}
-            onPress={() => runAction(onReply)}
-          />
-          {!!message.content && (
-            <ActionRow
-              icon={<SFIcon name="doc.on.doc" fallback={Copy} size={20} color={colors.text} />}
-              label={t("chat.actions.copy")}
-              separator={rowSeparator(glass)}
-              onPress={handleCopy}
-            />
-          )}
-          {canEdit && (
-            <ActionRow
-              icon={<SFIcon name="pencil" fallback={Pencil} size={20} color={colors.text} />}
-              label={t("chat.actions.edit")}
-              separator={rowSeparator(glass)}
-              onPress={() => runAction(onEdit)}
-            />
-          )}
-          {canDelete && (
-            <>
-              <ActionRow
-                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorStrong} />}
-                label={t("chat.actions.deleteForMe")}
-                destructive
-                separator={rowSeparator(glass)}
-                onPress={() => runAction(() => onDelete?.(false))}
-              />
-              <ActionRow
-                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorStrong} />}
-                label={t("chat.actions.deleteForEveryone")}
-                destructive
-                last
-                onPress={() => runAction(() => onDelete?.(true))}
-              />
-            </>
-          )}
+          {rows.ids.map((id, i) => {
+            const def = rowDefs[id];
+            return (
+              <View key={id}>
+                {/* Yıkıcı aksiyonlar ayrı bölüm — sistem menüsünde de silme
+                    grubu çizgiyle ayrılır. Yükseklik actionsH/rowTops'ta. */}
+                {id === "deleteMe" && <SectionDivider glass={glass} />}
+                <ActionRow
+                  icon={
+                    <SFIcon
+                      name={def.symbol}
+                      fallback={def.fallback}
+                      size={19}
+                      color={def.destructive ? colors.errorStrong : colors.text}
+                    />
+                  }
+                  label={def.label}
+                  destructive={def.destructive}
+                  target={ROW_TARGET_BASE + i}
+                  hover={hover}
+                  onPress={def.onPress}
+                />
+              </View>
+            );
+          })}
           </PanelSurface>
         </View>
+        </GestureDetector>
       </FloatingPanel>
+
+      {/* Üstüne gelinen emojinin kalkmış büyük kopyası — pill'in DIŞINDA
+          (blur yolunda pill overflow:hidden, içeride çizilse kırpılırdı). */}
+      {QUICK_EMOJIS.map((emoji, i) => (
+        <LiftedEmoji
+          key={emoji}
+          emoji={emoji}
+          index={i}
+          hover={hover}
+          rect={reactRect}
+        />
+      ))}
+      </GestureHandlerRootView>
     </Modal>
+  );
+}
+
+type RowId = "reply" | "copy" | "edit" | "deleteMe" | "deleteAll";
+type RowDef = {
+  label: string;
+  symbol: any;
+  fallback: any;
+  destructive?: boolean;
+  onPress: () => void;
+};
+
+/**
+ * Menüde hangi satırların olduğu — render, yükseklik hesabı (actionsH) ve
+ * kaydırıp-bırakma isabet testi AYNI listeden beslenir; ayrışırlarsa parmak
+ * bir satırın üstündeyken başka satır çalışır.
+ */
+function menuRows(message: any, isOwn: boolean): { ids: RowId[] } {
+  if (!message) return { ids: [] };
+  const canDelete = isOwn && !message.isSystemMessage && !message.deletedAt;
+  // Her kapı AYRI bir reddin karşılığı: sahiplik dışı/sistem/silinmiş/sesli/
+  // henüz gönderilmemiş/pencere dolmuş — biri bile eksik kontrol edilirse
+  // menü sunucunun KESİN reddedeceği bir eylemi sunar (bkz. dosya başı
+  // EDIT_WINDOW_MS notu — pencere burada yalnız GÖRÜNÜRLÜK, otorite sunucuda).
+  const canEdit =
+    isOwn &&
+    !message.isSystemMessage &&
+    !message.deletedAt &&
+    message.contentType === ContentType.Text &&
+    !message._pending &&
+    Date.now() - utcTime(message.sentAt) < EDIT_WINDOW_MS;
+  const ids: RowId[] = ["reply"];
+  if (message.content) ids.push("copy");
+  if (canEdit) ids.push("edit");
+  if (canDelete) ids.push("deleteMe", "deleteAll");
+  return { ids };
+}
+
+function panelDragGesture() {
+  return Gesture.Pan()
+    .minDistance(MENU_PANEL_DRAG_MIN_DISTANCE)
+    .onStart((e) => {
+      "worklet";
+      menuDragX.value = e.absoluteX;
+      menuDragY.value = e.absoluteY;
+      menuDragPhase.value = DRAG_TRACKING;
+    })
+    .onUpdate((e) => {
+      "worklet";
+      menuDragX.value = e.absoluteX;
+      menuDragY.value = e.absoluteY;
+    })
+    .onEnd((_e, success) => {
+      "worklet";
+      menuDragPhase.value = success ? DRAG_RELEASED : DRAG_IDLE;
+    });
+}
+
+function hoverHaptic() {
+  // Sistem menüsü satırlar arasında gezerken seçim tıkı veriyor.
+  Haptics.selectionAsync().catch(() => {});
+}
+
+/**
+ * Pill içindeki emoji — üstüne gelinince yerini kalkmış kopyaya bırakır
+ * (gizlenir). Opaklık camın ÇOCUĞUNDA: cam kuralı yalnız GlassView'ın
+ * ATALARINDA alfa yasaklıyor.
+ */
+function PillEmoji({ emoji, index, hover }: any) {
+  const style = useAnimatedStyle(() => ({
+    opacity: withTiming(hover.value === index ? 0 : 1, { duration: 90 }),
+  }));
+  return (
+    <Animated.Text style={[{ fontSize: EMOJI_SIZE }, style]}>
+      {emoji}
+    </Animated.Text>
+  );
+}
+
+/**
+ * Kalkmış emoji: pill'deki slotun merkezinde doğar, üstüne gelinince büyüyüp
+ * parmağın üstüne yükselir; ayrılınca slotuna küçülerek döner ve söner.
+ * Slot geometrisi isabet testindekiyle aynı (eşit slotlar — Apple Color
+ * Emoji glifleri eş genişlikte).
+ */
+function LiftedEmoji({ emoji, index, hover, rect }: any) {
+  const restScale = EMOJI_SIZE / LIFTED_EMOJI_SIZE;
+  const style = useAnimatedStyle(() => {
+    const r = rect.value;
+    const on = hover.value === index;
+    const slotW = (r.w - REACTION_ROW_PAD * 2) / QUICK_EMOJIS.length;
+    const cx = r.x + REACTION_ROW_PAD + slotW * (index + 0.5);
+    const cy = r.y + r.h / 2;
+    return {
+      opacity: on ? 1 : withTiming(0, { duration: 120 }),
+      transform: [
+        { translateX: cx - LIFTED_BOX / 2 },
+        // Konum ve kalkış AYRI adım: withSpring bir sayı değil animasyon
+        // nesnesi döndürüyor, bir sayıyla toplanınca string'e dönüp
+        // "transform must be number" invariant'ını patlatıyordu.
+        { translateY: cy - LIFTED_BOX / 2 },
+        {
+          translateY: withSpring(
+            on ? -(r.h / 2 + LIFTED_RAISE) : 0,
+            LIFT_SPRING,
+          ),
+        },
+        { scale: withSpring(on ? 1 : restScale, LIFT_SPRING) },
+      ] as any,
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: LIFTED_BOX,
+          height: LIFTED_BOX,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 0,
+        },
+        style,
+      ]}
+    >
+      <Text style={{ fontSize: LIFTED_EMOJI_SIZE }}>{emoji}</Text>
+    </Animated.View>
   );
 }
 
@@ -574,9 +909,23 @@ function panelGlassTint() {
   return withAlpha(colors.surface2, 0.18);
 }
 
-/** Aksiyon satırlarının ayracı — cam yolunda opak çizgi camı kirletir. */
+/** Bölüm ayracının rengi — cam yolunda opak çizgi camı kirletir. */
 function rowSeparator(glass: boolean) {
   return glass ? colors.hairline : colors.surface3;
+}
+
+function SectionDivider({ glass }: { glass: boolean }) {
+  return (
+    <View style={{ height: SECTION_DIVIDER_H, justifyContent: "center" }}>
+      <View
+        style={{
+          height: StyleSheet.hairlineWidth,
+          marginHorizontal: 16,
+          backgroundColor: rowSeparator(glass),
+        }}
+      />
+    </View>
+  );
 }
 
 /**
@@ -594,6 +943,7 @@ function BubbleClone({
   targetY,
   bubbleBg,
   progress,
+  lift,
   onMeasured,
   t,
 }: any) {
@@ -617,6 +967,8 @@ function BubbleClone({
         {
           translateY: interpolate(progress.value, [0, 1], [fromY, targetY]),
         },
+        // Merkezden ölçek: gerçek balonun basış küçülmesi de merkezden.
+        { scale: lift.value },
       ] as any,
     };
   });
@@ -800,6 +1152,7 @@ function FloatingPanel({
   targetX,
   targetY,
   minWidth,
+  onFrame,
   children,
 }: any) {
   const enterScale = glass ? PANEL_MIN_SCALE_GLASS : PANEL_MIN_SCALE;
@@ -840,6 +1193,15 @@ function FloatingPanel({
 
   return (
     <Animated.View
+      // Dönüşümsüz son çerçeve → kaydırıp-bırakma isabet testi.
+      onLayout={
+        onFrame
+          ? (e: any) => {
+              const l = e.nativeEvent.layout;
+              onFrame.value = { x: l.x, y: l.y, w: l.width, h: l.height };
+            }
+          : undefined
+      }
       style={[
         {
           position: "absolute",
@@ -862,24 +1224,42 @@ function FloatingPanel({
   );
 }
 
-function ActionRow({ icon, label, destructive, last, separator, onPress }: any) {
+/**
+ * Sistem menüsü satırı: sabit yükseklik, satır arası çizgi yok; basılıyken
+ * panelin köşesiyle EŞMERKEZLİ yuvarlak bir vurgu (iOS 26 menüsü). Sönme
+ * (activeOpacity) YOK — sistem menüsü satırı soldurmaz, arkasını doldurur.
+ *
+ * Basılı hali onPressIn/Out ile state'te: `style={({pressed}) => …}` bu
+ * projede sessizce düşüyor (NativeWind), vurgu hiç görünmezdi.
+ */
+function ActionRow({ icon, label, destructive, target, hover, onPress }: any) {
+  const [pressed, setPressed] = useState(false);
+  // Kaydırırken vurgu: parmak satırın üstündeyken ANINDA (sistem menüsü de
+  // geçişsiz yakıyor). Dokunma vurgusundan ayrı katman.
+  const hoverStyle = useAnimatedStyle(() => ({
+    opacity: hover.value === target ? 1 : 0,
+  }));
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.65}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       style={{
+        height: ACTION_ROW_H,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 13,
-        borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
-        borderBottomColor: separator ?? colors.surface3,
+        paddingHorizontal: 18,
       }}
     >
-      <View style={{ width: 28, alignItems: "center" }}>{icon}</View>
+      <Animated.View
+        pointerEvents="none"
+        style={[rowHighlightStyle(), pressed ? null : hoverStyle]}
+      />
+      <View style={{ width: 24, alignItems: "center" }}>{icon}</View>
       <Text
+        numberOfLines={1}
         style={{
-          fontSize: 16,
+          fontSize: 17,
           marginLeft: 12,
           // Yıkıcı satırın kırmızısı ConversationOptionsSheet'in (üç nokta
           // modalı) kırmızısıyla AYNI token: iki menü aynı sohbette yan yana
@@ -889,8 +1269,21 @@ function ActionRow({ icon, label, destructive, last, separator, onPress }: any) 
       >
         {label}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
+}
+
+function rowHighlightStyle() {
+  return {
+    position: "absolute" as const,
+    top: 0,
+    bottom: 0,
+    left: ACTIONS_PAD_V,
+    right: ACTIONS_PAD_V,
+    borderRadius: ACTIONS_RADIUS - ACTIONS_PAD_V,
+    borderCurve: "continuous" as const,
+    backgroundColor: withAlpha(colors.text, 0.1),
+  };
 }
 
 function isValidRect(r) {
