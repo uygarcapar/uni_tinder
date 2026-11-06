@@ -5,7 +5,24 @@
  * zincirini import ettirmek gereksiz bağ (ve testte ESM transform derdi).
  */
 export const swipeKeys = {
-  matches: ["swipe", "matches"] as const,
+  /**
+   * ⚠️ `matches` ANAHTARI YOK — bilerek kaldırıldı (2026-11-06).
+   *
+   * Deste mod başına ayrılmadan önce anahtar `["swipe","matches"]`ti. Mod
+   * anahtarın içine girince (`deck(mode)`) eski ad ortada kaldı ve onu
+   * invalidate eden ALTI çağıran (filtre kaydetme, mesafe anahtarı, profil
+   * düzenleme, dil değişimi, satın alma, foreground) sessizce HİÇBİR sorguya
+   * dokunmaz oldu: `["swipe","matches"]` ile `["swipe","deck",mode]`
+   * birbirinin prefix'i DEĞİL. Hata gürültüsüz — invalidate var olmayan
+   * anahtarda da başarıyla döner.
+   *
+   * Belirtisi: "filtreyi gevşettim, uygulamayı kapatıp açana kadar yeni
+   * profil gelmedi" (deste `staleTime` 60sn + `refetchOnMount:false`,
+   * boş-deste yoklaması da FiltersTooStrict'te bilerek susuyor).
+   *
+   * Bu yüzden ad geri EKLENMEMELİ: desteyi bayatlatmak isteyen herkes
+   * `deckRoot` kullanıyor, tek deste anahtarı `deck(mode)`.
+   */
   filters: ["swipe", "filters"] as const,
   stats: ["swipe", "stats"] as const,
   /**

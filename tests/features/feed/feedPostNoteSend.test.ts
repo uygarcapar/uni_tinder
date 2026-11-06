@@ -42,8 +42,15 @@ describe('akıştan not gönderimi', () => {
   // ⚠️ Değer `AlreadySwiped` — sunucunun göndereceği kelimenin aynısı.
   // `AlreadySent` sözleşmeden DÜŞTÜ (K2): "bu gönderiye not attın" hâli
   // kişi-başına-tek kuralı yüzünden hiç oluşmuyor.
-  it('başarılı gönderim YAZARIN TÜM satırlarını AlreadySwiped’e yamıyor', () => {
-    expect(src).toMatch(/patchAuthorPostsInCaches[\s\S]{0,400}AlreadySwiped/);
+  //
+  // ⚠️ Kelimenin kendisi ARTIK BU EKRANDA DEĞİL: yama `closeAuthorNoteGate`e
+  // taşındı (feedAuthorCache) çünkü Keşif'ten verilen kararlar da aynı kapıyı
+  // kapatmak zorunda ve `swipeQueries` feedQueries'i import edemiyor. Değerin
+  // doğruluğu orada, davranış da gerçek cache üzerinde kilitli
+  // (feedCache.test > patchAuthorPostsInCaches ·
+  // swipeFeedNoteGate.test). Burada kalan tek soru: bu dal kapıyı çağırıyor mu.
+  it('başarılı gönderim YAZARIN TÜM satırlarını kapatıyor', () => {
+    expect(src).toMatch(/closeAuthorNoteGate\(\s*qc,\s*userId\s*\)/);
     // Tek-satır yamasına geri dönülmesin: gönderi dalında o fonksiyon YOK.
     expect(src).not.toMatch(/patchPostInCaches\(\s*qc,\s*post\.id[\s\S]{0,200}AlreadySwiped/);
   });
@@ -62,7 +69,7 @@ describe('akıştan not gönderimi', () => {
   // DiscoverScreen > ALREADY_SWIPED (kredi harcanmaz, kart düşer).
   it('UT-6404 composer’ı kapatıp yazarın satırlarını kapatıyor', () => {
     expect(src).toMatch(
-      /NOTE_SEND_CODES\.ALREADY_SWIPED[\s\S]{0,500}patchAuthorPostsInCaches/,
+      /NOTE_SEND_CODES\.ALREADY_SWIPED[\s\S]{0,500}closeAuthorNoteGate/,
     );
   });
 
@@ -71,7 +78,7 @@ describe('akıştan not gönderimi', () => {
   // Yoksa kart kapandıktan sonra listede duran butonlar basılıp UT-6404 yiyor.
   it('yazar kartından gönderilen not da yazarın satırlarını kapatıyor', () => {
     expect(src).toMatch(
-      /handleSendAuthorNote[\s\S]{0,2000}patchAuthorPostsInCaches/,
+      /handleSendAuthorNote[\s\S]{0,2000}closeAuthorNoteGate/,
     );
   });
 
@@ -106,9 +113,19 @@ describe('akıştan not gönderimi', () => {
     );
   });
 
-  it('composer gönderi önizlemesini ve gönderinin modunu alıyor', () => {
+  /**
+   * ⚠️ Mod `noteRequest`ten, `cardMode`dan CANLI DEĞİL: composer açılırken
+   * kart kapanıyor (`setPreviewPostId(null)`) ve author-profile sorgusu boş
+   * anahtara düşüyor — yani `cardMode` gönderim/çizim anında null. Canlı
+   * okuyan eski hâl yazar dalının notunu MODSUZ yolluyor ve composer butonunu
+   * Dating kırmızısına düşürüyordu; iki dal da modu istek anında donduruyor.
+   */
+  it('composer gönderi önizlemesini ve DONDURULMUŞ modu alıyor', () => {
     expect(src).toMatch(/postPreview=\{/);
-    expect(src).toMatch(/noteRequest\?\.post \? noteRequest\.mode : cardMode/);
+    expect(src).toMatch(/mode=\{noteRequest\?\.mode \?\? undefined\}/);
+    // Yazar dalı gönderimde de dondurulmuş değeri kullanıyor — canlı cardMode
+    // değil (mutasyon + analitik).
+    expect(src).toMatch(/mode:\s*req\.mode \?\? undefined/);
   });
 
   // ⚠️ `onNote={` tek başına YETMEZ: yazar kartı (`LikerSwipeModal`) de aynı

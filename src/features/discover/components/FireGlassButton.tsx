@@ -44,8 +44,9 @@ import {
  * rampası) aynı kırmızıdan besleniyor. accentOrange zaten kırpma ekranının
  * kendi aksanı — o ayrı kalsın.
  *
- * Glyph SF `flame.fill` DEĞİL, uygulamanın kendi alevi (bkz. FireGlyph —
- * ürünün Fire işareti KALPTEN ALEVE geçti): butonun label'ı RNHostView
+ * Glyph SF `flame.fill` DEĞİL, uygulamanın kendi işareti (bkz. FireGlyph —
+ * ürünün Fire işareti KALPTEN ALEVE geçti, Arkadaş modunda da ALEVDEN
+ * YILDIZA): butonun label'ı RNHostView
  * ile SwiftUI'ın içine gömülen bir RN alt ağacı. Böylece iOS 26'nın basış
  * animasyonunda cam ile glyph BİRLİKTE ölçekleniyor — camın üstüne RN katmanı
  * bindirseydik glyph yerinde donardı.
@@ -206,10 +207,13 @@ function fireTint(mode?: AppMode) {
 function WhiteFlame({
   size = FIRE_GLASS_GLYPH_SIZE,
   color = theme.onMedia,
+  mode,
 }: {
   size?: number;
   /** Berrak cam yolda alev RENKLİ olur (kabuk renksiz) — bkz. `variant`. */
   color?: string;
+  /** Glif modla değişiyor: Flört alev, Arkadaş yıldız (bkz. FireGlyph). */
+  mode?: AppMode;
 }) {
   return (
     // pointerEvents none: dokunmayı SwiftUI butonu karşılasın, RNHostView'ın
@@ -225,7 +229,7 @@ function WhiteFlame({
       }}
       pointerEvents="none"
     >
-      <FireGlyph size={size} color={color} />
+      <FireGlyph size={size} color={color} mode={mode} />
     </View>
   );
 }
@@ -250,8 +254,8 @@ type Props = {
    */
   variant?: "prominent" | "clear";
   /**
-   * Uygulama modu — butonun rengini belirliyor (Flört kırmızı / Arkadaş
-   * yeşil). Verilmezse Dating.
+   * Uygulama modu — butonun hem RENGİNİ (Flört kırmızı / Arkadaş yeşil) hem
+   * GLİFİNİ (alev / yıldız, bkz. FireGlyph) belirliyor. Verilmezse Dating.
    */
   mode?: AppMode;
   /**
@@ -348,7 +352,10 @@ function FireGlassButton({
           ]}
         >
           <RNHostView matchContents>
-            <WhiteFlame color={clear ? fireTint(mode) : theme.onMedia} />
+            <WhiteFlame
+              color={clear ? fireTint(mode) : theme.onMedia}
+              mode={mode}
+            />
           </RNHostView>
         </SwiftUIButton>
       </Host>
@@ -378,7 +385,7 @@ function FireGlassButton({
           : withAlpha(theme.onMedia, 0.35),
       }}
     >
-      <WhiteFlame color={clear ? fireTint(mode) : theme.onMedia} />
+      <WhiteFlame color={clear ? fireTint(mode) : theme.onMedia} mode={mode} />
     </TouchableOpacity>
   );
 }

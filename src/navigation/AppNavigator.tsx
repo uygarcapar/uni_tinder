@@ -163,6 +163,7 @@ import {
   initFeedFlag,
   resetFeedFlagSession,
 } from '@/features/feed/feedFlag';
+import { initFeedMode, resetFeedModeSession } from '@/features/feed/feedMode';
 import { probeFeedFlagIfDue } from '@/features/feed/feedProbe';
 import { openFeed } from '@/features/feed/feedEntry';
 import { campusKeys } from '@/features/campus/campusKeys';
@@ -710,9 +711,14 @@ export default function AppNavigator() {
     const uid = user?.userId || user?.id;
     if (isAuthenticated && uid) {
       initFeedFlag(String(uid));
+      // Mod aynası aynı anda tohumlanıyor (AYRI kapı, gerekçe feedMode'da):
+      // `openFeed` bir bildirim dokunuşundan çağrıldığında hook'suz ve
+      // kimliksiz çalışıyor, mod tercihi ise kullanıcı bazlı MMKV anahtarında.
+      initFeedMode(String(uid));
       void probeFeedFlagIfDue();
     } else if (!isAuthenticated) {
       resetFeedFlagSession();
+      resetFeedModeSession();
     }
   }, [isAuthenticated, user?.userId, user?.id]);
 
@@ -1440,7 +1446,7 @@ export default function AppNavigator() {
             queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
             queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
             queryClient.invalidateQueries({
-              queryKey: swipeKeys.matches,
+              queryKey: swipeKeys.deckRoot,
               refetchType: 'none',
             });
             // Toast YALNIZ admin işlemlerinde. Mağaza kaynaklı değişimi
@@ -1950,7 +1956,7 @@ export default function AppNavigator() {
     // desteye dokunulmaz. Orijinal gerekçe (önceki oturumdan kalan boş
     // sayfa) aynen karşılanıyor.
     queryClient.invalidateQueries({
-      queryKey: swipeKeys.matches,
+      queryKey: swipeKeys.deckRoot,
       refetchType: 'none',
     });
     // Stats staleTime:Infinity + refetchOnMount:false — kendiliğinden

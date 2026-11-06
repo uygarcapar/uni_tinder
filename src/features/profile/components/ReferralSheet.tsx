@@ -37,6 +37,11 @@ import {
   useCopyReferralCode,
 } from "@/features/profile/referralShare";
 import { grantDaysRemaining, rewardLabel } from "@/features/profile/referralView";
+import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 import { colors, ink } from "@/shared/theme/colors";
 
 /**
@@ -60,9 +65,13 @@ import { colors, ink } from "@/shared/theme/colors";
 export default function ReferralSheet({
   visible,
   onClose,
+  /** Seçili mod — ödül adındaki ürün adı ("Fire" / "Spark") buradan.
+   *  PROP, FirePullHint'teki gerekçeyle: modu bilen taraf ProfileScreen. */
+  mode = DEFAULT_APP_MODE,
 }: {
   visible: boolean;
   onClose: () => void;
+  mode?: AppMode;
 }) {
   const { t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
@@ -74,7 +83,9 @@ export default function ReferralSheet({
   const activeDays = grantDaysRemaining(data?.visibilityGrant.expiresAt);
   const pausedDays = data?.visibilityGrant.pausedDays ?? null;
   const next = data?.nextTier ?? null;
-  const nextLabel = next ? rewardLabel(t, next.type, next.amount) : null;
+  const nextLabel = next
+    ? rewardLabel(t, next.type, next.amount, t(modeFireNameKey(mode)))
+    : null;
   const ratio =
     next && next.needed > 0
       ? Math.min(1, Math.max(0, next.progress / next.needed))

@@ -1,11 +1,13 @@
 /**
  * HASHTAG KAPSÜLÜNÜN ORTAK ÖLÇÜLERİ — akış kartı, filtre sheet'i, composer.
  *
- * Kapsülün kaynağı AKIŞ KARTI (`FeedPostCard`): orada etiket gövdenin bir
- * parçası değil, satırın künyesi — punto ve renk tarihin ölçüsünden geliyor,
- * ağırlık ondan bir kademe yukarıda (uzun gerekçe kartın kendi yorumunda).
- * Filtre ve composer çipleri istek üzerine o görünüşe bağlandı: kullanıcı aynı
- * kataloğu üç yüzeyde görüyor, üçü ayrı yazılırsa üç ayrı liste gibi okunuyor.
+ * Kapsülün kaynağı AKIŞ KARTI; etiket orada artık SATIR İÇİ (gövdenin
+ * devamında, çizim FeedPostBody'de) ama kapsülden çıkmadı (istek: "pillden
+ * çıkarma ama hashtagi") — deri aynen okunmaya devam ediyor: dolgu
+ * `TOPIC_FILL_ALPHA` + `ink`, yazı punto 15 + ağırlık 500 + tarihin
+ * mürekkebi. Filtre ve composer çipleri aynı deriye bağlı: kullanıcı aynı
+ * kataloğu üç yüzeyde görüyor, üçü ayrı yazılırsa üç ayrı liste gibi
+ * okunuyor.
  *
  * ⚠️ RENK BURADA YOK, BİLEREK: palet mutable (bkz. colors.ts) ve modül
  * sabitine alınan bir renk tema çevrildiğinde eskisinde kalıyor. Çağıran

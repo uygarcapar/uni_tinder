@@ -333,7 +333,13 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     });
   });
 
-  it('sonuç yokken "mesaj bulunamadı" satırı çıkıyor — bölüm sessizce kaybolmuyor', async () => {
+  /**
+   * Sonuç yokken bölümün KENDİ "Mesaj bulunamadı" satırı KALDIRILDI: başlık +
+   * boş satır ikinci bir "bulunamadı" dili kuruyordu. Artık bölüm tamamen
+   * gizleniyor ve (sorgu partner adlarını da tutmuyorsa) tek boş durum,
+   * büyüteçli tam-ekran "'x' bulunamadı" (`msgs-conv-notfound`) oluyor.
+   */
+  it('sonuç yokken mesaj bölümü hiç çizilmiyor — tek boş durum büyüteçli "bulunamadı"', async () => {
     mockSearchMessages.mockReturnValue([]);
     renderMessagesScreen();
 
@@ -341,6 +347,7 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     fireEvent(input, 'focus');
     jest.useFakeTimers();
     try {
+      // "zeynep" — partner adı "Ayşe"yi de tutmuyor, sohbet listesi boş kalır.
       fireEvent(input, 'changeText', 'zeynep');
       act(() => {
         jest.advanceTimersByTime(1000);
@@ -351,8 +358,8 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     await act(async () => {});
 
     expect(mockSearchMessages).toHaveBeenCalled();
-    expect(screen.getAllByTestId('msgs-message-section').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('msgs-message-section-empty').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId('msgs-message-section')).toHaveLength(0);
+    expect(screen.getAllByTestId('msgs-conv-notfound').length).toBeGreaterThan(0);
   });
 
   it('arama kapanınca mesaj bölümü kalkıyor', async () => {

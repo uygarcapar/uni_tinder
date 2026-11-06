@@ -6,10 +6,7 @@ import { Clock, MoreHorizontal, User } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import HeartGlyph from "@/shared/components/HeartGlyph";
 import NoteGlyph from "@/shared/components/NoteGlyph";
-import { colors, ink } from "@/shared/theme/colors";
-// Kapsülün ölçüleri ORTAK: filtre sheet'i ve composer'ın çipleri de aynı
-// sayıları okuyor (gerekçe: feedTopicPill).
-import { TOPIC_FILL_ALPHA, TOPIC_TEXT, topicPillInk } from "./feedTopicPill";
+import { colors } from "@/shared/theme/colors";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import toDisplayLowercase from "@/shared/utils/textCase";
 // Kart `/api/feed/me`yi GÖRMÜYOR (prop olarak inmesi listedeki her satıra bir
@@ -105,44 +102,6 @@ export interface FeedPostCardProps {
 export { AVATAR, BLOCK_GAP, BODY_FONT_SIZE, BODY_LINE_HEIGHT };
 
 /**
- * KONU ETİKETİNİN YATAY PAYI — "biraz daha azalt" (istek, iki tur: 9 → 6 → 4).
- *
- * ⚠️ İKİ YERDE OKUNUYOR ve aynı sayı olmak ZORUNDA: çipin `paddingHorizontal`ı
- * ve satırın negatif `marginLeft`i. Ayrışırlarsa kapsülün kenarı gövde
- * metninin sol kenarından kayar — kaldırılan eski çipin tek gerçek kusuru
- * buydu (gerekçe kullanıldığı yerde).
- *
- * ⚠️ 4, ÇERÇEVE GİTTİĞİ İÇİN MÜMKÜN: konturlu hâlinde bu pay çizgiyi yazıya
- * değdiriyordu. Dolgulu kapsülde sınır yazının kendisi değil, dolgunun kenarı
- * — 4pt orada hâlâ nefes bırakıyor. Daha aşağısı (2) kapsülü yazının arka
- * planı gibi gösteriyor, "etiket" okunuşunu bitiriyor.
- *
- * ⚠️ YALNIZ KARTIN SAYISI: bir tur filtre/composer çipleriyle ortaklandı ve
- * geri alındı (istek) — gerekçe feedTopicPill'in başında.
- */
-const TOPIC_PAD_H = 4;
-
-/**
- * KAPSÜLÜN DOLGU YOĞUNLUĞU — "hafif, opacity'yi biraz da azalt" (istek).
- *
- * ⚠️ `ink()` ile birlikte okunmalı: ton temanın TERSİ (açıkta siyah, koyuda
- * beyaz), yani bu alfa "ne kadar zıt" demek. 0.08 kartın zemininden ayrılan en
- * ince kademe: açık temada ≈#EBEBEB, koyu temada ≈#1E1E1E.
- *
- * ⚠️ `colors.hairline` (0.1) ÖZELLİKLE KULLANILMADI: o token ÇİZGİ için var ve
- * bir çizginin alfası bir YÜZEYİN alfasından farklı okunuyor (aynı değer geniş
- * bir alanda daha ağır). İsteğin yönü de aşağıydı.
- *
- * ⚠️ 0.12 ÜSTÜ: kapsül kartın üstünde ayrı bir yüzey gibi duruyor ve eski
- * `surface2` çipinin "etiket bir buton mu?" sorusuna geri dönülüyor.
- *
- * ⚠️ SAYININ KENDİSİ ARTIK `feedTopicPill`DE (yukarıda import ediliyor):
- * filtre sheet'inin ve composer'ın çipleri de aynı görünüşe bağlandı (istek)
- * ve üç yüzey tek sayıyı okumak zorunda. Gerekçeler burada kaldı — kapsülün
- * sahibi hâlâ bu kart.
- */
-
-/**
  * Beğeni kalbinin ölçüleri.
  *
  * ⚠️ `size` KALBİN KENDİSİ DEĞİL, glyph'in KARE KUTUSU: kalp 24'lük grid'de 20
@@ -222,7 +181,11 @@ function FeedPostCardBase({
   const handleMenu = useCallback(() => onMenu?.(post), [onMenu, post]);
   const handleAuthor = useCallback(() => {
     // Anonim gönderide açılacak profil YOK — sunucu da `author: null` yolluyor.
-    if (post.isAnonymous) return;
+    // KENDİ gönderide de kapalı: yazar kartı yolu yazarı "karşı taraf"
+    // varsayıyor ve NORMAL hâlde kendi profiline Fire/not çizerdi
+    // (feedCardActions "kendi gönderi" hâlini bilmiyor; "Benim" sekmesi
+    // `onPressAuthor`u zaten geçirmiyor, ana akıştaki tek kapı bu).
+    if (post.isAnonymous || post.isMine) return;
     onPressAuthor?.(post);
   }, [onPressAuthor, post]);
 
@@ -269,19 +232,27 @@ function FeedPostCardBase({
         : colors.textMuted;
 
   /**
-   * Çizilecek konular — `topics` varsa O, yoksa tek `topic`.
+   * Konu etiketleri, "#küçük harf" hâlinde — `topics` varsa O, yoksa tek
+   * `topic`. Gövdenin DEVAMINA basılıyorlar (istek: "hashtagler yazılan
+   * textin altında değil devamında olsun direkt"): kart yalnız etiketi
+   * çözüyor, çizim FeedPostBody'nin paragrafında.
    *
    * ⚠️ İKİ ALAN BİRDEN OKUNUYOR ve sıra önemli: composer çoklu seçimi
    * gönderiyor ama BUGÜNKÜ sunucu yanıtta yalnız `topic` dolduruyor
    * (feedTypes > FeedPostDto.topics). `topics` açıldığında kart kendiliğinden
    * hepsini çiziyor, istemci sürümü beklenmiyor.
    *
-   * Boş/undefined alanlar süzülüyor: ikisi de yoksa blok hiç çizilmiyor
+   * Boş/undefined alanlar süzülüyor: ikisi de yoksa etiket hiç çizilmiyor
    * (varsayılan "Genel" UYDURULMUYOR).
+   *
+   * ⚠️ useMemo REFERANS İÇİN de: FeedPostBody `memo`lu; her render'da yeni
+   * dizi inerse gövde her karede yeniden çizilir.
    */
-  const topics = useMemo(() => {
+  const topicLabels = useMemo(() => {
     const list = post.topics?.length ? post.topics : [post.topic];
-    return list.filter((key): key is FeedTopic => typeof key === "string" && !!key);
+    return list
+      .filter((key): key is FeedTopic => typeof key === "string" && !!key)
+      .map((key) => topicHashtag(key, null));
   }, [post.topics, post.topic]);
 
   return (
@@ -300,7 +271,7 @@ function FeedPostCardBase({
       <View style={{ flexDirection: "row", alignItems: "center" }}>
         <Pressable
           onPress={handleAuthor}
-          disabled={post.isAnonymous || !onPressAuthor}
+          disabled={post.isAnonymous || post.isMine || !onPressAuthor}
           // `flex: 1` DEĞİL `flexShrink: 1`: flex:1 bloğu satırın kalan tüm
           // genişliğine yayıyordu ve tarih onun ÖBÜR UCUNA, ekranın sağ
           // kenarına düşüyordu. Shrink ile blok içeriği kadar — tarih ismin
@@ -492,138 +463,25 @@ function FeedPostCardBase({
       </View>
 
       {/* ── Gövde ──────────────────────────────────────────────────────────
-          Metin, tıklanabilir adresler ve taşma kapısı `FeedPostBody`de.
-          Ölçüler (BODY_FONT_SIZE / BODY_LINE_HEIGHT / BLOCK_GAP) burada
-          `export` olarak DURUYOR ve oradan okunuyor — iskelet de aynı
-          sayılardan çiziliyor (bkz. dosya başındaki not). */}
-      <FeedPostBody body={post.body} />
+          Metin, tıklanabilir adresler, SATIR İÇİ konu etiketleri ve taşma
+          kapısı `FeedPostBody`de. Ölçüler (BODY_FONT_SIZE / BODY_LINE_HEIGHT /
+          BLOCK_GAP) burada `export` olarak DURUYOR ve oradan okunuyor —
+          iskelet de aynı sayılardan çiziliyor (bkz. dosya başındaki not). */}
+      <FeedPostBody body={post.body} topicLabels={topicLabels} />
 
       {/* GÖVDENİN ALTINDAKİ DURUM SATIRI KALDIRILDI: durum rozeti başlık
           satırına, üç noktanın soluna taşındı; "kalan gün" etiketi ise tümden
           çıktı (istek). `formatExpiresIn` feedText'te duruyor ve testleri de —
           gönderinin ömrü hâlâ ürünün bir kuralı, yalnız kartta yazmıyor. */}
 
-      {/* ── Konu etiketleri ───────────────────────────────────────────────
-          Gövdenin ALTINDA, aksiyon satırının üstünde — YERİ DEĞİŞMEDİ.
-          Dokunulabilir DEĞİL: kartta bir filtre kısayolu olsaydı kullanıcı
-          listeyi istemeden daraltır ve geri dönmenin yolunu aramak zorunda
-          kalırdı — konu seçimi filtrenin işi.
-
-          ── KAPSÜL GERİ GELDİ (istek: önce "border koy", sonra "borderi sil,
-          arkaplan rengi olsun") ───────────────────────────────────────────────
-          Eskiden `surface2` DOLGULU bir çipti ve kaldırılmasının sebebi dolgu
-          değil, 9'luk yatay payıydı: kartın sol kenarı üç farklı hizada
-          başlıyordu (avatar · gövde · çip). O tespit hâlâ geçerli, o yüzden bu
-          turda pay KÜÇÜK (`TOPIC_PAD_H` = 4) ve satır aynı sayı kadar SOLA
-          çekiliyor — kapsülün KENARI gövde metninin sol kenarıyla birebir
-          hizalı, yani ekranda yine tek bir hiza var.
-
-          ⚠️ HİZALANAN ŞEY KENAR, YAZI DEĞİL: çerçeveli bir kutuda gözün
-          hizaladığı şey kutunun kenarı. Negatif pay olmasa kapsül gövdeden
-          `TOPIC_PAD_H` kadar içeri kaçardı; yazıyı hizalamak için negatif pay
-          verilmese de kenar dışarı taşardı. İkisinden biri seçilmek zorunda.
-
-          ⚠️ NEGATİF PAY KARTIN DOLGUSUNUN İÇİNE TAŞIYOR, dışına değil: satır
-          kartın kendi yatay payının (LIST_H_PADDING ailesi) içinde duruyor ve
-          `TOPIC_PAD_H` o payın çok altında. Büyütülürse kapsül kartın kenarına
-          dayanır.
-
-          Punto, ağırlık ve renk TARİHTEN geliyor (aşağıdaki blok). Alan
-          gelmezse çizilmiyor (varsayılan "Genel" UYDURULMUYOR: konusuz bir
-          gönderiyi etiketlemek yanlış bilgi olurdu). */}
-      {topics.length > 0 ? (
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            // Etiketler arası pay GÖVDE PUNTOSUNA göre: aynı satırda iki
-            // hashtag yan yana dururken 8 onları tek bir kelime öbeği gibi
-            // gösteriyordu, 12 ayırıyor ama satır sarmasını da bozmuyor.
-            //
-            // ⚠️ KAPSÜLLERİN ARASINDAKİ boşluk: `columnGap` kenar kutuları
-            // arasında ölçülüyor, yani yatay pay eklenmesi aradaki GÖRÜNEN
-            // açıklığı değiştirmiyor.
-            columnGap: 12,
-            rowGap: 2,
-            marginTop: 10,
-            // Kapsülün kenarını gövdenin sol kenarına getiren tek şey
-            // (gerekçe yukarıda). Sarmalayıcıda, ilk çipte DEĞİL: satır
-            // sarabiliyor ve ikinci satırın ilk çipi de aynı hizaya düşmek
-            // zorunda.
-            marginLeft: -TOPIC_PAD_H,
-          }}
-        >
-          {topics.map((key) => (
-            <Text
-              key={key}
-              style={{
-                /**
-                 * ⚠️🔴 ARTIK GÖVDENİN DEĞİL, TARİHİN ÖLÇÜSÜ (istek: "hashtag
-                 * rengi tarihle aynı olsun, boyutu da").
-                 *
-                 * Punto 15 ve renk `textMuted` tarihten geliyor (ağırlık
-                 * ARTIK AYRI — gerekçesi aşağıda). Yani etiket gövdenin bir
-                 * parçası değil, satırın KÜNYESİ — isim/tarih satırıyla aynı
-                 * aileden.
-                 *
-                 * ⚠️ `textSecondary` → `textMuted`: İKİSİ ŞU AN AYNI DEĞER
-                 * (iki palette de #8E8E93), yani bu tur ekranda bir renk
-                 * değişimi DEĞİL. Token yine de tarihin token'ına çevrildi:
-                 * ikisi bir gün ayrışırsa birlikte ayrışmaları gerekiyor.
-                 *
-                 * ⚠️ `lineHeight` ORANDAN: gövdenin 1.36'sı (15 × 1.36 ≈ 20.5).
-                 * Tarihte `lineHeight` yok çünkü o tek satır; buradaki satır
-                 * SARIYOR (`flexWrap` + `rowGap`) ve tanımsız bırakılırsa iki
-                 * satırlı etiket öbeği sıkışık okunuyor.
-                 *
-                 * ⚠️ Gövdenin sabitleri (BODY_FONT_SIZE / BODY_LINE_HEIGHT)
-                 * BİLEREK KULLANILMIYOR: gövde "bi tık artır" istekleriyle
-                 * büyüdüğünde (15.5 → 16.5) etiket onunla birlikte büyümemeli.
-                 */
-                color: topicPillInk(),
-                ...TOPIC_TEXT,
-                /**
-                 * ⚠️ AĞIRLIK TARİHTEN AYRILDI (istek: "bi tık daha bold yap,
-                 * 400'se 500 yap"): punto ve renk hâlâ tarihin ölçüsü, ağırlık
-                 * ARTIK DEĞİL. 15pt'lik gri bir yazı kapsülün içinde tarihten
-                 * daha silik okunuyordu; 500 onu zeminden ayırıyor, 600 ise
-                 * etiketi gövdeyle rekabet eder hâle getiriyordu.
-                 */
-                /**
-                 * ── DOLGU, ÇERÇEVE DEĞİL (istek, ikinci tur) ───────────────
-                 *
-                 * ⚠️ ÇERÇEVE SİLİNDİ: bir tur 1px `textMuted` konturu vardı.
-                 * Yazıyla aynı tondaki bir çizgi, 15pt'lik bir etiketin
-                 * etrafında yazıdan daha BASKIN okunuyordu — kapsül etiketi
-                 * taşımak yerine ona rakip oluyordu. Dolgu aynı işi (etiketi
-                 * bir kutuya alma) gürültü çıkarmadan yapıyor.
-                 *
-                 * ⚠️ RENK TEMANIN TERSİ (`ink`): açık temada siyah, koyu
-                 * temada beyaz — yani kapsül her iki temada da kartın
-                 * zemininden bir kademe AYRILIYOR. Sabit bir gri (`surface2`,
-                 * eski çipin dolgusu) bunu yapamıyor: tema tokenları
-                 * ailesinden türüyor ve koyuda neredeyse siyah, açıkta
-                 * neredeyse beyaz, yani birinde zemine karışıyor.
-                 *
-                 * ⚠️ PALET MUTABLE: `ink()` RENDER SIRASINDA çağrılıyor.
-                 * Modül sabitine alınırsa tema çevrildiğinde eski renk kalır.
-                 *
-                 * ⚠️ Yarıçap KAPSÜL: kutu ≈23.5pt (20.5 satır + 2×1.5 pay) ve
-                 * 12 onu tam yuvarlatıyor. Köşeli bir kutu uygulamada "seçili
-                 * pill" ailesinden ayrışırdı.
-                 */
-                backgroundColor: ink(TOPIC_FILL_ALPHA),
-                borderRadius: 12,
-                borderCurve: "continuous",
-                paddingHorizontal: TOPIC_PAD_H,
-                paddingVertical: 1.5,
-              }}
-            >
-              {topicHashtag(key, null)}
-            </Text>
-          ))}
-        </View>
-      ) : null}
+      {/* ── KONU ETİKETLERİ ARTIK GÖVDENİN İÇİNDE ─────────────────────────
+          (istekler sırayla: "hashtagler yazılan textin altında değil
+          devamında olsun direkt" + "pillden çıkarma ama hashtagi"). Eski
+          ayrı satır (flexWrap'li sıra + negatif payla hiza dansı) kalktı;
+          kapsülün KENDİSİ kalkmadı — paragrafa gömülü satır içi kutu olarak
+          gövdenin kuyruğunda akıyor, çizim ve gerekçeler FeedPostBody'de,
+          deri ortak (feedTopicPill). Dokunulabilir yine DEĞİL: karttaki bir
+          filtre kısayolu listeyi istemeden daraltırdı. */}
 
       {/* ── Alt satır: beğeni + yanıt ── */}
       <View

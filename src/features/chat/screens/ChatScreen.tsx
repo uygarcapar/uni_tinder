@@ -2371,6 +2371,7 @@ function ChatScreen({
             onReplyTap={handleScrollToReplyTarget}
             onRetryTap={() => handleRetrySend(item)}
             i18nResolver={i18nResolver}
+            mode={convMode}
           />
         </ReplySwipeRow>
       );
@@ -2383,6 +2384,10 @@ function ChatScreen({
       handleLongPressMessage,
       handleScrollToReplyTarget,
       handleRetrySend,
+      // Sohbet listede yokken açıldığında (bildirimden giriş) önce `undefined`
+      // geliyor, liste düşünce doluyor — bağımlılıkta olmazsa satırlar ilk
+      // moddaki renkte donardı.
+      convMode,
     ],
   );
 
@@ -2844,6 +2849,7 @@ function ChatScreen({
         onReply={() => handleReply(actionTarget)}
         onEdit={() => handleEditRequest(actionTarget)}
         onDelete={(forEveryone: boolean) => handleDelete(actionTarget, forEveryone)}
+        mode={convMode}
       />
       <ConversationOptionsSheet
         visible={optionsOpen}

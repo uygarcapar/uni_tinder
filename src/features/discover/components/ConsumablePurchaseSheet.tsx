@@ -28,6 +28,8 @@ import type { ToastIconKind } from "@/shared/components/toaster/toastIcons";
 import { analytics } from "@/shared/services/analytics";
 import { colors, gradients, ink } from "../../../shared/theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeAccent } from "@/features/discover/modeTheme";
 
 /**
  * Consumable paket satın alma sheet'i — Fire ve not paketleri bunu
@@ -103,6 +105,13 @@ export interface ConsumablePurchaseSheetProps {
   ) => Promise<{ transactionId: string | null; productId: string | null }>;
   /** i18n anahtar öneki — `firePurchase` / `notePurchase`. */
   i18nPrefix: string;
+  /**
+   * Önekin TÜM metinlerine geçirilen enterpolasyon değerleri — Fire sheet'i
+   * ürün adını buradan veriyor ({ fire: "Fire" | "Spark" }, moda göre).
+   * Metinde karşılığı olmayan fazladan anahtar zararsız; not sheet'i hiç
+   * geçirmiyor.
+   */
+  i18nParams?: Record<string, unknown>;
   /** Analytics olay öneki — `fire_pack` / `note_pack`. */
   analyticsKind: string;
   /** Paket kartındaki simge. */
@@ -111,6 +120,10 @@ export interface ConsumablePurchaseSheetProps {
    * Satın alma sonrası toast'ının solundaki ürün simgesi. Kabuk paylaşıldığı
    * için metinler ("kredin yüklendi") tek başına hangi ürün olduğunu
    * söylemiyor — simge o boşluğu kapatıyor.
+   *
+   * Simgenin MODU buradan geçiyor (aşağıda `useAppMode`), prop DEĞİL: toast'ı
+   * atan taraf bu sheet ve sheet zaten seçili modda açık — Fire simgesi
+   * Arkadaş'ta yıldıza dönsün (bkz. FireGlyph).
    */
   toastIcon?: ToastIconKind;
   // ⚠️ `secondaryAction` KALDIRILDI (2026-08-31). Tek kullanıcısı kurtarma
@@ -138,6 +151,7 @@ export default function ConsumablePurchaseSheet({
   fetchOffering,
   purchasePack,
   i18nPrefix,
+  i18nParams,
   analyticsKind,
   renderGlyph,
   toastIcon,
@@ -145,9 +159,19 @@ export default function ConsumablePurchaseSheet({
   snapPoints = ["55%", "70%"],
 }: ConsumablePurchaseSheetProps) {
   const { t } = useTranslation();
+  // CTA dolgusu SEÇİLİ modun vurgusu (Dating kırmızı / Friends yeşil) — Fire
+  // sheet'i ürün adını da aynı kaynaktan çözüyor (FirePurchaseModal >
+  // useAppMode), ad "Spark" derken butonun kırmızı kalması iki ürün gibi
+  // okunuyordu. Not sheet'i de moda dönüyor: not mod-scope'lu bir aksiyon
+  // (composer'ın gönder butonu zaten modeAccent — NoteComposerModal:518).
+  const { mode } = useAppMode();
   const authUser = useAppSelector((s) => s.auth.user);
   const userId = redeemUserKey(authUser);
   const key = (suffix: string) => `${i18nPrefix}.${suffix}`;
+  // Önekin metinleri hep aynı enterpolasyon değerleriyle çözülüyor —
+  // çağrı-yeri değerleri (count/price) kabuğunkilerin üstüne biner.
+  const tp = (suffix: string, opts?: Record<string, unknown>) =>
+    t(key(suffix), { ...i18nParams, ...opts });
 
   const [offering, setOffering] = useState<PurchasesOffering | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,9 +285,10 @@ export default function ConsumablePurchaseSheet({
         // alma yine de gerçekleşti — açılıştaki flush RC geçmişinden yakalar.
         onClose?.();
         showInfoToast({
-          title: t(key("pendingTitle")),
-          message: t(key("pendingMessage")),
+          title: tp("pendingTitle"),
+          message: tp("pendingMessage"),
           icon: toastIcon,
+          mode,
         });
         return;
       }
@@ -278,15 +303,17 @@ export default function ConsumablePurchaseSheet({
       // bakiye yine güncel, kullanıcıya "zaten işlenmişti" denir.
       if (result.creditsAdded > 0) {
         showInfoToast({
-          title: t(key("successTitle")),
-          message: t(key("successMessage"), { count: result.creditsAdded }),
+          title: tp("successTitle"),
+          message: tp("successMessage", { count: result.creditsAdded }),
           icon: toastIcon,
+          mode,
         });
       } else {
         showInfoToast({
-          title: t(key("syncedTitle")),
-          message: t(key("syncedMessage")),
+          title: tp("syncedTitle"),
+          message: tp("syncedMessage"),
           icon: toastIcon,
+          mode,
         });
       }
       onPurchased?.(result);
@@ -296,13 +323,14 @@ export default function ConsumablePurchaseSheet({
         // Kuyruğa alındı — para alındı, kredi bir sonraki açılışta yazılacak.
         onClose?.();
         showInfoToast({
-          title: t(key("pendingTitle")),
-          message: t(key("pendingMessage")),
+          title: tp("pendingTitle"),
+          message: tp("pendingMessage"),
           icon: toastIcon,
+          mode,
         });
         return;
       }
-      Alert.alert(t(key("errorTitle")), e?.message || t("errors.operationFailed"));
+      Alert.alert(tp("errorTitle"), e?.message || t("errors.operationFailed"));
     } finally {
       setPurchasing(false);
     }
@@ -326,8 +354,8 @@ export default function ConsumablePurchaseSheet({
   const ctaLabel = purchasing
     ? ""
     : selectedPack?.priceString
-      ? t(key("ctaWithPrice"), { price: selectedPack.priceString })
-      : t(key("cta"));
+      ? tp("ctaWithPrice", { price: selectedPack.priceString })
+      : tp("cta");
 
   const footer = (
     <BlurView
@@ -352,7 +380,7 @@ export default function ConsumablePurchaseSheet({
           borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor:
-            hasSelection && !purchasing ? colors.litPlus : ink(0.15),
+            hasSelection && !purchasing ? modeAccent(mode) : ink(0.15),
           paddingVertical: 18,
           alignItems: "center",
           justifyContent: "center",
@@ -360,8 +388,9 @@ export default function ConsumablePurchaseSheet({
       >
         <Text
           style={{
-            // Seçim varken zemin litPlus dolgusu → yazı `onMedia` (açık modda
-            // da beyaz). Seçim yokken zemin nötr → moda uyan soluk mürekkep.
+            // Seçim varken zemin mod vurgusu dolgusu → yazı `onMedia` (açık
+            // modda da beyaz). Seçim yokken zemin nötr → temaya uyan soluk
+            // mürekkep.
             color: hasSelection ? colors.onMedia : ink(0.5),
             fontSize: 15,
             fontWeight: "700",
@@ -387,7 +416,7 @@ export default function ConsumablePurchaseSheet({
           lineHeight: 15,
         }}
       >
-        {t(key("disclaimer"))}
+        {tp("disclaimer")}
       </Text>
     </BlurView>
   );
@@ -439,7 +468,7 @@ export default function ConsumablePurchaseSheet({
             marginTop: 8,
           }}
         >
-          {t(key("title"))}
+          {tp("title")}
         </Text>
         <Text
           style={{
@@ -451,7 +480,7 @@ export default function ConsumablePurchaseSheet({
             paddingHorizontal: 8,
           }}
         >
-          {t(key("description"))}
+          {tp("description")}
         </Text>
 
         {loading ? (
@@ -469,7 +498,7 @@ export default function ConsumablePurchaseSheet({
               paddingHorizontal: 12,
             }}
           >
-            {t(key("unavailableMessage"))}
+            {tp("unavailableMessage")}
           </Text>
         ) : (
           <View
@@ -521,7 +550,7 @@ export default function ConsumablePurchaseSheet({
                       numberOfLines={1}
                     >
                       {pack.credits != null
-                        ? t(key("packLabel"), { count: pack.credits })
+                        ? tp("packLabel", { count: pack.credits })
                         : (pack.title ?? pack.productId)}
                     </Text>
                     <Text

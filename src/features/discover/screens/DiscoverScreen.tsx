@@ -28,14 +28,10 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-// Destenin TAMAMININ yandan girdiği yolların mesafesi (filtre · mesafe sınırı).
-// Tek kartın girişiyle aynı sayı, türetilmiş: iki giriş aynı hızda okunsun
-// (bkz. SwipeWrapper > CARD_ENTRY_DISTANCE).
-const ENTRY_DISTANCE = CARD_ENTRY_DISTANCE;
 const ENTRY_DURATION = 180;
 const ENTRY_EASING = Easing.out(Easing.cubic);
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,7 +39,6 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Search,
-  Lock,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper, {
@@ -63,7 +58,6 @@ import moderationService from "@/shared/services/moderationService";
 // kaldırıldı, yerinde yalnız iki cam buton kaldı. Bileşen duruyor — başka bir
 // yüzeye konmak istenirse hazır.
 import { colors, ink } from "../../../shared/theme/colors";
-import { chromeBlurTint } from "@/shared/theme/blur";
 import {
   usePotentialMatches,
   useSwipeFilters,
@@ -183,16 +177,24 @@ const SWIPE_WARN_THRESHOLDS = [10, 5] as const;
 const COVER_SETTLE_TIMEOUT_MS = 600;
 
 /**
- * Yandan giren deste (rewind · filtre kaydetme) en çok bu kadar DIŞARIDA
- * bekliyor — yeni üst kartın ölçüm haberi (bkz. `enterStackFrom`) gelmezse
- * kayma yine de başlıyor.
+ * Geri alınan kartın ölçüm haberi (bkz. `handleRewindSlotReady`) en çok bu
+ * kadar bekleniyor; gelmezse kart ölçülmemiş hâliyle üste alınıyor.
  *
  * `COVER_SETTLE_TIMEOUT_MS`DEN KISA, bilerek: orada perdenin ardında bir kart
- * var ve beklemek yalnız perdeyi uzatıyor; burada ekranda kart YOK, bekleme
- * boş ekran demek. Ölçüm normalde 3-4 karede (~60ms) geliyor, bu sayı yalnız o
- * yolun tıkandığı hâl için.
+ * var ve beklemek yalnız perdeyi uzatıyor; burada kullanıcı bir butona bastı
+ * ve karşılığını bekliyor. Ölçüm normalde 3-4 karede (~60ms) geliyor, bu sayı
+ * yalnız o yolun tıkandığı hâl için.
  */
 const STACK_ENTRY_SETTLE_TIMEOUT_MS = 240;
+
+/**
+ * Filtre kaydedildikten sonra taze deste en çok bu kadar İSKELETİN ARDINDA
+ * bekleniyor (bkz. awaitingFreshDeck). Ağ cevabı normalde yarım saniyenin
+ * altında; bu sayı isteğin asılı kaldığı, retry'a düştüğü hâl için. Dolunca
+ * perde eldeki desteyle kalkıyor — takılı kalan bir iskelet, bayat desteden
+ * kötü.
+ */
+const FRESH_DECK_MAX_WAIT_MS = 6000;
 
 /**
  * ── FOTO KAPISININ AYRI (VE KISA) BÜTÇESİ ─────────────────────────────────
@@ -314,71 +316,39 @@ const SkeletonBlock = ({ width, height, borderRadius = 8, style }: any) => {
 };
 
 /**
- * Yüzen üst chrome butonlarının sağ altına oturan küçük rozet — kalan geri
- * alma hakkı / kilit, ve aktif filtre sayısı.
+ * Yüzen üst chrome butonlarının sağ altına oturan küçük SAYI rozeti — kalan
+ * geri alma hakkı ve aktif filtre sayısı.
  *
- * ZEMİN İKİ YOLDAN GELİYOR, kasıtlı:
+ * ZEMİN OPAK (`colors.bg`): 15px rakamın 16px'lik diskte okunması zeminin
+ * kapatıcılığına bağlı; saydam bırakılınca açık bir fotoğrafın üstünde sayı
+ * kayboluyordu.
  *
- * - SAYI yolu OPAK (`colors.bg`): 15px rakamın 16px'lik diskte okunması zeminin
- *   kapatıcılığına bağlı; saydam bırakılınca açık bir fotoğrafın üstünde sayı
- *   kayboluyordu.
- * - KİLİT yolu BULANIK (istek: "arka planı renk değil blur olsun"): glif tek
- *   parça ve kapatıcı bir diske ihtiyacı yok, bulanıklık onu üstünde durduğu
- *   butonun cam ailesine bağlıyor. Malzeme `chromeBlurTint()` — rozet bir foto
- *   perdesi değil, chrome'un parçası (bkz. shared/theme/blur.ts).
+ * ⚠️ KİLİT ROZETİ YOK (2026-11-06'da kaldırıldı, istek). Geri alma free
+ * kullanıcıda kilitliyken burada bulanık zeminli küçük bir `lock` glifi
+ * çiziliyordu. Kilidin işareti artık rozet değil, BUTONUN KENDİ SÖNÜKLÜĞÜ
+ * (bkz. aşağıda `dimmed`) — iki ayrı işaret aynı şeyi iki kez söylüyordu ve
+ * köşedeki glif, butonun kendi glifiyle yarışıyordu.
  *
- * Her iki yol da cam butonun DIŞINDA kalmak zorunda: SwiftUI ağacına RN çocuğu
- * girmiyor ve camın ATASI olacak her katman (opacity/transform) efekti
- * öldürüyor.
+ * Rozet cam butonun DIŞINDA kalmak zorunda: SwiftUI ağacına RN çocuğu girmiyor
+ * ve camın ATASI olacak her katman (opacity/transform) efekti öldürüyor.
  *
  * Eskiden aynı rozet düz ikonun köşesindeydi; ölçüler oradan devralındı ki
  * sayı aynı boyda okunsun.
  */
-
-/**
- * Kilit rozetinin bulanıklığı — `GlassFallbackSurface`in buton zeminiyle (60)
- * aynı kademe: ikisi de bir perde değil, kendi kutusu olan küçük bir yüzey.
- */
-const HEADER_BADGE_BLUR_INTENSITY = 60;
-
-function HeaderCountBadge({ icon = false, text }: { icon?: boolean; text: string }) {
-  const box = {
-    borderRadius: 999,
-    borderCurve: "continuous" as const,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    paddingHorizontal: icon ? 0 : 3,
-  };
-
-  // Kilit glifi geri alma butonunun okuyla AYNI ailede: dolgulu `lock.fill`
-  // yerine çizgisel `lock` + aynı `semibold` ağırlık (bkz. yukarıdaki butonun
-  // `arrow.counterclockwise` glifi). Mürekkep tema metni, foto-üstü beyaz
-  // DEĞİL: rozetin arkasında berrak cam değil bir blur diski var ve o disk
-  // açık modda açık — beyaz glif içinde kaybolurdu (`glassOnMediaInk` notu).
-  if (icon)
-    return (
-      // `overflow: hidden` olmadan BlurView kare kalıyor (yarıçap bulanıklığı
-      // kırpmıyor) — GlassFallbackSurface'teki aynı kural.
-      <BlurView
-        tint={chromeBlurTint()}
-        intensity={HEADER_BADGE_BLUR_INTENSITY}
-        style={[box, { overflow: "hidden" }]}
-      >
-        <SFIcon
-          name="lock"
-          fallback={Lock}
-          size={12}
-          color={colors.text}
-          strokeWidth={2.5}
-          weight="semibold"
-        />
-      </BlurView>
-    );
-
+function HeaderCountBadge({ text }: { text: string }) {
   return (
-    <View style={[box, { backgroundColor: colors.bg }]}>
+    <View
+      style={{
+        borderRadius: 999,
+        borderCurve: "continuous",
+        minWidth: 16,
+        height: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 3,
+        backgroundColor: colors.bg,
+      }}
+    >
       <Text
         style={{
           color: colors.text,
@@ -523,6 +493,106 @@ const SkeletonCard = ({ coverBottomInset }: { coverBottomInset: number }) => {
         />
       </Animated.View>
     </View>
+  );
+};
+
+/**
+ * ── İSKELET PERDESİ: İNERKEN DE KALKARKEN DE SÖNÜMLENİYOR ─────────────────
+ *
+ * Kart mount olup kapağın alt chrome'u ölçülürken (bkz. coverSettled) ve
+ * filtre sonrası taze deste beklenirken (bkz. awaitingFreshDeck) kartın
+ * ÜSTÜNDE duran iskelet. Eskiden düz bir koşullu render'dı: perde tek karede
+ * kalkıyor, kart ekrana ÇARPIYORDU — soğuk açılışta da, filtre sonrasında da.
+ *
+ * İKİ YÖN AYRI AYARLI:
+ *   • İniş (yalnız filtre yolunda, `fadeIn`): eski deste ya da boş kart
+ *     iskelete 150 ms'de geçiyor. Soğuk açılışta iniş YOK — altta zaten aynı
+ *     iskelet (`deckSkeletonOnly`) duruyor, perde ona birebir oturuyor.
+ *   • Kalkış: 200 ms. Kart ölçülmüş, son hâlinde; sönümleme yalnız onu açıyor.
+ *     Kalkarken dokunma SERBEST — kart görünüyor, kullanıcı beklemesin.
+ *
+ * Opaklık her MOUNT'ta yeniden kuruluyor (iç katman perde her göründüğünde
+ * taze doğuyor): paylaşılan değer bir önceki kalkıştan 0'da kalsaydı, perde
+ * yeniden inerken ilk kare boş geçer ve ölçülmemiş kart bir kare görünürdü.
+ *
+ * Azaltılmış hareket için ayrı dal YOK: o ayar opaklık geçişlerini koruyor.
+ */
+const CURTAIN_FADE_IN_MS = 150;
+const CURTAIN_FADE_OUT_MS = 200;
+const CURTAIN_EASING = Easing.bezier(0.23, 1, 0.32, 1);
+
+const SkeletonCurtain = ({
+  visible,
+  fadeIn,
+  coverBottomInset,
+}: {
+  visible: boolean;
+  fadeIn: boolean;
+  coverBottomInset: number;
+}) => {
+  // Kalkış bitene kadar ağaçta kalıyor; görünür olduğu karede ise AYNI render'da
+  // mount ediliyor (türetilmiş state, render sırasında) — effect'e bıraksaydık
+  // perde bir kare geç iner, ölçülmemiş kart o karede görünürdü.
+  const [present, setPresent] = useState(visible);
+  if (visible && !present) setPresent(true);
+  const hide = useCallback(() => setPresent(false), []);
+  if (!present) return null;
+  return (
+    <SkeletonCurtainLayer
+      visible={visible}
+      fadeIn={fadeIn}
+      coverBottomInset={coverBottomInset}
+      onHidden={hide}
+    />
+  );
+};
+
+const SkeletonCurtainLayer = ({
+  visible,
+  fadeIn,
+  coverBottomInset,
+  onHidden,
+}: {
+  visible: boolean;
+  fadeIn: boolean;
+  coverBottomInset: number;
+  onHidden: () => void;
+}) => {
+  const opacity = useSharedValue(fadeIn ? 0 : 1);
+  useEffect(() => {
+    if (visible) {
+      opacity.set(
+        withTiming(1, { duration: CURTAIN_FADE_IN_MS, easing: CURTAIN_EASING }),
+      );
+      return;
+    }
+    opacity.set(
+      withTiming(
+        0,
+        { duration: CURTAIN_FADE_OUT_MS, easing: CURTAIN_EASING },
+        // Kalkış yarıda kesildiyse (perde yeniden indi) `finished` false:
+        // katman ağaçta kalmalı.
+        (finished) => {
+          if (finished) scheduleOnRN(onHidden);
+        },
+      ),
+    );
+  }, [visible, opacity, onHidden]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  return (
+    <Animated.View
+      // Görünürken DOKUNMAYI YUTUYOR: altında görünmeyen bir kart var,
+      // kullanıcı göremediği kartı kaydırmasın. Kalkarken kart görünüyor.
+      pointerEvents={visible ? "auto" : "none"}
+      // İskelet üst üste binen katmanlardan oluşuyor (zemin + bloklar +
+      // parıltı). Android'de opaklık her çocuğa ayrı uygulanıyor; bloklar
+      // sönerken altındaki kartla ayrı ayrı karışırdı. Bedeli yalnız
+      // opaklık < 1 iken.
+      needsOffscreenAlphaCompositing
+      style={[StyleSheet.absoluteFill, { zIndex: 60 }, style]}
+    >
+      <SkeletonCard coverBottomInset={coverBottomInset} />
+    </Animated.View>
   );
 };
 
@@ -1810,10 +1880,6 @@ export default function DiscoverScreen() {
   const overlayDragX = useSharedValue(0);
   const overlayOpacity = useSharedValue(1);
   const programmaticSwipe = useSharedValue(0);
-  // Kart yığınının yandan giriş ofseti. Boş-durum aksiyonlarından ÖNCE
-  // tanımlı: "Daha uzağı göster" de filtre kaydetme gibi taze desteyi
-  // animasyonla içeri alıyor.
-  const stackEntryX = useSharedValue(0);
 
   /**
    * ── DALGA, YENİ KART BOYANANA KADAR PARKTA BEKLİYOR ───────────────────────
@@ -1900,67 +1966,6 @@ export default function DiscoverScreen() {
   });
 
   /**
-   * ── YANDAN GİREN DESTE ÖLÇÜLDÜKTEN SONRA KAYIYOR ──────────────────────────
-   *
-   * Filtre kaydetme ve mesafe sınırını kaldırma, destenin ÜST kartını SIFIRDAN
-   * mount ediyor (swipe'ta ise yeni üst kart zaten bir süredir arkada duruyor ve
-   * ölçülmüş oluyor). Taze mount'un ilk kareleri sıçramalı: kartın boyu ölçülene
-   * kadar isim bloğu ve sağ aksiyon kolonu HİÇ çizilmiyor, ortak nokta pilleri
-   * görünmez ölçüm turundan geçiyor (bkz. PillFlow > hideUntilPacked) ve kolonun
-   * tabanı pil satırı ölçülünce bir kez daha kayıyor.
-   *
-   * Eskiden kayma bu sıçramayla AYNI ANDA başlıyordu: kart yanda titreyerek
-   * geliyor, yerine oturduktan sonra isim/piller "yok olup geri geliyor",
-   * butonlar yeniden hizalanıyordu. Artık deste dışarıda bekliyor ve kayma
-   * ancak kart "yerine oturdu" haberini verince başlıyor (aynı haber iskeletin
-   * beklediği haber — bkz. coverSettled · SwipeCard > onCoverReady), yani
-   * kullanıcı yalnız bitmiş kartın kaymasını görüyor.
-   *
-   * Bekleme EKRANDA KART OLMADAN geçiyor, o yüzden tavan kısa
-   * (STACK_ENTRY_SETTLE_TIMEOUT_MS) ve haber gelmezse kayma yine başlıyor.
-   *
-   * REWIND BU YOLU KULLANMIYOR (ve kullanmamalı): orada ekranda canlı bir kart
-   * duruyor, desteyi yana park etmek o kartı da götürüp arkasındaki sayfa
-   * zeminini açıyordu — açık temada tam ekran beyazlık. Geri gelen kart artık
-   * hiç kaymıyor, canlı kartın ARDINDA ölçülüyor (bkz. rewindWarmup).
-   */
-  const pendingStackEntry = useRef(false);
-  const stackEntryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const releaseStackEntry = useCallback(() => {
-    if (!pendingStackEntry.current) return;
-    pendingStackEntry.current = false;
-    if (stackEntryTimeout.current) {
-      clearTimeout(stackEntryTimeout.current);
-      stackEntryTimeout.current = null;
-    }
-    stackEntryX.value = withTiming(0, {
-      duration: ENTRY_DURATION,
-      easing: ENTRY_EASING,
-    });
-  }, [stackEntryX]);
-
-  /**
-   * Desteyi `offset` kadar yana park et; kaymayı yeni üst kartın ölçüm haberine
-   * (ya da tavana) bırak. Üç çağıranı var: rewind (soldan), filtre kaydetme ve
-   * mesafe sınırını kaldırma (sağdan).
-   */
-  const enterStackFrom = useCallback(
-    (offset: number) => {
-      // Doğrudan atama koşan withTiming'i de iptal ediyor: arka arkaya iki
-      // giriş (hızlı rewind) birbirinin yarısından devam etmesin.
-      stackEntryX.value = offset;
-      pendingStackEntry.current = true;
-      if (stackEntryTimeout.current) clearTimeout(stackEntryTimeout.current);
-      stackEntryTimeout.current = setTimeout(
-        releaseStackEntry,
-        STACK_ENTRY_SETTLE_TIMEOUT_MS,
-      );
-    },
-    [releaseStackEntry, stackEntryX],
-  );
-
-  /**
    * ── REWIND: GERİ GELEN KART CANLI KARTIN ARDINDA DOĞUYOR ──────────────────
    *
    * Geri alınan profil, `currentIndex` HİÇ KIPIRDAMADAN destenin en altına
@@ -1983,8 +1988,10 @@ export default function DiscoverScreen() {
   const rewindTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * Geri gelen kartın giriş ofseti. Destenin KABINA değil KARTA veriliyor —
-   * kabı kaydırmak canlı kartı da götürüyordu (bkz. SwipeWrapper > entryX ve
-   * aşağıdaki `stackEntryX` ile farkı: o, destenin TAMAMI değişen yollar için).
+   * kabı kaydırmak canlı kartı da götürüyordu (bkz. SwipeWrapper > entryX).
+   * Destenin TAMAMI değişen yollar (filtre · mesafe sınırı) kayma değil
+   * iskelet perdesi kullanıyor (bkz. awaitingFreshDeck); rewind'de ise YÖN
+   * anlamlı — kart gittiği yönden geri geliyor.
    */
   const cardEntryX = useSharedValue(0);
 
@@ -2162,7 +2169,6 @@ export default function DiscoverScreen() {
   // Ekran ağaçtan düşerse bekleyen tavanlar arkada kalmasın.
   useEffect(
     () => () => {
-      if (stackEntryTimeout.current) clearTimeout(stackEntryTimeout.current);
       if (rewindTimeout.current) clearTimeout(rewindTimeout.current);
       if (coverWaitTimeout.current) clearTimeout(coverWaitTimeout.current);
     },
@@ -2189,6 +2195,7 @@ export default function DiscoverScreen() {
 
   const removeDistanceLimit = useEvent(async () => {
     if (ignoreDistanceMutation.isPending) return;
+    const deckSnap = snapshotDeck();
     try {
       await ignoreDistanceMutation.mutateAsync(true);
       // Taze deste listenin BAŞINDAN gösterilmeli. currentIndex tükenmiş
@@ -2196,7 +2203,7 @@ export default function DiscoverScreen() {
       // baştaki profiller sessizce atlanırdı. Filtre kaydetme yolundaki
       // (handleSaveFilters) davranışın aynısı — giriş animasyonu dahil.
       setCurrentIndex(0);
-      enterStackFrom(ENTRY_DISTANCE);
+      beginFreshDeckEntry(deckSnap);
     } catch (err: any) {
       // Sessiz kalma: kullanıcı butona bastı, deste hâlâ boş — hiçbir şey
       // olmadıysa bunu bilmeli, yoksa buton bozuk sanılıp tekrar tekrar
@@ -2298,6 +2305,82 @@ export default function DiscoverScreen() {
   }, [potentialMatches, currentIndex, tryReleaseFlame]);
 
   /**
+   * ── TAZE DESTE İSKELETİN ARDINDA KURULUYOR ───────────────────────────────
+   *
+   * Filtre kaydetme ve mesafe sınırını kaldırma desteyi baştan çektiriyor.
+   * Giriş eskiden KAYDETME ANINA bağlıydı: deste gizleniyor, 240 ms'lik tavan
+   * kuruluyordu. Ağ cevabı o tavandan uzun sürünce animasyon ESKİ desteye
+   * harcanıyor (React Query yenileme süresince eski sayfaları tutuyor), yeni
+   * kartlar ise cevap gelince tam opak, animasyonsuz, bir anda beliriyordu.
+   * Ağ hızlıysa düzgün, yavaşsa her seferinde bozuk.
+   *
+   * Artık giriş VERİNİN GELİŞİNE bağlı:
+   *   1. Kaydedince iskelet perdesi eski destenin/boş kartın üstüne söner.
+   *      Eski profiller gösterilmeye devam etmiyor, bilerek: az önce uygulanan
+   *      filtreye uymuyorlar.
+   *   2. Cevap gelene kadar perde duruyor (awaitingFreshDeck). Bu sürede gelen
+   *      ölçüm haberleri ESKİ desteden (index 0'a dönen eski kart) — perdeyi
+   *      kaldırmıyorlar, yalnız hangi kartın ölçüldüğü not ediliyor.
+   *   3. Cevap gelince yeni üst kart perdenin ardında ölçülüyor; haber gelince
+   *      perde sönerek kalkıyor (bkz. SkeletonCurtain).
+   *
+   * "Cevap geldi" = yenileme bitti VE veri (ya da hata) damgası kaydetmeden
+   * öncekinden farklı. Yalnız `isFetching`e bakmak yetmiyor: invalidate'ten
+   * sonraki ilk render'da yenileme henüz bayrağa yansımamış olabilir, perde
+   * hiç beklemeden kalkardı.
+   */
+  const [awaitingFreshDeck, setAwaitingFreshDeck] = useState(false);
+  const freshDeckSnap = useRef<{ data: number; error: number } | null>(null);
+  // Ölçüm haberini en son veren ÜST kart. Cevap geldiğinde üst kart hâlâ o
+  // ise (aynı profil listenin başında kaldı, kart ağaçta hiç sökülmedi) yeni
+  // haber gelmeyecek — kart zaten ölçülü.
+  const readyTopIdRef = useRef<string | null>(null);
+
+  const snapshotDeck = useEvent(() => ({
+    data: matchesQuery.dataUpdatedAt,
+    error: matchesQuery.errorUpdatedAt,
+  }));
+
+  const beginFreshDeckEntry = useEvent(
+    (snap: { data: number; error: number }) => {
+      freshDeckSnap.current = snap;
+      setCoverSettled(false);
+      setAwaitingFreshDeck(true);
+    },
+  );
+
+  const finishFreshDeckEntry = useEvent(() => {
+    freshDeckSnap.current = null;
+    setAwaitingFreshDeck(false);
+    const topId = potentialMatches[currentIndex]?.userId ?? null;
+    if (topId && topId === readyTopIdRef.current) setCoverSettled(true);
+  });
+
+  useEffect(() => {
+    if (!awaitingFreshDeck || matchesQuery.isFetching) return;
+    const snap = freshDeckSnap.current;
+    if (!snap) return;
+    if (
+      matchesQuery.dataUpdatedAt !== snap.data ||
+      matchesQuery.errorUpdatedAt !== snap.error
+    ) {
+      finishFreshDeckEntry();
+    }
+  }, [
+    awaitingFreshDeck,
+    matchesQuery.isFetching,
+    matchesQuery.dataUpdatedAt,
+    matchesQuery.errorUpdatedAt,
+    finishFreshDeckEntry,
+  ]);
+
+  useEffect(() => {
+    if (!awaitingFreshDeck) return;
+    const id = setTimeout(finishFreshDeckEntry, FRESH_DECK_MAX_WAIT_MS);
+    return () => clearTimeout(id);
+  }, [awaitingFreshDeck, finishFreshDeckEntry]);
+
+  /**
    * Kapağın alt chrome'u (yazı bloğu + sağ buton kolonu) yerine oturdu mu —
    * iskelet fotoğraftan SONRA bir de bunu bekliyor.
    *
@@ -2314,18 +2397,20 @@ export default function DiscoverScreen() {
    */
   const [coverSettled, setCoverSettled] = useState(false);
   /**
-   * HABER İKİ YERE GİDİYOR: perdeyi kaldırıyor (ilk kart) ve yanda park etmiş
-   * desteyi içeri alıyor (rewind · filtre) — ikisi de "kart artık sıçramaz"
-   * demenin iki ayrı bağlamı, bkz. enterStackFrom.
+   * Haber iskelet perdesini kaldırıyor — soğuk açılışta da, filtre sonrası
+   * taze destede de (bkz. awaitingFreshDeck). Taze deste beklenirken gelen
+   * haber ESKİ desteden: perdeye dokunmuyor, yalnız not ediliyor.
    *
    * Kart başına BİR KEZ geliyor (SwipeCard > coverReadyNotifiedRef) ve yalnız
    * ÜST karttan: taze mount eden her üst kart kendi haberini veriyor, yani
    * rewind'de geri gelen kart da.
    */
-  const handleCoverReady = useCallback(() => {
+  // useEvent: kimliği sabit (kart memo karşılaştırması), değerleri güncel.
+  const handleCoverReady = useEvent(() => {
+    readyTopIdRef.current = potentialMatches[currentIndex]?.userId ?? null;
+    if (awaitingFreshDeck) return;
     setCoverSettled(true);
-    releaseStackEntry();
-  }, [releaseStackEntry]);
+  });
 
   /**
    * Ekranda kart KALMAYINCA perde yeniden kuruluyor.
@@ -2351,11 +2436,13 @@ export default function DiscoverScreen() {
    * bir dal haberi hiç vermeyebilir. Takılı kalan bir iskelet, görünen bir
    * sıçramadan KÖTÜ: süre dolunca kart olduğu gibi açılıyor.
    */
+  // Taze deste beklenirken saymıyor: sayaç cevaptan önce dolsa perde ESKİ
+  // desteyle kalkardı. Cevap gelince (awaitingFreshDeck düşünce) baştan sayar.
   useEffect(() => {
-    if (coverSettled || !firstPhotoReady) return;
+    if (coverSettled || !firstPhotoReady || awaitingFreshDeck) return;
     const id = setTimeout(() => setCoverSettled(true), COVER_SETTLE_TIMEOUT_MS);
     return () => clearTimeout(id);
-  }, [coverSettled, firstPhotoReady]);
+  }, [coverSettled, firstPhotoReady, awaitingFreshDeck]);
 
   // ── Profil keşifte görünmüyorken ETKİLEŞİMLER kilitli ───────────────────
   // GÖRÜNÜRLÜK KİLİT DEĞİL: profil keşif havuzunda görünmüyorken de (fotoğraf
@@ -2461,9 +2548,6 @@ export default function DiscoverScreen() {
    * görünürlük/konum kapılarını bekleten `swipeTutorialGate` modülü — kapılar
    * (ProfileHiddenGate · LocationAccessGate) artık doğrudan açılıyor.
    */
-  const cardStackStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: stackEntryX.value }],
-  }));
 
   /**
    * Kart kabının alt dolgusu — ARTIK ANİMASYONLU DEĞİL, ve deste varken SIFIR.
@@ -2776,10 +2860,13 @@ export default function DiscoverScreen() {
   };
 
   const handleSaveFilters = async (localFilters) => {
+    // Anlık görüntü mutasyondan ÖNCE: invalidate mutasyonun onSuccess'inde
+    // tetikleniyor, sonra alınan görüntü çok hızlı bir cevabı kaçırabilirdi.
+    const deckSnap = snapshotDeck();
     try {
       await saveFiltersMutation.mutateAsync(localFilters);
       setCurrentIndex(0);
-      enterStackFrom(ENTRY_DISTANCE);
+      beginFreshDeckEntry(deckSnap);
       setFilterVisible(false);
     } catch (err) {
       Alert.alert("", err?.message || t('discover.filters.saveError'));
@@ -3128,8 +3215,12 @@ export default function DiscoverScreen() {
   const deckSkeletonOnly =
     (loading && potentialMatches.length === 0) ||
     (potentialMatches.length > 0 && !firstPhotoReady);
+  // `deckSkeletonOnly` ile ÖRTÜŞEBİLİR, bilerek: veri geldi ama ilk fotoğraf
+  // yüklenmedi hâlinde perde alttaki iskeletin üstüne birebir oturuyor ve kart
+  // mount olunca kesintisiz onu örtmeye devam ediyor (perde yeniden doğmuyor).
   const deckSkeletonOverlay =
-    !deckSkeletonOnly && potentialMatches.length > currentIndex && !coverSettled;
+    awaitingFreshDeck ||
+    (potentialMatches.length > currentIndex && !coverSettled);
 
   /**
    * Yüzen üst chrome'un (başlık + iki cam buton) ARDINDA fotoğraf OLMADIĞI her
@@ -3168,14 +3259,11 @@ export default function DiscoverScreen() {
     potentialMatches.length <= currentIndex;
 
   /**
-   * Yanda park etmiş desteyi BEKLETMEYECEK hâller: ekranda gerçek bir kart yok
-   * (iskelet ya da boş durum). Bekleyen tavan dolana kadar durmasın — orada
-   * ölçüm haberi verecek bir kart da yok, perdeyi/boş kartı 240ms geciktirmenin
-   * karşılığı yok (bkz. enterStackFrom).
+   * Ekranda gerçek bir kart yok (iskelet ya da boş durum): kart devrine bağlı
+   * bekleyen bayrakları bırak.
    */
   useEffect(() => {
     if (deckSkeletonOnly || !deckHasCard) {
-      releaseStackEntry();
       // Devir ortasında deste boşaldı (ya da iskelete düştü): boyanmasını
       // beklediğimiz kart yok. Bayrakları bırak, yoksa `deckSettled` kalıcı
       // olarak `false` kalır ve deste bir daha arka kart çizmezdi.
@@ -3187,7 +3275,7 @@ export default function DiscoverScreen() {
       // edilmiş sanıp beklemeden üste alırdı.
       rewindSlotIdRef.current = null;
     }
-  }, [deckSkeletonOnly, deckHasCard, releaseStackEntry]);
+  }, [deckSkeletonOnly, deckHasCard]);
 
   const renderStack = () => {
     const topProfile = potentialMatches[currentIndex];
@@ -3363,9 +3451,7 @@ export default function DiscoverScreen() {
              iskelet doğrudan `flex: 1` ile ekranı dolduruyor. */
           <SkeletonCard coverBottomInset={coverBottomInset} />
         ) : potentialMatches.length > currentIndex ? (
-          <Animated.View
-            style={[{ flex: 1, position: "relative" }, cardStackStyle]}
-          >
+          <View style={{ flex: 1, position: "relative" }}>
             {renderStack()}
             {/* Aşağı çekiş (Fire) ipucu — kartın ALTINDA, arkadaki
                 kartın üstünde (kendi zIndex'i 5). Desteden SONRA yazılıyor ama
@@ -3375,7 +3461,7 @@ export default function DiscoverScreen() {
                 durum çubuğunun altında kalmalı (bkz. oradaki prop notu). */}
             <FirePullHint topInset={insets.top} mode={mode} />
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
-          </Animated.View>
+          </View>
         ) : (
           /* BOŞ KART DA TAM EKRAN: ayrı sarmalayıcı yok, payları kendi içinde
              taşıyor (bkz. EmptyDiscoverCard > topInset/coverBottomInset). */
@@ -3398,19 +3484,17 @@ export default function DiscoverScreen() {
         )}
 
         {/* KARTIN ÜSTÜNDEKİ İSKELET — kart mount oldu ama kapağın alt chrome'u
-            henüz ölçülmedi (bkz. coverSettled). Kart ölçülebilmek için ekranda
+            henüz ölçülmedi (bkz. coverSettled) ya da filtre sonrası taze deste
+            bekleniyor (bkz. awaitingFreshDeck). Kart ölçülebilmek için ekranda
             olmak zorunda, o yüzden perde onun ÜSTÜNE iniyor; kardeş sırası
             yeterli (aynı ata içinde sonraki kardeş üstte boyanır), zIndex
             ayrıca veriliyor ki destedeki üst kartın kendi zIndex'iyle
-            yarışmasın.
-
-            DOKUNMAYI YUTUYOR (pointerEvents verilmedi): altında görünmeyen bir
-            kart var, kullanıcı göremediği kartı kaydırmasın. */}
-        {deckSkeletonOverlay && (
-          <View style={[StyleSheet.absoluteFill, { zIndex: 60 }]}>
-            <SkeletonCard coverBottomInset={coverBottomInset} />
-          </View>
-        )}
+            yarışmasın. İniş/kalkış sönümlemesi: bkz. SkeletonCurtain. */}
+        <SkeletonCurtain
+          visible={deckSkeletonOverlay}
+          fadeIn={awaitingFreshDeck}
+          coverBottomInset={coverBottomInset}
+        />
       </View>
 
       {/* ── YÜZEN ÜST CHROME ────────────────────────────────────────────────
@@ -3475,19 +3559,21 @@ export default function DiscoverScreen() {
           size={DISCOVER_GLASS_BUTTON_SIZE}
           onPress={handleRewind}
           label={t("discover.rewind.label")}
-          // Kilitliyken sönük göstermiyoruz: sönüklük "şu an kullanılamaz"
-          // demek, oysa kilitli buton her zaman tıklanabilir (paywall açar).
-          // Sönüklük yalnız premium'un "geri alacak pass yok" hâline kalıyor.
-          dimmed={!(undoLocked || lastSwipeWasPass)}
+          // KİLİDİN İŞARETİ ARTIK SÖNÜKLÜK (istek, 2026-11-06): köşedeki kilit
+          // rozeti kalktı, yerine kilitliyken glifin kendisi griye düşüyor.
+          // Sönüklük burada "basılamaz" DEMİYOR — buton kilitliyken de
+          // tıklanabilir ve paywall'ı açıyor (bkz. handleRewind > undoLocked);
+          // anlattığı şey "bu özellik şu an sende kapalı".
+          // İkinci sönük hâl eskisi gibi duruyor: premium'un geri alacak bir
+          // pass'i yokken de glif iniyor.
+          dimmed={undoLocked || !lastSwipeWasPass}
           // SINIRSIZDA ROZET YOK (istek): `remainingUndos === -1` sayı değil
           // "sınır yok" demek ve eskiden "∞" rozetiyle çiziliyordu. Sonsuz
           // işareti bir SAYAÇ gibi okunuyor — oysa sayacak bir şey kalmadığı
-          // durumun işareti. Kalan hak bir SAYIYSA rozet yine çıkıyor, kilitte
-          // de kilit glifi duruyor.
+          // durumun işareti. Kilitliyken de rozet yok: free'de kalan hak 0 ve
+          // "0" rozeti yanlış hikâye anlatıyordu ("hakkım bitti, yarın gelir").
           badge={
-            undoLocked ? (
-              <HeaderCountBadge icon text="" />
-            ) : remainingUndos !== null && remainingUndos !== -1 ? (
+            !undoLocked && remainingUndos !== null && remainingUndos !== -1 ? (
               <HeaderCountBadge text={String(remainingUndos)} />
             ) : null
           }

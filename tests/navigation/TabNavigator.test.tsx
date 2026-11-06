@@ -1,11 +1,18 @@
 /**
- * Sekme listesi × akış bayrağı latch'i.
+ * Sekme listesi × akış bayrağı latch'i × SEÇİLİ MOD.
  *
  * Bu suite'in varlık sebebi bir kör nokta: dev'de `devForceFeedEnabled()` sekmeyi
  * HER ZAMAN açtığı için "latch 'on' ama sekme çizilmiyor" sınıfı hatalar dev'de
  * hiç görünmüyordu (probe açılışa bağlı değilken kimsenin sekmeyi görememesi tam
  * bu yüzden fark edilmedi). Burada kanca KAPALI mock'lanıyor — yani __DEV__'in
  * jest'te true olmasına rağmen ÜRETİM davranışı test ediliyor.
+ *
+ * ⚠️ İKİ AYRI KAPI var ve ikisi de geçilmeden sekme çizilmiyor:
+ *   • LATCH  — "backend'de bu özellik açık mı" (feedFlag, UT-7301).
+ *   • MOD    — "bu modda bu özellik var mı" (Akış ARKADAŞ'a özel, 2026-11-05).
+ * Ayrı tutulmaları kasıtlı: mod seçimi latch'in disk değerini KİRLETMEMELİ,
+ * yoksa Dating'de geçirilen bir oturum özelliği kalıcı olarak "kapalı"
+ * damgalardı.
  */
 
 jest.mock('@/features/feed/feedDevFlag', () => ({
@@ -46,8 +53,10 @@ jest.mock('@/shared/hooks/redux', () => ({
 jest.mock('@/features/chat/chatSlice', () => ({
   selectUnreadForMode: () => 0,
 }));
+// Seçili mod testten testle değişiyor — gerçek hook diske/uiBus'a bağlı.
+let mockMode = 'Friends';
 jest.mock('@/features/discover/useAppMode', () => ({
-  useAppMode: () => ({ mode: 'Dating' }),
+  useAppMode: () => ({ mode: mockMode }),
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -71,6 +80,7 @@ const tabOrder = (toJSON: () => any): string[] =>
 beforeEach(() => {
   appPrefs.clearAll?.();
   resetFeedFlagSession();
+  mockMode = 'Friends';
 });
 
 it('latch "on" ise Akış sekmesi çizilir — dev kancası kapalıyken de', () => {
@@ -112,4 +122,60 @@ it('oturum ortasında gelen "on" sekmeyi ANINDA ekler (restart beklenmez)', () =
     recordFeedFlag(USER, true); // probe başarı yolu bunu çağırıyor
   });
   expect(getByTestId('tab-Feed')).toBeTruthy();
+});
+
+/**
+ * ── MOD KAPISI ──────────────────────────────────────────────────────────────
+ * Akış ARKADAŞ modunun yüzeyi. Flört'te sekme HİÇ olmamalı: çizilip içeride
+ * "burası Arkadaş'a özel" demek, kullanıcıya girip çıkacağı boş bir sekme
+ * vermek olurdu.
+ */
+it('Flört modunda latch "on" olsa bile Akış sekmesi çizilmez', () => {
+  mockMode = 'Dating';
+  recordFeedFlag(USER, true);
+  initFeedFlag(USER);
+  const { queryByTestId } = render(<TabNavigator />);
+  expect(queryByTestId('tab-Feed')).toBeNull();
+});
+
+it('Flört modunda diğer sekmeler olduğu gibi duruyor', () => {
+  mockMode = 'Dating';
+  recordFeedFlag(USER, true);
+  initFeedFlag(USER);
+  const { toJSON } = render(<TabNavigator />);
+  expect(tabOrder(toJSON)).toEqual([
+    'tab-Discover',
+    'tab-Likes',
+    'tab-Messages',
+    'tab-Profile',
+  ]);
+});
+
+/**
+ * Mod anahtarı Keşif başlığında ve Profil avatarında — yani kullanıcı modu
+ * DEĞİŞTİRİRKEN Akış sekmesinde durmuyor. Sekmenin canlı gelip gitmesi bu
+ * yüzden güvenli: route listesi değiştiğinde TabRouter odaklı sekmeyi İSMİYLE
+ * yeniden çözüyor ve kaldırılan route zaten odakta değil.
+ */
+it('Arkadaş → Flört geçişinde sekme CANLI kalkıyor', () => {
+  recordFeedFlag(USER, true);
+  initFeedFlag(USER);
+  const { queryByTestId, rerender } = render(<TabNavigator />);
+  expect(queryByTestId('tab-Feed')).toBeTruthy();
+
+  mockMode = 'Dating';
+  rerender(<TabNavigator />);
+  expect(queryByTestId('tab-Feed')).toBeNull();
+});
+
+it('Flört → Arkadaş geçişinde sekme CANLI geri geliyor', () => {
+  mockMode = 'Dating';
+  recordFeedFlag(USER, true);
+  initFeedFlag(USER);
+  const { queryByTestId, rerender } = render(<TabNavigator />);
+  expect(queryByTestId('tab-Feed')).toBeNull();
+
+  mockMode = 'Friends';
+  rerender(<TabNavigator />);
+  expect(queryByTestId('tab-Feed')).toBeTruthy();
 });

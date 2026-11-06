@@ -4,6 +4,10 @@ import FireGlyph from '../FireGlyph';
 import NoteGlyph from '../NoteGlyph';
 import PremiumFlame from '../PremiumFlame';
 import { badgeFireFill, badgeNeutralFill } from '../../theme/badge';
+import {
+  DEFAULT_APP_MODE,
+  type AppMode,
+} from '@/features/discover/modeTheme';
 
 /**
  * Toast'ların solundaki ÜRÜN simgesi — hangi ürün hakkında konuşulduğu metni
@@ -60,12 +64,24 @@ export function ToastIconGlyph({
   kind,
   size,
   color,
+  mode = DEFAULT_APP_MODE,
 }: {
   kind: ToastIconKind;
   size: number;
   color: string;
+  /**
+   * OLAYIN modu, ekranın seçili modu DEĞİL (gerekçe LikeToast > mode) —
+   * `fire` ve `like` gliflerini seçiyor: Flört'te alev, Arkadaş'ta yıldız
+   * (bkz. FireGlyph). Verilmezse Dating, yani modu bilmeyen çağıran (ör.
+   * debug kataloğu) bugünkü şekli görür.
+   *
+   * ⚠️ DAİRENİN RENGİ BUNDAN ETKİLENMİYOR: dolgu Bildirimler listesindeki
+   * rozetle tek kaynak ve o liste mod bilgisi taşımıyor (bkz.
+   * toastIconBackground). Yalnız glif dönüyor.
+   */
+  mode?: AppMode;
 }) {
-  if (kind === 'fire') return <FireGlyph size={size} color={color} />;
+  if (kind === 'fire') return <FireGlyph size={size} color={color} mode={mode} />;
   // Premium — isim yanındaki rozetle aynı alev glyph'i. `color` verildiği için
   // gradyan yerine DÜZ dolgu: daire zaten litPlus kırmızısı, rozetin kendi
   // kırmızı-turuncu gradyanı orada zemine gömülürdü (bkz. PremiumFlame).
@@ -101,11 +117,12 @@ export function ToastIconGlyph({
       />
     );
   }
-  // Beğeni — SF `heart.fill` / lucide `Heart` DEĞİL, ürünün kendi kalbi
-  // (icons/HeartGlyph): Likes sekmesi, kartın Fire butonu ve süper
-  // beğeni toast'ı aynı şekli taşıyor; jenerik sistem kalbi aralarında
-  // yabancı kalıyordu.
-  if (kind === 'like') return <FireGlyph size={size} color={color} />;
+  // Beğeni — SF `heart.fill` / lucide `Heart` DEĞİL, ürünün kendi işareti
+  // (FireGlyph): Likes sekmesi, kartın Fire butonu ve süper beğeni toast'ı
+  // aynı şekli taşıyor; jenerik sistem kalbi aralarında yabancı kalıyordu.
+  // Fire işaretini PAYLAŞTIĞI için modu da paylaşıyor: Arkadaş'ta burada da
+  // yıldız çizilir, yoksa aynı yüzeyde iki ayrı glif dili olurdu.
+  if (kind === 'like') return <FireGlyph size={size} color={color} mode={mode} />;
   return (
     <SFIcon
       name="arrow.counterclockwise"

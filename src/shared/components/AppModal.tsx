@@ -13,12 +13,13 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
+  Keyboard,
   StyleSheet,
   Platform,
   ViewStyle,
   StyleProp,
 } from "react-native";
-import { BottomSheetScrollView, SCROLLABLE_STATUS, useBottomSheetInternal, useScrollEventsHandlersDefault, type ScrollEventsHandlersHookType } from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView, KEYBOARD_STATUS, SCROLLABLE_STATUS, useBottomSheetInternal, useScrollEventsHandlersDefault, type ScrollEventsHandlersHookType } from "@gorhom/bottom-sheet";
 import { State } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -221,6 +222,38 @@ const useModalScrollEventsHandlers: ScrollEventsHandlersHookType = (
   return { ...restHandlers, handleOnScroll };
 };
 
+/**
+ * gorhom'un klavye durumunu klavye GERÇEKTEN kapandığında düzeltir.
+ *
+ * Belirti: prompt cevabında "Bitir"e basınca klavye kapanıyor ama sheet'in
+ * içeriği klavye yüksekliği kadar KISA kalıyordu — altta boş gri bant,
+ * "Profili aç" butonu yarıdan kesik. `keyboardBehavior="extend"`te gorhom
+ * içerik yüksekliğinden klavyeyi yalnız durum `SHOWN` iken düşüyor
+ * (BottomSheetContent), yani durum `SHOWN`da takılı kalmış.
+ *
+ * Neden takılıyor: "Bitir" alanı `editable=false` yaparak bırakıyor; blur
+ * anında RN hâlâ o alanı odakta raporluyor, gorhom'un BottomSheetTextInput'u
+ * da bu yüzden klavye hedefini SİLMİYOR. Hedef duran bir input'a klavye
+ * çerçevesi değişirken gelen bir `keyboardWillShow` durumu yeniden `SHOWN`a
+ * yazabiliyor. Kesin sıra cihazda görülmedi; çare kökten bağımsız:
+ * `keyboardDidHide` geldiyse klavye kapalıdır, durum da öyle olmalı.
+ *
+ * Hedefe (target) DOKUNULMUYOR: odakta kalan bir alan (donanım klavyesi)
+ * hedefsiz kalırsa sonraki gösterimi gorhom önbelleğe alıp hiç uygulamaz.
+ */
+function KeyboardStateHeal() {
+  const { animatedKeyboardState } = useBottomSheetInternal();
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      const state = animatedKeyboardState.get();
+      if (state.status !== KEYBOARD_STATUS.SHOWN) return;
+      animatedKeyboardState.set({ ...state, status: KEYBOARD_STATUS.HIDDEN });
+    });
+    return () => sub.remove();
+  }, [animatedKeyboardState]);
+  return null;
+}
+
 type AppModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -369,6 +402,8 @@ type AppModalProps = {
   stackBehavior?: "push" | "switch" | "replace";
   footer?: ReactNode;
   onPresented?: () => void;
+  // Sheet kapalı konuma İNDİĞİNDE (bkz. AppBottomSheet notifyClose).
+  onDismissed?: () => void;
   // Scrollable=true → BottomSheetScrollView contentContainerStyle override.
   contentContainerStyle?: StyleProp<ViewStyle>;
   // Scrollable=false → static container View style override.
@@ -431,6 +466,7 @@ export default function AppModal({
   stackBehavior,
   footer,
   onPresented,
+  onDismissed,
   contentContainerStyle,
   containerStyle,
   children,
@@ -873,6 +909,7 @@ export default function AppModal({
       cornerRadius={cornerRadius}
       onClose={onClose}
       onPresented={onPresented}
+      onDismissed={onDismissed}
       backdropComponent={renderBackdrop}
       handleComponent={null}
       enableContentPanningGesture={enableContentPanningGesture}
@@ -882,6 +919,7 @@ export default function AppModal({
       keyboardBehavior={keyboardBehavior}
       footer={footer}
     >
+      <KeyboardStateHeal />
       {/* ─── Content ─── */}
       <AppModalScrollContext.Provider value={scrollContext}>
       {scrollable ? (

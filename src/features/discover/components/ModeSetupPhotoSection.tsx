@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import { Image } from "expo-image";
 import { useTranslation } from "react-i18next";
 import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
@@ -12,6 +12,14 @@ import {
 import { MAX_PROFILE_PHOTOS } from "@/shared/constants/limits";
 import { colors } from "@/shared/theme/colors";
 import { Plus, X } from "@/shared/icons";
+import SFIcon from "@/shared/components/SFIcon";
+import {
+  ITEM_HEIGHT,
+  ITEM_WIDTH,
+  PHOTO_GRID_COLUMNS,
+  ROW_GAP,
+  getPosition,
+} from "@/features/profile/components/photoGridGeometry";
 
 /**
  * Mod kurulumunun FOTOĞRAF bölümü — iki ALTERNATİF yol (karma yok; karma
@@ -27,8 +35,9 @@ import { Plus, X } from "@/shared/icons";
  *
  * Bileşen veriye sahip değil (ProfilePhotoGrid'in kuralı): seçim
  * `value`/`onChange` ile çağıranda, min-2 doğrulaması ve gönderim
- * ModeSetupSheet'te. Burada sürükleme/sıralama YOK — statik ızgara; tam
- * ızgara (B yaklaşımı) bilinçli elendi, bkz. tasarım dokümanı.
+ * ModeSetupSheet'te. Burada sürükleme/sıralama YOK — ama karo boyu, aralıklar
+ * ve karo görünümü editördeki ProfilePhotoGrid'le BİREBİR (geometri
+ * `photoGridGeometry`den): iki yüzey aynı ızgarayı göstermeli.
  *
  * ⚠️ PhotoSourceSheet gorhom tabanlı ve bu bölüm AppModal'ın İÇİNDE yaşıyor
  * (provider modal'ın içinde, bkz. AppModal doc'u) — `stackBehavior="push"`
@@ -51,9 +60,6 @@ type Props = {
   value: SetupPhotoChoice;
   onChange: (next: SetupPhotoChoice) => void;
 };
-
-const TILE = 72;
-const RADIUS = 12;
 
 export default function ModeSetupPhotoSection({
   sourcePhotos,
@@ -115,131 +121,155 @@ export default function ModeSetupPhotoSection({
     [newPhotos, onChange],
   );
 
+  // Kurulumda düzenlenecek bir şey yoksa (devralma) yalnız önizleme karoları;
+  // yeni-kare yolunda karolar + tavan dolmadıysa ekle karosu.
+  const tileCount =
+    value.kind === "existing"
+      ? sourcePhotos.length
+      : newPhotos.length + (newPhotos.length < MAX_PROFILE_PHOTOS ? 1 : 0);
+
   return (
-    <View style={{ gap: 12 }}>
-      <Text
-        style={{
-          fontSize: 15,
-          fontWeight: "600",
-          color: colors.text,
-        }}
-      >
+    <View>
+      {/* Diğer bölüm başlıklarıyla AYNI ölçü (ModeSetupSheet `Section`: 20/600). */}
+      <Text style={{ fontSize: 20, fontWeight: "600", color: colors.text }}>
         {t("discover.mode.photos.title")}
       </Text>
+      {/* Açıklama — diğer bölümlerin (ModeSetupSheet `Section`) ölçüsünde. */}
+      <Text
+        style={{
+          color: colors.textSecondary,
+          fontSize: 14,
+          lineHeight: 20,
+          marginTop: 6,
+        }}
+      >
+        {t("discover.mode.photos.description")}
+      </Text>
 
+      {/* Editördeki seçenek satırıyla (EditProfileForm → OptionListItem
+          `checkbox`) AYNI düzen: metin solda 16/500, seçili değilken gri;
+          kutu sağda. Diğer bölümlerin satırları da bu kalıpta. */}
       {canUseExisting ? (
         <Pressable
           onPress={toggleExisting}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: value.kind === "existing" }}
-          style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingVertical: 18,
+          }}
         >
-          <RegisterOptionCheckbox selected={value.kind === "existing"} />
-          <Text style={{ fontSize: 15, color: colors.text, flex: 1 }}>
+          <Text
+            style={{
+              color:
+                value.kind === "existing" ? colors.text : colors.textSecondary,
+              fontSize: 16,
+              lineHeight: 22,
+              fontWeight: "500",
+              flex: 1,
+              paddingRight: 12,
+            }}
+          >
             {t("discover.mode.photos.useExisting", { mode: sourceModeLabel })}
           </Text>
+          <RegisterOptionCheckbox selected={value.kind === "existing"} />
         </Pressable>
       ) : null}
 
-      {value.kind === "existing" ? (
-        // Salt-okunur önizleme şeridi — devralınacak kareler. Izgara değil:
-        // burada düzenlenecek bir şey yok, yalnız "bunlar gelecek" bilgisi.
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {sourcePhotos.map((p) => (
-            <Image
-              key={p.photoId}
-              testID={`setup-photo-preview-${p.photoId}`}
-              source={p.photoImageUrl ? { uri: p.photoImageUrl } : undefined}
-              style={{
-                width: TILE,
-                height: (TILE * 4) / 3,
-                borderRadius: RADIUS,
-                backgroundColor: colors.surface2,
-              }}
-              contentFit="cover"
-            />
-          ))}
-        </View>
-      ) : (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {newPhotos.map((p, i) => (
-            <View key={p.uri} style={{ position: "relative" }}>
-              <Image
-                source={{ uri: p.uri }}
-                style={{
-                  width: TILE,
-                  height: (TILE * 4) / 3,
-                  borderRadius: RADIUS,
-                  backgroundColor: colors.surface2,
-                }}
-                contentFit="cover"
-              />
-              {i === 0 ? (
-                <View
-                  testID="setup-photo-main-0"
+      {/* Izgara editördekiyle (ProfilePhotoGrid) AYNI geometri: karo boyu,
+          sütun/satır aralığı ve konum `photoGridGeometry`den. Sürükleme yok —
+          kurulumda sıra = ekleme sırası (bkz. dosya başı). Üst pay 16: karoların
+          silme düğmesi 8pt yukarı taşıyor. */}
+      <View
+        style={{
+          position: "relative",
+          width: "100%",
+          height: gridHeight(tileCount),
+          // Seçenek satırı varsa onun 18'lik alt payı zaten boşluk veriyor;
+          // 8 = silme düğmesinin yukarı taşma payı.
+          marginTop: canUseExisting ? 8 : 16,
+        }}
+      >
+        {value.kind === "existing"
+          ? sourcePhotos.map((p, i) => (
+              <GridSlot key={p.photoId} index={i}>
+                <PhotoTile
+                  testID={`setup-photo-preview-${p.photoId}`}
+                  uri={p.photoImageUrl}
+                />
+              </GridSlot>
+            ))
+          : newPhotos.map((p, i) => (
+              <GridSlot key={p.uri} index={i}>
+                <PhotoTile uri={p.uri} main={i === 0} mainLabel={t("discover.mode.photos.mainBadge")} />
+                <TouchableOpacity
+                  testID={`setup-photo-remove-${i}`}
+                  accessibilityLabel={t("discover.mode.photos.remove")}
+                  activeOpacity={1}
+                  onPress={() => removeAt(i)}
                   style={{
                     position: "absolute",
-                    left: 4,
-                    bottom: 4,
-                    borderRadius: 6,
-                    paddingHorizontal: 5,
-                    paddingVertical: 1,
-                    backgroundColor: colors.inverseSurface,
+                    top: -8,
+                    right: -8,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 50,
+                    backgroundColor: colors.surface,
                   }}
                 >
-                  <Text
-                    style={{
-                      fontSize: 10,
-                      fontWeight: "700",
-                      color: colors.onInverseSurface,
-                    }}
-                  >
-                    {t("discover.mode.photos.mainBadge")}
-                  </Text>
-                </View>
-              ) : null}
-              <Pressable
-                testID={`setup-photo-remove-${i}`}
-                accessibilityLabel={t("discover.mode.photos.remove")}
-                onPress={() => removeAt(i)}
-                hitSlop={8}
-                style={{
-                  position: "absolute",
-                  right: -6,
-                  top: -6,
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: colors.inverseSurface,
-                }}
-              >
-                <X size={13} color={colors.onInverseSurface} strokeWidth={2.5} />
-              </Pressable>
-            </View>
-          ))}
-          {newPhotos.length < MAX_PROFILE_PHOTOS ? (
-            <Pressable
+                  <View pointerEvents="none">
+                    <SFIcon
+                      name="xmark"
+                      fallback={X}
+                      size={16}
+                      strokeWidth={3}
+                      color={colors.textSecondary}
+                      weight="bold"
+                    />
+                  </View>
+                </TouchableOpacity>
+              </GridSlot>
+            ))}
+
+        {value.kind === "new" && newPhotos.length < MAX_PROFILE_PHOTOS ? (
+          <GridSlot index={newPhotos.length}>
+            <TouchableOpacity
               testID="setup-photo-add"
               accessibilityLabel={t("discover.mode.photos.addTile")}
+              activeOpacity={1}
               onPress={() => setSourceSheetVisible(true)}
               style={{
-                width: TILE,
-                height: (TILE * 4) / 3,
-                borderRadius: RADIUS,
-                borderWidth: 1,
-                borderStyle: "dashed",
-                borderColor: colors.hairlineStrong,
+                width: "100%",
+                height: "100%",
+                borderRadius: 28,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                backgroundColor: colors.surface,
+                borderWidth: 0.5,
+                borderColor: colors.hairline,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Plus size={22} color={colors.textMuted} strokeWidth={1.8} />
-            </Pressable>
-          ) : null}
-        </View>
-      )}
+              <View pointerEvents="none">
+                <SFIcon
+                  name="plus"
+                  fallback={Plus}
+                  size={40}
+                  strokeWidth={2}
+                  color={colors.textMuted}
+                  weight="semibold"
+                />
+              </View>
+            </TouchableOpacity>
+          </GridSlot>
+        ) : null}
+      </View>
 
       <PhotoSourceSheet
         visible={sourceSheetVisible}
@@ -248,6 +278,92 @@ export default function ModeSetupPhotoSection({
         onGallery={addFromGallery}
         stackBehavior="push"
       />
+    </View>
+  );
+}
+
+/** Karo sayısına göre ızgara yüksekliği — satır sayısı × karo + satır araları. */
+function gridHeight(count: number): number {
+  if (count <= 0) return 0;
+  const rows = Math.ceil(count / PHOTO_GRID_COLUMNS);
+  return rows * ITEM_HEIGHT + (rows - 1) * ROW_GAP;
+}
+
+/** Bir slotun mutlak kutusu — konum editörün `getPosition`ından. */
+function GridSlot({ index, children }: { index: number; children: React.ReactNode }) {
+  const pos = getPosition(index);
+  return (
+    <View
+      style={{
+        position: "absolute",
+        left: pos.x,
+        top: pos.y,
+        width: ITEM_WIDTH,
+        height: ITEM_HEIGHT,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Editörün `PhotoItem` çerçevesiyle aynı: 20 yarıçap, ince kenar, surface zemin. */
+function PhotoTile({
+  uri,
+  main = false,
+  mainLabel,
+  testID,
+}: {
+  uri: string | null;
+  main?: boolean;
+  mainLabel?: string;
+  testID?: string;
+}) {
+  return (
+    <View
+      testID={testID}
+      style={{
+        width: "100%",
+        height: "100%",
+        borderRadius: 20,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        backgroundColor: colors.surface,
+        borderWidth: 0.5,
+        borderColor: colors.hairline,
+      }}
+    >
+      <Image
+        source={uri ? { uri } : undefined}
+        style={{ width: "100%", height: "100%" }}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        transition={150}
+      />
+      {main ? (
+        <View
+          testID="setup-photo-main-0"
+          style={{
+            position: "absolute",
+            left: 8,
+            bottom: 8,
+            borderRadius: 8,
+            paddingHorizontal: 7,
+            paddingVertical: 2,
+            backgroundColor: colors.inverseSurface,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: "700",
+              color: colors.onInverseSurface,
+            }}
+          >
+            {mainLabel}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

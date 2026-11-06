@@ -1,6 +1,7 @@
 import { navigationRef } from "@/shared/services/navigationRef";
 import uiBus from "@/shared/services/uiBus";
 import { feedEnabledForSession } from "./feedFlag";
+import { feedAllowedForSession } from "./feedMode";
 
 /**
  * Akış sekmesinin TEK giriş kapısı — ve belirli bir SAYFASININ.
@@ -54,6 +55,11 @@ let pendingPage: FeedPageKey | null = null;
  * Dönüş `false` = akış bu oturumda KAPALI, hiç navigate edilmedi. Çağıran
  * (routeFromNotification) bu durumda Bildirimler'e düşmek zorunda: sekmesi
  * olmayan bir özelliğin push'u ölü tap üretmemeli.
+ *
+ * ⚠️ İKİ KAPI: bayrak latch'i (backend açık mı) VE mod (akış Arkadaş'a özel).
+ * İkisi de `false` dönüşünü aynı sebeple üretiyor — sekme o an route listesinde
+ * yok, `navigate("Feed")` hiçbir şey yapmaz ve kullanıcı bildirime basıp boşluğa
+ * düşer. Gerekçe ayrımı için bkz. feedMode.
  */
 export function openFeed(
   page: FeedPageKey = "feed",
@@ -72,6 +78,7 @@ export function openFeed(
   },
 ): boolean {
   if (!feedEnabledForSession()) return false;
+  if (!feedAllowedForSession()) return false;
   pendingPage = page;
   // ÖNCE haber ver: ekran ayaktaysa sekme öne gelmeden sayfası çevrilmiş olur,
   // kullanıcı geçişin ortasında akış sayfasını görmez.

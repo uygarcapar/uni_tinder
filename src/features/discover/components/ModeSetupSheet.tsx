@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Text, TouchableOpacity, View } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
+import { useKeyboardState } from "react-native-keyboard-controller";
 import { useTranslation } from "react-i18next";
 import AppModal, { useAppModalScrollHost } from "@/shared/components/AppModal";
 import PromptsEditor, {
@@ -52,12 +53,19 @@ import ModeSetupPhotoSection, {
  */
 const INTERESTED_IN_KEYS = ["Men", "Women", "NonBinary"] as const;
 /**
- * Prompt alanı odaktayken formun dibine eklenen kaydırma payı (bkz.
- * `promptsFocused`). 180 ≈ bir prompt slotunun yüksekliği: son slot
- * düzenlenirken bile hook'un alanı klavyenin üstüne çekmesine yetiyor, daha
- * büyüğü kaydırmanın dibinde boş bir bant bırakıyor.
+ * Prompt alanı odaktayken formun dibine eklenen kaydırma payının TABANI (bkz.
+ * `keyboardRoom`): gerçek pay klavye yüksekliği, bu yalnız klavye yüksekliği
+ * henüz bilinmezken kullanılan alt sınır.
  */
 const PROMPTS_KEYBOARD_ROOM = 180;
+/**
+ * Klavye yüksekliği henüz bilinmezken (ilk açılış) payın tahmini: ekranın
+ * %45'i, iPhone klavyesinin (öneri şeridiyle ~%40) biraz üstü. Pay odak anında
+ * TAM boyda mount olmalı: küçük başlayıp klavye yüksekliği gelince büyürse
+ * hook'un ilk kaydırması içeriğin sonuna çarpıp yarım kalıyor, doğrulama
+ * geçişi (350ms) kalanını sonradan tamamlıyordu — alan iki adımda iniyordu.
+ */
+const KEYBOARD_ROOM_ESTIMATE = Math.round(Dimensions.get("window").height * 0.45);
 const INTERESTED_IN_LABEL_KEY: Record<string, string> = {
   Men: "male",
   Women: "female",
@@ -384,17 +392,45 @@ export default function ModeSetupSheet({
   }, [visible, clearRoomTimer]);
   useEffect(() => clearRoomTimer, [clearRoomTimer]);
 
+  /**
+   * Payın boyu KLAVYE kadar (en az PROMPTS_KEYBOARD_ROOM). Sabit 180 yetmiyordu:
+   * prompt'lar formun dibinde ve altlarında yalnız buton var, yani alanı
+   * klavyenin üstüne çekmek için içeriğin sonundan ≈ klavye yüksekliği kadar
+   * daha kaydırmak gerekiyor. 180'de scroll içeriğin sonuna çarpıp alan
+   * "azıcık yukarı çıkıp" klavyenin altında kalıyordu. (Editörde aynı alanlar
+   * formun ortasında; altlarında bol içerik olduğu için orada sorun yok.)
+   * Klavye henüz yükseklik bildirmediyse taban değer; hook'un klavye-sonu
+   * doğrulaması (350ms) gerçek payla yeniden hizalıyor.
+   */
+  const keyboardHeight = useKeyboardState((state) => state.height);
+  const keyboardRoom = Math.max(
+    PROMPTS_KEYBOARD_ROOM,
+    KEYBOARD_ROOM_ESTIMATE,
+    keyboardHeight,
+  );
+
   return (
     <AppModal
       visible={visible}
       onClose={onClose}
       title={t(`discover.mode.openTitle.${mode}`)}
       /**
-       * BAŞLIK SOLDA, X'in solunda (istek). Ortalanan başlık bu sheet'te
-       * scroll'u bekliyordu ve kullanıcı formun başında hangi modun profilini
-       * açtığını yazıyla hiç görmüyordu — tek işareti içeriğin ilk cümlesiydi.
+       * Başlık ORTADA, profil düzenleme modal'ıyla aynı ölçüde (istek). O
+       * modal'dan tek farkı HEP GÖRÜNÜR olması: orada başlık kaydırınca
+       * beliriyor, burada formun başında hangi modun profilinin açıldığını
+       * söyleyen başka bir yazı yok (giriş paragrafı kaldırıldı).
        */
-      titleAlign="left"
+      titleAlwaysVisible
+      /**
+       * Solda X, sağda ✓ — profil düzenleme modal'ının kalıbı. ✓ formun
+       * dibindeki "Profili aç" ile AYNI işi yapıyor (aynı handleSubmit); o
+       * buton da duruyor, uzun formun sonunda kullanıcı yukarı dönmesin.
+       */
+      actionIcon="checkmark"
+      actionIconLabel={t("discover.mode.openSubmit")}
+      onAction={handleSubmit}
+      actionDisabled={submitting}
+      actionLoading={submitting}
       /**
        * TEK DURAK (`fullScreen` → ["100%"]). Burada `SHEET_PICKER_SNAP_POINTS`
        * (%75 + %100) vardı ve sheet %75'te açılıyordu: prompt alanına odak
@@ -424,22 +460,10 @@ export default function ModeSetupSheet({
       scrollHost={scrollHost}
       contentContainerStyle={{ paddingBottom: 28 }}
     >
-      <Text
-        style={{
-          color: colors.textSecondary,
-          fontSize: 15,
-          lineHeight: 21,
-          marginTop: 4,
-          marginBottom: 8,
-        }}
-      >
-        {t(`discover.mode.openIntro.${mode}`)}
-      </Text>
-
       {/* ── Fotoğraflar — modun yüzü, o yüzden EN ÜSTTE. Yalnız ilk açılışta
              (photoSetup dolu); havuz-güncelleme yolunda bölüm hiç yok. ── */}
       {photoSetup ? (
-        <View style={{ marginTop: 16 }}>
+        <View style={{ marginTop: 8 }}>
           <ModeSetupPhotoSection
             sourcePhotos={photoSetup.sourcePhotos}
             sourceModeLabel={photoSetup.sourceModeLabel}
@@ -456,7 +480,9 @@ export default function ModeSetupSheet({
       <Section
         title={t(`discover.mode.intentsTitle.${mode}`)}
         description={t(`discover.mode.intentsDescription.${mode}`)}
-        first
+        // Fotoğraf bölümü üstteyse Niyet artık ilk bölüm DEĞİL: diğer
+        // bölümler arasındaki 28'lik payı alsın, fotoğraflara yapışmasın.
+        first={!photoSetup}
       >
         {intentsLoading ? (
           <View style={{ paddingVertical: 24, alignItems: "center" }}>
@@ -634,7 +660,7 @@ export default function ModeSetupSheet({
 
       {/* Prompt alanı odaktayken formun dibine eklenen kaydırma payı (gerekçe
           `promptsFocused`ın yanında). Görünür bir şey değil, yalnız yer. */}
-      {promptsFocused ? <View style={{ height: PROMPTS_KEYBOARD_ROOM }} /> : null}
+      {promptsFocused ? <View style={{ height: keyboardRoom }} /> : null}
     </AppModal>
   );
 }

@@ -59,8 +59,8 @@ const SOURCE = [
 const picked = (n: number) =>
   Array.from({ length: n }, (_, i) => ({
     uri: `file:///new-${i}.jpg`,
-    name: `new-${i}.jpg`,
-    type: 'image/jpeg',
+    fileName: `new-${i}.jpg`,
+    mime: 'image/jpeg',
   }));
 
 const setup = (props: {

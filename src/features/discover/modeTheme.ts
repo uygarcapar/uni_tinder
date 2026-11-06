@@ -1,4 +1,12 @@
 import { colors, gradients, type Gradient } from "@/shared/theme/colors";
+import {
+  FLAME_PATH,
+  FLAME_VIEWBOX,
+} from "@/shared/components/icons/FlameGlyph";
+import {
+  SPARKLE_PATH,
+  SPARKLE_VIEWBOX,
+} from "@/shared/components/icons/SparkleGlyph";
 
 /**
  * Uygulama modu (Dating / Friends) — tip, sabitler ve MOD-FARKINDALI tema
@@ -119,6 +127,32 @@ export function modeFlameOutline(mode: AppMode): string {
  */
 export function modeFireNameKey(mode: AppMode): string {
   return `discover.mode.fireName.${mode}`;
+}
+
+/**
+ * Ürünün mod içindeki GLİFİ: Dating'de alev, Friends'te lucide `sparkle`
+ * yıldızı. `modeFireNameKey`in ikizi — ad modla dönüyorsa şekil de dönmeli,
+ * "Spark" diye okunan bir şeyin yanında alev çizmek adı yalanlıyordu.
+ *
+ * Yalnız GEOMETRİ döner (path + viewBox), renk kararı çağıranın: Fire ürününü
+ * çizen tek bileşen FireGlyph ve mod farkındalığı orada bitiyor.
+ *
+ * ⚠️ ANİMASYON BURADAN OKUMUYOR: alev dalgası (FireFlameCanvas) ve kartta
+ * yanma (FireBurnCanvas) kendi silüetinde — FLAME_SWEEP_PATH — ve her iki
+ * modda ALEV kalıyor (istek, 2026-11-06). Oranın geometrisi alevin
+ * kıvrımlarına göre yazılı (flameWavePath · flameBurn), yıldızı tanımıyor.
+ *
+ * ⚠️ PREMIUM DIŞARIDA: lit plus'ın alevi (PremiumFlame) bilerek Flört-markalı
+ * kalıyor, Arkadaş'ta da alev — premium ürünü mod ekseninde bölünmüyor
+ * (aynı gerekçe: LikesScreen > PurchaseSections notu).
+ */
+export function modeFireGlyph(mode: AppMode): {
+  path: string;
+  viewBox: string;
+} {
+  return mode === "Friends"
+    ? { path: SPARKLE_PATH, viewBox: SPARKLE_VIEWBOX }
+    : { path: FLAME_PATH, viewBox: FLAME_VIEWBOX };
 }
 
 /** Keşif başlığındaki mod adının i18n anahtarı ("Flört" / "Arkadaş"). */

@@ -243,8 +243,9 @@ export default function LikerSwipeModal({
           onPress: async () => {
             try {
               await moderationService.blockUser(userId);
-              // direction "block": LikesScreen bunu listeden düşürmek için
-              // kullanır ama "kaçırdın" toast'ını ATMAZ — o yalnız pass'e özel.
+              // direction "block": LikesScreen bunu düz swipe'tan ayırıp
+              // kişiyi HER İKİ listeden düşürmek için kullanıyor
+              // (bkz. handleModalSwipe → dropFromLists).
               onSwipe?.(userId, "block");
               onClose?.();
               Alert.alert(

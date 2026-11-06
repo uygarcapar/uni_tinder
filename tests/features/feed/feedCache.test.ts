@@ -14,6 +14,7 @@
 
 import { QueryClient } from '@tanstack/react-query';
 import { feedKeys } from '@/features/feed/feedKeys';
+import { patchAuthorProfilesInCaches } from '@/features/feed/feedAuthorCache';
 import {
   patchAuthorPostsInCaches,
   patchPostInCaches,
@@ -328,5 +329,57 @@ describe('patchAuthorPostsInCaches', () => {
     qc.setQueryData(feedKeys.posts(PARAMS_NEW), data);
     patchAuthorPostsInCaches(qc, 'baska-kullanici', (p) => ({ ...p }));
     expect(qc.getQueryData(feedKeys.posts(PARAMS_NEW))).toBe(data);
+  });
+});
+
+/**
+ * YAZAR PROFİLİ kartlarının yaması — Fire/not başarısının ardından.
+ *
+ * ⚠️ Neden var: karar sonrası `authorProfileRoot` invalidation'ı mutation'ın
+ * onSettled'ında (sunucu yazdıktan SONRA — karar anında yapılan invalidate,
+ * kart hâlâ açıkken sorguyu AKTİF yakalayıp POST'la yarışan bir GET atıyordu
+ * ve cache 5 dk "taze ama bayat" kalıyordu). Bu yama ise İYİMSER kol: refetch
+ * dönene kadarki pencerede kart yeniden açılırsa `myLikeDate` dolu görünsün,
+ * kart aksiyonsuz doğsun (feedCardActions > ZATEN BEĞENDİM).
+ *
+ * Kartın cache anahtarı POST bazlı ([...authorProfile(postId), mode]) ama
+ * karar KİŞİ bazlı — eşleştirme bu yüzden anahtarla değil verinin
+ * `userId`siyle.
+ */
+describe('patchAuthorProfilesInCaches', () => {
+  const profileKey = (postId: string, mode = 'Dating') =>
+    [...feedKeys.authorProfile(postId), mode] as any;
+
+  it('aynı yazarın TÜM kartlarını yamalar (farklı post + mod), başkasınınkine dokunmaz', () => {
+    qc.setQueryData(profileKey('p1', 'Dating'), { userId: 'u1', myLikeDate: null });
+    qc.setQueryData(profileKey('p2', 'Friends'), { userId: 'u1', myLikeDate: null });
+    qc.setQueryData(profileKey('p3'), { userId: 'u2', myLikeDate: null });
+
+    patchAuthorProfilesInCaches(qc, 'u1', (p) => ({
+      ...p,
+      myLikeDate: '2026-11-04T12:00:00Z',
+    }));
+
+    expect((qc.getQueryData(profileKey('p1', 'Dating')) as any).myLikeDate).toBe(
+      '2026-11-04T12:00:00Z',
+    );
+    expect((qc.getQueryData(profileKey('p2', 'Friends')) as any).myLikeDate).toBe(
+      '2026-11-04T12:00:00Z',
+    );
+    expect((qc.getQueryData(profileKey('p3')) as any).myLikeDate).toBeNull();
+  });
+
+  it('isabet YOKSA referans korunur (gereksiz render yok)', () => {
+    const data = { userId: 'u1', myLikeDate: null };
+    qc.setQueryData(profileKey('p1'), data);
+    patchAuthorProfilesInCaches(qc, 'baska-kullanici', (p) => ({ ...p }));
+    expect(qc.getQueryData(profileKey('p1'))).toBe(data);
+  });
+
+  it('userId boş/yok olan girdi yamalanmıyor', () => {
+    const anon = { userId: '', myLikeDate: null };
+    qc.setQueryData(profileKey('p1'), anon);
+    patchAuthorProfilesInCaches(qc, 'u1', (p) => ({ ...p, myLikeDate: 'x' }));
+    expect(qc.getQueryData(profileKey('p1'))).toBe(anon);
   });
 });

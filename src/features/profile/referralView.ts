@@ -47,15 +47,20 @@ export function rewardLabelKey(type: ReferralRewardType | string): string | null
  *
  * `amount` VisibilityFilter'da GÜN, diğerlerinde KREDİ — ayrım metnin
  * kendisinde, çağıran birim taşımak zorunda değil.
+ *
+ * `fireName`: SuperLike ödülünün GÖRÜNEN adı, moda göre "Fire" / "Spark"
+ * (çağıran t(modeFireNameKey(mode)) ile çözer). Varsayılan "Fire" — eski
+ * çağıranlar ve testler Dating adıyla aynı metni alır.
  */
 export function rewardLabel(
   t: (key: string, opts?: Record<string, unknown>) => string,
   type: ReferralRewardType | string,
   amount: number,
+  fireName = "Fire",
 ): string | null {
   const key = rewardLabelKey(type);
   if (!key) return null;
   // `count` DEĞİL `amount`: i18next'te `count` çoğul çözümlemesini tetikler ve
   // sözlükte `_other` varyantı olmayan anahtarı bulamaz.
-  return t(key, { amount });
+  return t(key, { amount, fire: fireName });
 }

@@ -434,11 +434,29 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
   );
   // Alan artık hep mount: `autoFocus` çalışmıyor, odak elle veriliyor.
   const inputRefs = useRef<Record<number, any>>({});
+  /**
+   * Seçiciden yeni soru seçilince açılan slotun odağı ERTELENİYOR: seçici
+   * kapanış animasyonunun BAŞINDA klavyeyi indiriyor (AppBottomSheet
+   * `onAnimate`). Hemen odak verilince klavye açılıp aynı anda kapanıyor;
+   * bu yarış klavye hizalamasını (useKeyboardAwareField + kurulum sheet'inin
+   * kaydırma payı) yarım bırakıp scroll'u bayat bir konumda unutuyordu —
+   * kullanıcı soruyu ekledikten sonra kaydırmadan cevaba basınca alan
+   * klavyenin altında kalıyordu. Odak seçici tamamen kapanınca veriliyor.
+   */
+  const deferredFocusRef = useRef<number | null>(null);
   useEffect(() => {
     if (editingIndex === null) return;
+    if (deferredFocusRef.current === editingIndex) return;
     // `editable` bu render'da true oldu — focus() ondan sonra iş görüyor.
     inputRefs.current[editingIndex]?.focus?.();
   }, [editingIndex]);
+  const handlePickerDismissed = useCallback(() => {
+    const index = deferredFocusRef.current;
+    deferredFocusRef.current = null;
+    // Arada kullanıcı başka slot açtıysa / düzenlemeyi kapattıysa dokunma.
+    if (index === null || editingRef.current !== index) return;
+    inputRefs.current[index]?.focus?.();
+  }, []);
   const registerRef = useCallback((index: number, node: any) => {
     inputRefs.current[index] = node;
   }, []);
@@ -517,6 +535,7 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
     // "Düzenle"ye basmak zorunda kalmasın. Mevcut slotun sorusu değişiyorsa
     // cevap duruyor, düzenleme moduna girmiyoruz.
     if (isNewSlot) {
+      deferredFocusRef.current = next.length - 1;
       beginEdit(next.length - 1);
     }
   };
@@ -632,6 +651,7 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
         selectedKey={
           pickerFor !== null && pickerFor >= 0 ? value[pickerFor]?.promptKey : null
         }
+        onDismissed={handlePickerDismissed}
         onSelect={(enumName) => {
           if (pickerFor === null) return;
           setPromptKey(pickerFor, enumName);

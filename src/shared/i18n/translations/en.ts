@@ -1096,6 +1096,7 @@ const en = {
       // Kurulum sheet'inin FOTOĞRAF bölümü — gerekçeler tr.ts'te.
       photos: {
         title: 'Photos',
+        description: 'The photos shown on this profile. The first one is your main photo.',
         useExisting: 'Use my {{mode}} photos',
         addTile: 'Add photo',
         mainBadge: 'Main',
@@ -1114,12 +1115,6 @@ const en = {
       openTitle: {
         Dating: 'Open your dating profile',
         Friends: 'Open your friends profile',
-      },
-      openIntro: {
-        Dating:
-          'Your dating profile is separate: you pick its own prompts and what you are looking for here. Your photos and basics stay the same.',
-        Friends:
-          'Your friends profile is separate: you pick its own prompts and what you want from a friendship here. Your photos and basics stay the same.',
       },
       openSubmit: 'Open profile',
       opening: 'Opening…',
@@ -2005,6 +2000,9 @@ const en = {
         bullet1: 'We pick the movements, and they change every time.',
         bullet2: 'Only two frames are sent — nothing is recorded.',
         bullet3: 'Fit your face in the frame, find good light, and be alone in the shot.',
+        // The ONLY text shown in the sheet (no bullets, no dashes).
+        summary:
+          'Make two quick moves with your front camera and we’ll compare them to your main photo. No video is recorded. Find good light and keep your face clear.',
         // These two are a prep checklist: every `face_occluded` /
         // `face_mismatch` discovered three frames into the camera step burns
         // an attempt (one of the 5 per hour).
@@ -2216,8 +2214,6 @@ const en = {
       validationError: 'One of the values is invalid. Check your name and year of study.',
       // 429: the `photo` rate limit, SHARED with photo uploads.
       rateLimitError: 'Too many changes sent. Wait a moment and try again.',
-      // Editörün tepesindeki salt-okunur mod rozeti — gerekçe tr.ts'te.
-      editingMode: '{{mode}} profile',
       nameTitle: 'Name',
       nameDesc: 'The name shown on your card and in messages. Changing it updates it everywhere.',
       namePlaceholder: 'Your name',

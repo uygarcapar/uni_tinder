@@ -204,7 +204,11 @@ describe('PlusPage — render & loading', () => {
     const tree = setup();
     await waitFor(() => tree.getByTestId('plan-card-monthly'));
     for (const key of PREMIUM_BENEFIT_KEYS) {
-      const label = i18n.t(premiumBenefitLabelKey(key));
+      // `fire` satırı ürün adını {{fire}} ile alıyor; test varsayılan modda
+      // (Dating) render ettiği için beklenen ad "Fire".
+      const label = i18n.t(premiumBenefitLabelKey(key), {
+        fire: i18n.t('discover.mode.fireName.Dating'),
+      });
       expect(label).not.toContain('premium.benefits');
       expect(tree.getByText(label)).toBeTruthy();
     }

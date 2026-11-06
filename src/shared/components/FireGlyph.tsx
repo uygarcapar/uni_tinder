@@ -1,10 +1,27 @@
 import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { FLAME_PATH, FLAME_VIEWBOX } from "./icons/FlameGlyph";
+import {
+  DEFAULT_APP_MODE,
+  modeFireGlyph,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 /**
  * Fire ikonu: ALEV (bkz. icons/FlameGlyph) — SF `heart.fill` / lucide
  * `Heart` değil, app-icon'un kalbi de değil.
+ *
+ * MODLA ŞEKİL DEĞİŞTİRİYOR (istek, 2026-11-06): Flört'te alev, Arkadaş'ta
+ * lucide `sparkle` yıldızı (bkz. modeTheme > modeFireGlyph · icons/
+ * SparkleGlyph). Ürünün görünen adı zaten modla dönüyordu
+ * (`modeFireNameKey` → "Fire" / "Spark"); "Spark" yazan bir satırın yanında
+ * alev çizmek adı yalanlıyordu. Mod verilmezse Dating — mod bilmeyen eski
+ * çağıranlar bozulmasın (`fireTint`in aynı kuralı).
+ *
+ * ⚠️ ANİMASYON BU GLİFİ KULLANMIYOR ve bu kasıtlı: alev dalgası
+ * (FireFlameCanvas) ile kartta yanma (FireBurnCanvas) FLAME_SWEEP_PATH
+ * üstünde, her iki modda ALEV. Yani Arkadaş'ta duran ikon yıldız, kutlama
+ * alev — değiştirmek istenirse oranın geometrisi (flameWavePath · flameBurn)
+ * baştan türetilmeli.
  *
  * KALPTEN ALEVE GEÇİLDİ (istek): ürünün Fire kutlaması zaten ekranı
  * süpüren bir alev dalgası (bkz. FireFlameCanvas) ve keşif kartında ikon
@@ -21,10 +38,15 @@ import { FLAME_PATH, FLAME_VIEWBOX } from "./icons/FlameGlyph";
  * Gradyan dolgu isteyen yerler bunu MaskedView'a maskeElement olarak veriyor
  * (`<FireGlyph color="black" />`) — lucide'de olduğu gibi.
  *
- * GRADYANI KENDİNDEN OLAN İKİZİ VAR: `PremiumFlame` aynı path'i tek `Svg`
+ * GRADYANI KENDİNDEN OLAN BİR YAKINI VAR: `PremiumFlame` ALEVİ tek `Svg`
  * içinde `<Defs>` gradyanıyla çiziyor (zemini kendinden belli yerler için).
- * Fire ürününü işaretleyen her yer BUNU çağırsın — ikisi aynı şekli
- * çiziyor ama anlamları ayrı, `PremiumFlame` lit plus'ın işareti.
+ * Fire ürününü işaretleyen her yer BUNU çağırsın — anlamları ayrı,
+ * `PremiumFlame` lit plus'ın işareti.
+ *
+ * ⚠️ ARTIK "AYNI ŞEKİL" DEĞİLLER: `PremiumFlame` MODSUZ ve her zaman alev
+ * (premium ürünü mod ekseninde bölünmüyor), bu glif Arkadaş'ta yıldıza
+ * dönüyor. Yani Arkadaş modunda premium rozeti ile Spark işareti BİLEREK
+ * farklı şekiller.
  *
  * Not ürününün glyph'i (NoteGlyph) hâlâ app-icon'dan sökülen konuşma balonu:
  * iki ürün artık aynı aileden DEĞİL ve bu kasıtlı — not "yorumlu beğeni",
@@ -36,17 +58,21 @@ export default function FireGlyph({
   stroke,
   strokeWidth,
   style,
+  mode = DEFAULT_APP_MODE,
 }: {
   size?: number;
   color?: string;
   stroke?: string;
   strokeWidth?: number;
   style?: StyleProp<ViewStyle>;
+  /** Uygulama modu — Flört alev, Arkadaş yıldız. Verilmezse Dating. */
+  mode?: AppMode;
 }) {
+  const { path, viewBox } = modeFireGlyph(mode);
   return (
-    <Svg width={size} height={size} viewBox={FLAME_VIEWBOX} style={style}>
+    <Svg width={size} height={size} viewBox={viewBox} style={style}>
       <Path
-        d={FLAME_PATH}
+        d={path}
         fill={color ?? "none"}
         stroke={stroke}
         strokeWidth={strokeWidth}

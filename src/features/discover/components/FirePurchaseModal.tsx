@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import FireGlyph from "@/shared/components/FireGlyph";
 import ConsumablePurchaseSheet from "@/features/discover/components/ConsumablePurchaseSheet";
 import {
@@ -5,6 +6,8 @@ import {
   purchaseFirePack,
 } from "@/features/profile/subscriptionService";
 import { FIRE_REDEEM_FLOW } from "@/features/discover/fireRedeem";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeFireNameKey } from "@/features/discover/modeTheme";
 
 /**
  * Fire paketi (consumable) satın alma sheet'i.
@@ -23,6 +26,10 @@ export default function FirePurchaseModal({
   onClose,
   onPurchased,
 }: any) {
+  const { t } = useTranslation();
+  // Ürün adı MODA GÖRE ("Fire" / "Spark") — consumable wire'da tek (superlike),
+  // moda dönen yalnız görünen ad. Sheet'in TÜM metinleri bu değeri alıyor.
+  const { mode } = useAppMode();
   return (
     <ConsumablePurchaseSheet
       visible={visible}
@@ -32,11 +39,14 @@ export default function FirePurchaseModal({
       fetchOffering={getFireOffering}
       purchasePack={purchaseFirePack}
       i18nPrefix="firePurchase"
+      i18nParams={{ fire: t(modeFireNameKey(mode)) }}
       analyticsKind="fire_pack"
       toastIcon="fire"
       autoSelectFirstPack
       snapPoints={["68%", "82%"]}
-      renderGlyph={(size, color) => <FireGlyph size={size} color={color} />}
+      renderGlyph={(size, color) => (
+        <FireGlyph size={size} color={color} mode={mode} />
+      )}
     />
   );
 }

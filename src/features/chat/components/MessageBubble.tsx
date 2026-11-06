@@ -21,6 +21,7 @@ import {
   BUBBLE_RADIUS,
   reactionChipBorder,
   bubbleCorners,
+  ownBubbleFill,
 } from "@/features/chat/components/bubbleStyle";
 import VoiceBubble from "@/features/chat/components/VoiceBubble";
 import { isVoiceMessage } from "@/features/chat/voiceMessage";
@@ -109,6 +110,9 @@ function MessageBubble({
   onReplyTap,
   onRetryTap,
   i18nResolver,
+  // Sohbetin modu — yalnız KENDİ balonumun dolgusunu seçiyor (ownBubbleFill).
+  // Ekranın seçili modu DEĞİL: Arkadaş sohbeti Keşif Dating'teyken de açılabilir.
+  mode,
 }: any) {
   const { t } = useTranslation();
   const bubbleRef = useRef<any>(null);
@@ -377,9 +381,10 @@ function MessageBubble({
   if (isDeletedSelf) return null;
   if (isDeletedForEveryone) return renderDeletedBubble(isOwn, t);
 
-  const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
-  // Kendi balonum marka kırmızısı — iki modda da aynı, o yüzden üstündeki yazı
-  // her zaman beyaz (onMedia). Karşı tarafınki surface2, yani modla dönüyor.
+  const bubbleBg = isOwn ? ownBubbleFill(mode) : colors.surface2;
+  // Dolgu mod vurgusu → yazı her zaman beyaz (onMedia). Uygulamanın her yerinde
+  // `modeAccent` dolgusunun eşi bu mürekkep (ConsumablePurchaseSheet > CTA).
+  // Karşı tarafınki surface2, yani temayla dönüyor.
   const textColor = isOwn ? colors.onMedia : colors.text;
   const metaColor = isOwn ? colors.onMediaMuted : colors.textSecondary;
   // Sesli mesajda `content` boş: balon metin yerine oynatıcı çizer. Herkesten
@@ -729,5 +734,10 @@ export default memo(
     prev.isOwn === next.isOwn &&
     // Grup boşluğu bir ÖNCEKİ satırın göndericisinden türüyor: mesajın kendi
     // içeriği değişmeden de değişebilir (prepend'de sayfanın ilk mesajı gibi).
-    prev.isGroupStart === next.isGroupStart,
+    prev.isGroupStart === next.isGroupStart &&
+    // ⚠️ MOD DA KARŞILAŞTIRILIYOR ve bu şart: sohbet listede yokken açıldığında
+    // (bildirimden giriş) `convMode` önce `undefined` geliyor, satırlar Dating
+    // kırmızısıyla çiziliyor ve liste düşünce Friends'e dönüyor. Karşılaştırmaya
+    // katılmasaydı o ikinci render yutulur, Arkadaş sohbeti kırmızı kalırdı.
+    prev.mode === next.mode,
 );

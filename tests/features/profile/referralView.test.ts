@@ -54,7 +54,29 @@ describe('rewardLabel', () => {
 
   it('miktarı `amount` olarak geçiriyor — `count` çoğul çözümlemesini tetiklerdi', () => {
     expect(rewardLabel(t, 'VisibilityFilter', 30)).toBe(
-      'referral.reward.visibilityFilter:{"amount":30}',
+      'referral.reward.visibilityFilter:{"amount":30,"fire":"Fire"}',
+    );
+  });
+
+  /**
+   * Fire ödülünün GÖRÜNEN adı moda göre değişiyor — sözlükte metin
+   * `'{{amount}} {{fire}}'`, yani ad interpolasyon değişkeni olarak giriyor.
+   * Çağıran `t(modeFireNameKey(mode))` ile çözüp buraya veriyor; bu modülün
+   * modu bilmesi gerekmiyor ve bilmemeli (saf sunum).
+   */
+  it('Fire ödülünün adını MODDAN alıyor', () => {
+    expect(rewardLabel(t, 'SuperLike', 3, 'Spark')).toBe(
+      'referral.reward.fire:{"amount":3,"fire":"Spark"}',
+    );
+  });
+
+  /**
+   * ⚠️ Varsayılan "Fire" — adı GEÇMEYEN eski çağıranlar Flört adıyla aynı
+   * metni almalı. Varsayılan boş olsaydı "3 " gibi yarım bir ödül yazardı.
+   */
+  it('ad verilmezse Flört adına düşüyor', () => {
+    expect(rewardLabel(t, 'SuperLike', 3)).toBe(
+      'referral.reward.fire:{"amount":3,"fire":"Fire"}',
     );
   });
 

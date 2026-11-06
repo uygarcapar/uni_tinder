@@ -13,6 +13,7 @@ import Animated, {
   interpolate,
   Extrapolate,
   useAnimatedReaction,
+  useDerivedValue,
 } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -291,6 +292,22 @@ const CARD_ENTRY_RISE = CARD_ENTRY_DISTANCE * 0.22;
 const CARD_ENTRY_TILT = EXIT_TILT;
 
 /**
+ * ── ALT KARTIN KARŞI SALINIMI ───────────────────────────────────────────────
+ *
+ * Üst kart sürüklenirken arkadaki kart TERS yöne ufak bir yay çiziyor: yatayda
+ * karşıya kayıyor, kayarken hafifçe aşağı iniyor (karesel → yay) ve karşı yöne
+ * azıcık yatıyor. Üst kartın hareketinin çok küçük bir yankısı — derinlik hissi.
+ *
+ * Sürücü `overlayDragX` (rozet kanalı; jest de buton da yazıyor), ±UNDER_SWAY_RANGE
+ * aralığında normalize ediliyor. Değerler bilerek küçük: kart tam ekran, büyük
+ * kayma kenardan zemin sızdırır.
+ */
+const UNDER_SWAY_RANGE = 150;
+const UNDER_SWAY_X = 12;
+const UNDER_SWAY_DROP = 5;
+const UNDER_SWAY_TILT = 1.2;
+
+/**
  * ── ÖRTÜLÜ KARTIN RASTER SARMALAYICISI ──────────────────────────────────────
  *
  * `shouldRasterizeIOS`in iki zamanlama kuralı var ve ikisi de burada:
@@ -517,6 +534,19 @@ function SwipeWrapper({
    */
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
+  /**
+   * Alt kartın karşı salınımı (-1…1, bkz. UNDER_SWAY_*). YAYLI türev, ham değil:
+   * rozet kanalı deste ilerlemeden hemen önce 0'a SIÇRIYOR (bkz. resetAfterExit)
+   * ve bu kart o anda üste geçiyor — ham okunsaydı kart bir karede yerine
+   * zıplardı. Yay hem o sıçramayı hem üste geçişi (hedef 0) yumuşatıyor.
+   * Sürüklemede gecikme de istenen şey: arkadaki kart bir tık geriden geliyor.
+   */
+  const underSway = useDerivedValue(() => {
+    const target = isTopCard
+      ? 0
+      : Math.max(-1, Math.min(1, overlayDragX.value / UNDER_SWAY_RANGE));
+    return withSpring(target, { damping: 20, stiffness: 220, mass: 1 });
+  }, [isTopCard]);
   const scrollY = useSharedValue(0);
   // Scroll bitip rubber-band'in başladığı andaki translationY baseline'ı.
   // Sürekli gesture'da scroll → rubber-band geçişi yumuşak olsun diye.
@@ -1433,7 +1463,11 @@ function SwipeWrapper({
       bottom: -HEADER_COVER,
       transform: [
         // Sürükleme + giriş ofseti; ikisi de YALNIZ ÜST KARTTA yazılıyor.
-        { translateX: entry + (isTopCard ? tx.value : 0) },
+        // Dördüncü terim alt kartın karşı salınımı (üst kartta yay 0'da).
+        {
+          translateX:
+            entry + (isTopCard ? tx.value : 0) - underSway.value * UNDER_SWAY_X,
+        },
         // ty: geçici çekiş payı (Fire peek'i).
         // İkinci terim kalıcı lift — açık kartta kutu bu kadar yukarıda.
         // Üçüncüsü GİRİŞİN DİKEY PAYI: kart yatay değil ÇAPRAZ geliyor, yani
@@ -1444,7 +1478,8 @@ function SwipeWrapper({
             (isTopCard
               ? HEADER_COVER * Math.max(0, Math.min(1, cardExpandAnim.value))
               : 0) +
-            entryT * CARD_ENTRY_RISE,
+            entryT * CARD_ENTRY_RISE +
+            underSway.value * underSway.value * UNDER_SWAY_DROP,
         },
         // İKİ EĞİM TOPLANIYOR (translateX'teki toplamın karşılığı):
         //   • Sürüklemenin eğimi — kart parmağın altında yana deviriliyor.
@@ -1454,8 +1489,8 @@ function SwipeWrapper({
         //     sarımı.
         {
           rotate: isTopCard
-            ? `${dragRotate - entryT * CARD_ENTRY_TILT}deg`
-            : "0deg",
+            ? `${dragRotate - entryT * CARD_ENTRY_TILT - underSway.value * UNDER_SWAY_TILT}deg`
+            : `${-underSway.value * UNDER_SWAY_TILT}deg`,
         },
         // ── ÖLÇEK KALDIRILDI (`scale`) ─────────────────────────────────────
         // Alt kart 0.92'de duruyor, yeni üst kart da 0.92→1 yayıyla büyüyordu

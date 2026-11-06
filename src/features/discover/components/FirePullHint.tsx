@@ -17,6 +17,11 @@ import { useTranslation } from "react-i18next";
 // haberi olmasına gerek yok.
 import { cardPullProgress } from "@/shared/services/uiBus";
 import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  type AppMode,
+} from "@/features/discover/modeTheme";
+import {
   DISCOVER_GLASS_BUTTON_SIZE,
   DISCOVER_HEADER_HEIGHT,
 } from "@/features/discover/components/discoverHeaderMetrics";
@@ -187,10 +192,19 @@ type Props = {
    * taraf onu çizen ekran.
    */
   topInset?: number;
+  /**
+   * Seçili mod — ipucu cümlesindeki ürün adı buradan ("fire" / "spark").
+   * PROP, aynı gerekçeyle: modu zaten bilen taraf onu çizen ekran
+   * (DiscoverScreen > useAppMode); bileşen redux'a bağlanmasın.
+   */
+  mode?: AppMode;
 };
 
-function FirePullHint({ topInset = 0 }: Props) {
+function FirePullHint({ topInset = 0, mode = DEFAULT_APP_MODE }: Props) {
   const { t } = useTranslation();
+  // Jest fısıltısı kaydı TAMAMEN KÜÇÜK HARF (bkz. sözlükteki not) — marka adı
+  // da ona uyuyor: "fire" / "spark".
+  const fire = t(modeFireNameKey(mode)).toLowerCase();
 
   const scrimStyle = useAnimatedStyle(() => ({
     opacity: cardPullProgress.value * FIRE_PULL_SCRIM_ALPHA,
@@ -329,10 +343,10 @@ function FirePullHint({ topInset = 0 }: Props) {
               ortalı, yani uzunlukları farklı olsa da aynı merkezde duruyorlar
               ve devirde yazı yana kaymıyor. */}
           <Animated.Text style={[styles.line, pullTextStyle]}>
-            {t("discover.swipe.firePullHint")}
+            {t("discover.swipe.firePullHint", { fire })}
           </Animated.Text>
           <Animated.Text style={[styles.line, releaseTextStyle]}>
-            {t("discover.swipe.fireReleaseHint")}
+            {t("discover.swipe.fireReleaseHint", { fire })}
           </Animated.Text>
         </Animated.View>
       </Animated.View>

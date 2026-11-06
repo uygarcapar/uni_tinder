@@ -250,6 +250,11 @@ jest.mock('react-native-keyboard-controller', () => ({
   useGenericKeyboardHandler: jest.fn(),
   useKeyboardHandler: jest.fn(),
   useReanimatedKeyboardAnimation: () => ({ height: { value: 0 }, progress: { value: 0 } }),
+  // Klavye kapalı hâl; selector verilirse ona uygulanır (gerçek API gibi).
+  useKeyboardState: (selector?: (s: any) => any) => {
+    const state = { isVisible: false, height: 0, duration: 0, timestamp: 0, target: -1, type: 'default', appearance: 'default' };
+    return selector ? selector(state) : state;
+  },
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));

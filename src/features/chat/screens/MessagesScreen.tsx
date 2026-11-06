@@ -789,12 +789,17 @@ export default function MessagesScreen() {
     }
   }, [isSearchActive, messageSearchQuery, selectedMode]);
 
-  // Bölümün KENDİSİ (başlık + satırlar/"bulunamadı") bu bayrağa bağlı —
-  // `prepareSearchQuery` `null` döndüğü sürece (eşik altı sorgu) bölüm HİÇ
-  // render edilmiyor; bugünkü sohbet süzgeci (`conversationsByTab`) ise boş
-  // sorguda hepsini göstermeye AYNEN devam ediyor (iki kural bilerek farklı,
-  // bkz. messageSearch.ts > MIN_SEARCH_LENGTH yorumu).
-  const showMessageSection = isSearchActive && !!messageSearchQuery;
+  // Bölümün KENDİSİ (başlık + satırlar) bu bayrağa bağlı — `prepareSearchQuery`
+  // `null` döndüğü sürece (eşik altı sorgu) bölüm HİÇ render edilmiyor; bugünkü
+  // sohbet süzgeci (`conversationsByTab`) ise boş sorguda hepsini göstermeye
+  // AYNEN devam ediyor (iki kural bilerek farklı, bkz. messageSearch.ts >
+  // MIN_SEARCH_LENGTH yorumu).
+  // `messageHits.length > 0` da ŞART: sonuç yokken bölümün kendi "Mesaj
+  // bulunamadı" satırı YOK — bölüm tamamen gizlenir ve sohbet listesi de boşsa
+  // ListEmptyComponent'teki büyüteçli "'x' bulunamadı" tam ekranı tek boş
+  // durum olarak kalır (iki ayrı "bulunamadı" aynı anda çıkmasın).
+  const showMessageSection =
+    isSearchActive && !!messageSearchQuery && messageHits.length > 0;
 
   // Arama çubuğunun üstündeki bölüm başlığı — aktif sekmeye göre. Beğeniler
   // ekranındaki `sectionTitle` ile aynı kalıp: pill filtrenin adı, başlık
@@ -1181,7 +1186,8 @@ export default function MessagesScreen() {
         }}
         ListEmptyComponent={
           // `!showMessageSection` EKLENDİ (review turu 1, Önemli 3): mesaj
-          // bölümü dolu/boş fark etmez, GÖRÜNÜYORSA bu tam-ekran "sohbet
+          // bölümü GÖRÜNÜYORSA (yani sonuç VARSA — bayrak artık boş sonuçta
+          // zaten düşüyor) bu tam-ekran "sohbet
           // bulunamadı" durumu BASILMIYOR. Önceden bu ikisi AYNI ANDA
           // çizilebiliyordu: aranan kelime yalnız mesaj İÇERİĞİNDE geçip
           // hiçbir partner adında geçmediğinde (ki bu bölümün VAR OLMA
@@ -1248,65 +1254,59 @@ export default function MessagesScreen() {
               <Text
                 style={{
                   color: colors.textSecondary,
-                  fontSize: 13,
+                  fontSize: 17,
                   fontWeight: "700",
                 }}
               >
                 {t("chat.messages.searchMessagesTitle")}
               </Text>
-              {messageHits.length > 0 ? (
-                messageHits.map((hit) => (
-                  <TouchableOpacity
-                    key={hit.messageId}
-                    testID={`msgs-message-hit-${hit.messageId}`}
-                    activeOpacity={0.7}
-                    onPress={() => openMessageHit(hit)}
-                    style={{ paddingVertical: 10 }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{ color: colors.text, fontWeight: "600", fontSize: 15, flexShrink: 1 }}
-                      >
-                        {hit.partnerDisplayName || t("chat.defaultUserName")}
-                      </Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 12, marginLeft: 8 }}>
-                        {formatRelativeTime(new Date(hit.sentAtMs).toISOString(), t)}
-                      </Text>
-                    </View>
-                    <Text
-                      numberOfLines={2}
-                      style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }}
-                    >
-                      {highlightSegments(hit.content, messageSearchQuery ?? "").map((seg, i) => (
-                        <Text
-                          key={i}
-                          style={
-                            seg.match
-                              ? { color: colors.text, fontWeight: "700" }
-                              : undefined
-                          }
-                        >
-                          {seg.text}
-                        </Text>
-                      ))}
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text
-                  testID="msgs-message-section-empty"
-                  style={{ color: colors.textSecondary, fontSize: 14, paddingVertical: 10 }}
+              {messageHits.map((hit) => (
+                <TouchableOpacity
+                  key={hit.messageId}
+                  testID={`msgs-message-hit-${hit.messageId}`}
+                  activeOpacity={0.7}
+                  onPress={() => openMessageHit(hit)}
+                  style={{ paddingVertical: 10 }}
                 >
-                  {t("chat.messages.searchMessagesEmpty")}
-                </Text>
-              )}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={{ color: colors.text, fontWeight: "600", fontSize: 15, flexShrink: 1 }}
+                    >
+                      {hit.partnerDisplayName || t("chat.defaultUserName")}
+                    </Text>
+                    {/* Saat, sohbet satırındaki saatle AYNI ölçü/mürekkep
+                        (text-[16px] + textMuted) — iki liste yan yana aynı
+                        dili konuşsun. */}
+                    <Text style={{ color: colors.textMuted, fontSize: 16, marginLeft: 8 }}>
+                      {formatRelativeTime(new Date(hit.sentAtMs).toISOString(), t)}
+                    </Text>
+                  </View>
+                  <Text
+                    numberOfLines={2}
+                    style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }}
+                  >
+                    {highlightSegments(hit.content, messageSearchQuery ?? "").map((seg, i) => (
+                      <Text
+                        key={i}
+                        style={
+                          seg.match
+                            ? { color: colors.text, fontWeight: "700" }
+                            : undefined
+                        }
+                      >
+                        {seg.text}
+                      </Text>
+                    ))}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           ) : null
         }

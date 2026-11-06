@@ -35,8 +35,9 @@ export function resolveCardMode(
 }
 
 /**
- * Kartta HANGİ AKSİYONLAR çizilecek — moda, "yazar beni beğenmiş mi"ye VE
- * "zaten eşleştik mi"ye göre, saf fonksiyonda. Dört hâl var:
+ * Kartta HANGİ AKSİYONLAR çizilecek — moda, "yazar beni beğenmiş mi"ye,
+ * "zaten eşleştik mi"ye VE "ben onu zaten beğendim mi"ye göre, saf
+ * fonksiyonda. Beş hâl var:
  *
  * ── Kural (istek) ───────────────────────────────────────────────────────────
  * • NORMAL (henüz beğenilmemiş): yalnız Fire/Spark + not, X ve tik YOK. Akışta
@@ -53,6 +54,12 @@ export function resolveCardMode(
  *   zaten sohbet kanalı açık; ona akıştan "beğeni sinyali" yollamak ne bir şey
  *   açıyor ne de bir yere düşüyor, yalnız Fire/not bakiyesini yakıyor. Kabul/
  *   reddet de yok: ortada bekleyen bir karar YOK.
+ * • ZATEN BEĞENDİM (istek, 2026-11-04): hiçbiri. Beğenim sunucuda duruyor —
+ *   ikinci Fire/not ya UT-6404 yiyor ya bakiyeyi boşa yakıyor; kabul/reddet de
+ *   anlamsız, bekleyen karar KARŞI TARAFTA. `authorLikedMe` bu hâli yalnız
+ *   "bekleyenlik" sorusundan DIŞLIYOR (üçüncü dışlama) ve dışlamak kartı
+ *   NORMAL hâle düşürüyordu — aksiyonsuzluk ayrı bir girdi olmak zorunda
+ *   (tespiti `authorAlreadyLiked`).
  * • MOD YOK (`resolveCardMode` null döndü): hiçbiri. Bu kapı EN BAŞTA ve
  *   `hasLikedMe`'yi EZER — sunucu "beni beğenmiş" derken yazarın açık modu
  *   olmayabilir; beğenilmiş hâli modsuzluğu ezerse sunucunun reddedeceği bir
@@ -96,11 +103,17 @@ export function feedCardActions(
   mode: AppMode | null,
   hasLikedMe: boolean,
   isMatched: boolean,
+  alreadyLiked: boolean,
 ): FeedCardActions {
   const none = { like: false, pass: false, fire: false, note: false };
   if (mode == null) return none;
   // Eşleşme kapısı beğenilmişliği EZİYOR — gerekçesi yukarıda.
   if (isMatched) return none;
+  // Kendi beğenim de EZİYOR: iki bayrak birden true geldiyse ortada karşılıklı
+  // beğeni var demektir — o eşleşme bölgesi, bana bekleyen bir karar sunulamaz.
+  // (`authorLikedMe` kendi beğenimi zaten dışlıyor; bu, fonksiyonun KENDİ
+  // değişmezi — bayrak başka bir koldan beslenirse diye.)
+  if (alreadyLiked) return none;
   if (hasLikedMe) return { like: true, pass: true, fire: false, note: false };
   return { like: false, pass: false, fire: true, note: true };
 }
@@ -122,6 +135,29 @@ export function feedCardActions(
 export function authorIsMatched(profile: unknown): boolean {
   if (profile == null || typeof profile !== "object") return false;
   return (profile as { isMatched?: unknown }).isMatched === true;
+}
+
+/**
+ * Yazarı BEN ZATEN BEĞENDİM Mİ — kartın aksiyonsuz doğmasını belirleyen
+ * ikinci tespit (bkz. `feedCardActions`; ilki `authorIsMatched`).
+ *
+ * Bayrak `myLikeDate` — uç `?mode=` kapsamlı olduğu için bu da MOD KAPSAMLI:
+ * Flört'te beğendiğin biri Arkadaş modunda açılan kartta hâlâ Fire/not
+ * alabilir, doğru taraf bu (swipe satırları mod başına ayrı).
+ *
+ * ⚠️ KATI tip kontrolü (`typeof === "string"` + boş değil) —
+ * `authorLikedMe`deki üçüncü dışlamanın AYNISI, iki yer ayrışmamalı.
+ * Bilinmiyorsa güvenli taraf NORMAL KART: sunucu ikinci gönderimi zaten
+ * reddediyor (UT-6404), ama yanlış pozitif kullanıcının elinden Fire/not'u
+ * sessizce alır.
+ *
+ * ⚠️ PREMIUM KAPISI YOK: bu bir gizleme, bir hak değil (authorIsMatched'ın
+ * gerekçesinin aynısı).
+ */
+export function authorAlreadyLiked(profile: unknown): boolean {
+  if (profile == null || typeof profile !== "object") return false;
+  const { myLikeDate } = profile as { myLikeDate?: unknown };
+  return typeof myLikeDate === "string" && myLikeDate !== "";
 }
 
 /**

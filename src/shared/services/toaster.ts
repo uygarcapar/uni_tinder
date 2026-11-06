@@ -134,7 +134,10 @@ export function showLikeToast(arg: LikeToastProps) {
 }
 
 /**
- * Seni beğenmiş birini pass'ledin → "bir eşleşmeyi kaçırdın".
+ * Seni beğenmiş birini FARKINDA OLMADAN pass'ledin → "bir eşleşmeyi kaçırdın".
+ * YALNIZ Keşif'ten çağrılır: orada kart beğenenini söylemeden geçiliyor, toast
+ * bu bilgiyi sonradan veriyor. Beğenenler ekranında GÖSTERİLMEZ — orada ret
+ * bilinçli bir karar, "kaçırdın" demek kararı yanlışlamak olur.
  * Metin burada çözülüyor: çağıranlar (swipe handler'ları) hook context'inde
  * olmayabiliyor, `t` yerine i18n instance'ı kullanılıyor.
  */

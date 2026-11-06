@@ -71,8 +71,10 @@ type Props = {
    */
   badge?: ReactNode;
   /**
-   * Butonun sönük hâli. Yalnız "yapacak bir şey yok" durumunda veriliyor —
-   * kilitli buton sönük GÖSTERİLMİYOR, o her zaman tıklanabilir (paywall açar).
+   * Butonun sönük hâli. İki durumda veriliyor: "yapacak bir şey yok" ve
+   * "bu özellik sende kapalı" (kilit). Sönük buton BASILAMAZ DEMEK DEĞİL —
+   * kilitli hâlde de tıklanabilir ve paywall'ı açıyor; sönüklük yalnız glifin
+   * rengi, `disabled` değil.
    *
    * SÖNÜKLÜK OPAKLIKLA DEĞİL GLİFİN RENGİYLE. Camın atasına opacity<1 vermek
    * efekti sessizce hiç render ettirmiyor (uygulamada birkaç kez yaşandı);
