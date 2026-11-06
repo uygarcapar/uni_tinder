@@ -253,7 +253,7 @@ const tr = {
           'Yüklediğin fotoğraflar ve yazdığın metinler sana aittir. Bu içerikleri uygulamada gösterebilmemiz için bize sınırlı bir kullanım izni vermiş olursun; bu izin yalnızca hizmeti sunmak içindir ve içeriği sildiğinde ya da hesabını kapattığında sona erer. Fotoğraflar kurallara uygunluk açısından moderasyondan geçebilir.',
         sectionTitle5: 'Plus+ ve Satın Alımlar',
         section5Content:
-          'Plus+ abonelikleri App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
+          'Plus+ abonelikleri App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire ve Spark gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
           'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
@@ -871,7 +871,6 @@ const tr = {
       // Faz 4 — global aramadaki üçüncü bölüm: sohbetlerin ALTINDA, eşleşen
       // mesajların listesi.
       searchMessagesTitle: 'Mesajlar',
-      searchMessagesEmpty: 'Mesaj bulunamadı',
     },
     // Faz 4 / Task 5 — hedefli açılış (arama sonucundan atlama) banner'ı.
     // Pencereli bucket'ta ÇIKAR, kullanıcıyı sohbetin EN YENİSİNE döndürür.
@@ -1104,6 +1103,18 @@ const tr = {
       },
       // Profili açılmamış mod satırı: CTA + mini kurulum akışı.
       openCta: 'Profili aç',
+      // Kurulum sheet'inin FOTOĞRAF bölümü (ModeSetupPhotoSection). `{{mode}}`
+      // kaynak modun görünen adı ("Flört"/"Arkadaş") — açılan modun tersi.
+      photos: {
+        title: 'Fotoğraflar',
+        useExisting: '{{mode}} fotoğraflarımı kullan',
+        addTile: 'Fotoğraf ekle',
+        mainBadge: 'Ana',
+        remove: 'Fotoğrafı kaldır',
+        // Sunucu görünürlük eşiği mod başına 2 — daha azıyla profil açılır
+        // ama kimseye görünmez; eşiği burada söylüyoruz.
+        minHint: 'Profilinin görünmesi için en az 2 fotoğraf gerekiyor.',
+      },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
       // açıklama satırı ve hedefi adıyla söylüyor.
@@ -1196,7 +1207,9 @@ const tr = {
       durationHoursMinutes: '{{h}} sa {{m}} dk',
       durationMinutes: '{{m}} dk',
       durationSeconds: '{{sec}} sn',
-      fireCooldownTitle: 'Fire hakkın doldu',
+      // Ürün adı MODA GÖRE ({{fire}}): Flört'te "Fire", Arkadaş'ta "Spark" —
+      // çağıran t(modeFireNameKey(mode)) ile geçiriyor.
+      fireCooldownTitle: '{{fire}} hakkın doldu',
       // Süre GÖMÜLEMEZ: Fire döngüsü 2026-08-22'den beri tier'a bağlı
       // (haftalık 7, aylık 30, yıllık 365 gün). "7 günlük döngü" yazmak aylık
       // ve yıllık abonelere yanlış vaat oluyordu; gerçek süre `{{time}}`.
@@ -1205,7 +1218,7 @@ const tr = {
       // şey çekmeye devam etmek. Eşikte yerini `fireReleaseHint` alıyor —
       // iki metin de kendi anında DOĞRU, bu yüzden ipucu çekişin başından
       // itibaren gösterilebiliyor.
-      firePullHint: 'fire göndermek için aşağı kaydır',
+      firePullHint: '{{fire}} göndermek için aşağı kaydır',
       // Kartı aşağı çekerken üstte açılan şeritte duruyor (bkz.
       // FirePullHint). "Bırak" EMİR KİPİ ve kısa: şerit 50 px ve yazı
       // jestin ortasında okunuyor, cümle uzarsa göz onu takip edemiyor.
@@ -1213,10 +1226,11 @@ const tr = {
       // TAMAMEN KÜÇÜK HARF — marka sözcüğü dahil. Kapaktaki "yukarı kaydır"
       // ipucuyla (profile.card.expandHint) aynı kayıt: ikisi de jest fısıltısı,
       // cümle değil. Uyarı/başlık metinlerindeki "Fire" yazımı buraya
-      // uymuyor, onlar tam cümle.
-      fireReleaseHint: 'fire göndermek için bırak',
-      fireExhaustedTitle: 'Fire hakkın bitti',
-      fireExhaustedMessage: 'Ücretsiz üyelikte Fire tek seferliktir, kendiliğinden yenilenmez.',
+      // uymuyor, onlar tam cümle. {{fire}} değerini çağıran KÜÇÜK HARFLE
+      // geçiriyor ki bu kayıt korunsun.
+      fireReleaseHint: '{{fire}} göndermek için bırak',
+      fireExhaustedTitle: '{{fire}} hakkın bitti',
+      fireExhaustedMessage: 'Ücretsiz üyelikte {{fire}} tek seferliktir, kendiliğinden yenilenmez.',
       // Gönderim onayı metni BİLEREK YOK: Fire'ın gönderildiğini ekranı
       // süpüren alev söylüyor, toast düşmüyor (bkz. DiscoverScreen.handleSwipe).
       // Günlük beğeni kotası: azalma uyarısı (eşikler DiscoverScreen'de) ve
@@ -1242,7 +1256,7 @@ const tr = {
         seeLikes: 'Seni beğenenleri net gör',
         unlimitedMessages: 'Sınırsız mesajlaşma',
         unlimitedUndo: 'Sınırsız geri alma',
-        fire: 'Yenilenen Fire hakkı',
+        fire: 'Yenilenen {{fire}} hakkı',
         advancedFilters: 'Gelişmiş filtreler',
         widerDistance: 'Daha geniş mesafe aralığı',
         missedMatchRecovery: 'Daha fazla eşleşme kurtarma',
@@ -1261,7 +1275,7 @@ const tr = {
         unlimitedUndo:
           'Yanlışlıkla geçtiğin profili destenin başına geri getirir. Geri alma ücretsiz üyelikte tamamen kapalıdır; Plus ile istediğin kadar kullanırsın.',
         fire:
-          'Fire, beğenini karşı tarafa öne çıkararak iletir — listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
+          '{{fire}}, beğenini karşı tarafa öne çıkararak iletir — listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
         advancedFilters:
           'Üniversite, bölüm, sınıf, boy, burç, konuşulan diller, alışkanlıklar ve daha fazlası: kimlerin karşına çıkacağını ayrıntılı seçersin. Bu filtreler ücretsiz üyelikte kapalıdır.',
         widerDistance:
@@ -1762,7 +1776,7 @@ const tr = {
       // çeviriyordu ("Görünürlük filtresi · 30 gün"), oysa cümle zaten
       // "Sıradaki ödül:" ile başlıyor.
       visibilityFilter: '{{amount}} günlük görünürlük filtresi',
-      fire: '{{amount}} Fire',
+      fire: '{{amount}} {{fire}}',
       note: '{{amount}} not',
     },
     card: {
@@ -1863,7 +1877,7 @@ const tr = {
     // sayısız: bakiyeyi bilmediğimiz durumda (stats gelmedi / premium
     // aktivasyonu sürüyor) uydurma sayı yerine ürünün değer önerisi yazılır.
     fireCard: {
-      title: 'Fire Al',
+      title: '{{fire}} Al',
       subtitleCount: '{{count}} hakkın kaldı',
       subtitleEmpty: 'Hakkın bitti',
       subtitleUnknown: 'Öne çık',
@@ -2468,22 +2482,26 @@ const tr = {
       appStoreDisclaimer: 'Lit Plus aboneliği, App Store üzerinden otomatik olarak yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin onaylanmasından sonra App Store hesabınızdan ücretlendirilir.',
     },
   },
+  // Ürün adı MODA GÖRE ({{fire}}): Flört'te "Fire", Arkadaş'ta "Spark".
+  // Consumable wire'da TEK (superlike) — moda dönen yalnız GÖRÜNEN ad
+  // (FirePurchaseModal i18nParams ile geçiriyor). Çoğul eki iki ad için de
+  // aynı yazım ({{fire}}'lar), bkz. modeFireName testi.
   firePurchase: {
-    title: 'Fire Satın Al',
+    title: '{{fire}} Satın Al',
     description:
-      'Fire\'lar 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
-    packLabel: '{{count}}x Fire',
+      '{{fire}}\'lar 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
+    packLabel: '{{count}}x {{fire}}',
     cta: 'Satın Al',
     ctaWithPrice: '{{price}} · Satın Al',
     unavailableMessage: 'Paketler şu anda yüklenemedi. Bağlantını kontrol edip biraz sonra tekrar dene.',
-    successTitle: 'Fire\'ların hazır',
-    successMessage: '{{count}} Fire hesabına eklendi.',
+    successTitle: '{{fire}}\'ların hazır',
+    successMessage: '{{count}} {{fire}} hesabına eklendi.',
     syncedTitle: 'Bakiyen güncel',
     syncedMessage: 'Bu satın alma zaten hesabına işlenmişti.',
     pendingTitle: 'Satın alman alındı',
-    pendingMessage: 'Fire\'ların birkaç dakika içinde hesabına yansıyacak.',
+    pendingMessage: '{{fire}}\'ların birkaç dakika içinde hesabına yansıyacak.',
     errorTitle: 'Satın alma tamamlanamadı',
-    disclaimer: 'Fire\'lar satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
+    disclaimer: '{{fire}}\'lar satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
   },
   // `recoveryPurchase` KALDIRILDI (2026-08-31): kurtarma paketleri silindi,
   // kurtarma premium ayrıcalığı oldu. Free'ye teklif Lit Plus'ın kendisi.
@@ -2754,6 +2772,14 @@ const tr = {
     disabled: {
       title: 'Akış şu an kapalı',
       body: 'Bu özellik yakında açılacak.',
+    },
+
+    // UT-2304 — Arkadaş profili açılmamış (akış Arkadaş'a özel). Başlık ve
+    // CTA Keşif'in kilitli mod metinleriyle ORTAK (discover.mode.lockedTitle
+    // / openCta) — aynı kapı iki ekranda farklı adla anılmasın; yalnız gövde
+    // akışa özgü.
+    modeGate: {
+      body: 'Akış, Arkadaş modunun bir parçası. Gönderileri görmek ve paylaşmak için önce Arkadaş profilini aç.',
     },
 
     support: {

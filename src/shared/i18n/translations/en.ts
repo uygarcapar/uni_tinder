@@ -247,7 +247,7 @@ const en = {
           'The photos you upload and the text you write remain yours. You grant us a limited permission to display them so we can run the service; that permission exists only for providing the service and ends when you delete the content or close your account. Photos may go through moderation to check they follow the rules.',
         sectionTitle5: 'Plus+ and Purchases',
         section5Content:
-          'Plus+ subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
+          'Plus+ subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires and Sparks are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
           'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again.',
@@ -860,7 +860,6 @@ const en = {
       // Phase 4 — global search's third section: matched messages, below the
       // conversations.
       searchMessagesTitle: 'Messages',
-      searchMessagesEmpty: 'No messages found',
     },
     // Phase 4 / Task 5 — targeted-open (jump from search result) banner.
     // Shows on a windowed bucket, returns the user to the latest messages.
@@ -1093,6 +1092,15 @@ const en = {
         Friends: 'Find friends on campus — same gender only.',
       },
       openCta: 'Open profile',
+      // Kurulum sheet'inin FOTOĞRAF bölümü — gerekçeler tr.ts'te.
+      photos: {
+        title: 'Photos',
+        useExisting: 'Use my {{mode}} photos',
+        addTile: 'Add photo',
+        mainBadge: 'Main',
+        remove: 'Remove photo',
+        minHint: 'Your profile needs at least 2 photos to be visible.',
+      },
       // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
       // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
       // açıklama satırı ve hedefi adıyla söylüyor — kullanıcı neye geçtiğini
@@ -1183,7 +1191,9 @@ const en = {
       durationHoursMinutes: '{{h}}h {{m}}m',
       durationMinutes: '{{m}}m',
       durationSeconds: '{{sec}}s',
-      fireCooldownTitle: 'Fires used up',
+      // Product name is mode-aware ({{fire}}): "Fire" in Dating, "Spark" in
+      // Friends — callers pass t(modeFireNameKey(mode)).
+      fireCooldownTitle: '{{fire}}s used up',
       // The period can't be hardcoded: since 2026-08-22 the Fire cycle is
       // tier-based (7/30/365 days). "7-day cycle" was a wrong promise for
       // monthly and yearly subscribers; the real figure is `{{time}}`.
@@ -1192,7 +1202,7 @@ const en = {
       // to do is keep pulling. At the threshold `fireReleaseHint` takes
       // over — both lines are true at their own moment, which is why the hint
       // can be shown from the start of the pull.
-      firePullHint: 'swipe down to send a fire',
+      firePullHint: 'swipe down to send a {{fire}}',
       // Shown in the strip that opens above the card while pulling it down
       // (see FirePullHint). Imperative and short: the strip is 50 px tall
       // and the line is read mid-gesture.
@@ -1200,9 +1210,10 @@ const en = {
       // ALL LOWERCASE, brand word included — same register as the cover's
       // "swipe up" hint (profile.card.expandHint). Both are gesture whispers,
       // not sentences; the "Fire" casing used in alerts belongs there.
-      fireReleaseHint: 'release to send a fire',
-      fireExhaustedTitle: 'You are out of Fires',
-      fireExhaustedMessage: 'Free membership includes a single Fire and it does not renew on its own.',
+      // Callers lowercase the {{fire}} value to keep this register.
+      fireReleaseHint: 'release to send a {{fire}}',
+      fireExhaustedTitle: 'You are out of {{fire}}s',
+      fireExhaustedMessage: 'Free membership includes a single {{fire}} and it does not renew on its own.',
       // No sent-confirmation copy here on purpose: sending a Fire is confirmed
       // by the flame sweep alone (see DiscoverScreen.handleSwipe).
       // Daily like quota: running-low warning (thresholds live in
@@ -1228,7 +1239,7 @@ const en = {
         seeLikes: 'See who likes you, unblurred',
         unlimitedMessages: 'Unlimited messaging',
         unlimitedUndo: 'Unlimited rewinds',
-        fire: 'Fires that renew',
+        fire: '{{fire}}s that renew',
         advancedFilters: 'Advanced filters',
         widerDistance: 'Wider distance range',
         missedMatchRecovery: 'More missed-match recoveries',
@@ -1247,7 +1258,7 @@ const en = {
         unlimitedUndo:
           'Brings back a profile you passed by mistake. Rewind is completely off on a free membership; with Plus you can use it as often as you like.',
         fire:
-          'A Fire delivers your like up front — it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
+          'A {{fire}} delivers your like up front — it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
         advancedFilters:
           'University, department, class year, height, star sign, languages, habits and more: choose exactly who shows up in your deck. These filters are locked on a free membership.',
         widerDistance:
@@ -1717,7 +1728,7 @@ const en = {
       // reward into a label + value pair ("Visibility filter · 30 days") right
       // after "Next reward:", which already frames it.
       visibilityFilter: 'Visibility filter for {{amount}} days',
-      fire: '{{amount}} Fires',
+      fire: '{{amount}} {{fire}}s',
       note: '{{amount}} notes',
     },
     card: {
@@ -1815,7 +1826,7 @@ const en = {
     // number-free: when the balance is unknown (stats missing / premium
     // activation pending) we show the value prop instead of a made-up count.
     fireCard: {
-      title: 'Get Fires',
+      title: 'Get {{fire}}s',
       subtitleCount: '{{count}} left',
       subtitleEmpty: 'None left',
       subtitleUnknown: 'Stand out',
@@ -2401,22 +2412,25 @@ const en = {
       appStoreDisclaimer: 'Lit Plus subscription is automatically renewed through the App Store. Your account will be charged from your App Store account after purchase confirmation.',
     },
   },
+  // Product name is mode-aware ({{fire}}): "Fire" in Dating, "Spark" in
+  // Friends. Same consumable on the wire (superlike) — only the DISPLAY name
+  // follows the mode (FirePurchaseModal passes it via i18nParams).
   firePurchase: {
-    title: 'Buy Fires',
+    title: 'Buy {{fire}}s',
     description:
-      'Fires get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. Fires never expire, so use them whenever you want.',
-    packLabel: '{{count}}x Fire',
+      '{{fire}}s get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. {{fire}}s never expire, so use them whenever you want.',
+    packLabel: '{{count}}x {{fire}}',
     cta: 'Buy',
     ctaWithPrice: 'Buy · {{price}}',
     unavailableMessage: "Packs couldn't be loaded right now. Check your connection and try again in a moment.",
-    successTitle: 'Your Fires are ready',
-    successMessage: '{{count}} Fires were added to your account.',
+    successTitle: 'Your {{fire}}s are ready',
+    successMessage: '{{count}} {{fire}}s were added to your account.',
     syncedTitle: 'Your balance is up to date',
     syncedMessage: 'This purchase had already been credited to your account.',
     pendingTitle: 'Purchase received',
-    pendingMessage: 'Your Fires will show up in your balance within a few minutes.',
+    pendingMessage: 'Your {{fire}}s will show up in your balance within a few minutes.',
     errorTitle: "Purchase couldn't be completed",
-    disclaimer: 'Fires are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
+    disclaimer: '{{fire}}s are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
   },
   // `recoveryPurchase` REMOVED (2026-08-31): the recovery packs were deleted
   // and recovery became a Premium perk. The offer for free users is Lit Plus.
@@ -2652,6 +2666,12 @@ const en = {
     disabled: {
       title: 'The feed is closed right now',
       body: 'This feature is coming soon.',
+    },
+
+    // UT-2304 — Arkadaş profili açılmamış (akış Arkadaş'a özel). Başlık ve
+    // CTA Keşif'in kilitli mod metinleriyle ORTAK — gerekçe tr.ts'te.
+    modeGate: {
+      body: 'The feed is part of Friends mode. Open your Friends profile to see and share posts.',
     },
 
     support: {
