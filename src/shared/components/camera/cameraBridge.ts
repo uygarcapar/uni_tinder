@@ -103,6 +103,16 @@ export type CameraRequest = {
    * dosya sahipliğini ve `ImageManipulator`ı bilmemeye devam ediyor.
    */
   crop?: (shot: CameraShot, rect: SourceRect) => Promise<CameraShot | null>;
+  /**
+   * Açılır açılmaz KIRPMA KİPİNE gir — yalnız `source` + `crop` ile anlamlı.
+   *
+   * NEDEN: profil "Düzenle". Kullanıcı ZATEN yüklenmiş bir fotoğrafın kadrajını
+   * değiştirmek için geliyor; önizlemede bir kez daha kırp'a basmak boş bir
+   * adım olurdu (istek: "Düzenle de aynı önizleme ekranını açsın, doğrudan
+   * kırpma kipinde başlasın"). Kipten ✕ ile çıkınca ekran normal önizlemeye
+   * döner — oturum kapanmaz. Ölçü okunamazsa kip açılmaz, önizleme kalır.
+   */
+  startInCrop?: boolean;
 };
 
 export type CameraOutcome =

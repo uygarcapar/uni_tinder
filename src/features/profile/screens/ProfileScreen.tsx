@@ -2098,11 +2098,17 @@ export default function ProfileScreen() {
     );
     const wasMain = !!photo.isMainPhoto;
 
-    // Kaynak indirilirken de spinner dönsün: kırpma ekranı ağdan sonra açılıyor.
+    // Kaynak indirilirken de spinner dönsün: önizleme ekranı ağdan sonra açılıyor.
     setSavingPhoto(true);
     let picked: PickedPhoto | null = null;
     try {
-      picked = await recropExistingPhoto(uri);
+      // FOTOĞRAF EKLEMEYLE AYNI EKRAN (istek): önizleme doğrudan kırpma kipinde
+      // açılıyor, kadraj yerinde seçiliyor, ✓ → ok ile kaydediliyor. Kırpmadan
+      // onaylanırsa `null` döner — yeniden yükleme / yeniden moderasyon yok.
+      picked = await recropExistingPhoto(uri, {
+        failedMessage: t('common.cropper.failed'),
+        commitLabel: t('common.save'),
+      });
     } catch (e) {
       devLog("Yeniden kırpma hatası:", e);
     }

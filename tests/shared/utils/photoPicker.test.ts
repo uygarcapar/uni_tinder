@@ -299,7 +299,7 @@ describe('recropExistingPhoto', () => {
   it('uzak fotoğrafı önce indirir, kırpıcıya YEREL kopyayı verir', async () => {
     mockPresent.mockResolvedValue(done('file:///documents/profile-photos/new.jpg'));
 
-    const photo = await recropExistingPhoto(REMOTE);
+    const photo = await recropExistingPhoto(REMOTE, { failedMessage: 'x' });
 
     expect(mockDownload).toHaveBeenCalledTimes(1);
     expect(mockDownload.mock.calls[0][0]).toBe(REMOTE);
@@ -315,7 +315,7 @@ describe('recropExistingPhoto', () => {
   it('indirilen kaynağı her hâlükârda siler', async () => {
     mockPresent.mockResolvedValue({ status: 'skipped' });
 
-    await expect(recropExistingPhoto(REMOTE)).resolves.toBeNull();
+    await expect(recropExistingPhoto(REMOTE, { failedMessage: 'x' })).resolves.toBeNull();
 
     const source = mockPresent.mock.calls[0][0].uri;
     expect(mockForget).toHaveBeenCalledWith(source);
@@ -324,7 +324,7 @@ describe('recropExistingPhoto', () => {
   it('indirme patlarsa kırpıcı hiç açılmaz', async () => {
     mockDownload.mockRejectedValueOnce(new Error('offline'));
 
-    await expect(recropExistingPhoto(REMOTE)).resolves.toBeNull();
+    await expect(recropExistingPhoto(REMOTE, { failedMessage: 'x' })).resolves.toBeNull();
     expect(mockPresent).not.toHaveBeenCalled();
   });
 
@@ -333,7 +333,7 @@ describe('recropExistingPhoto', () => {
       .spyOn(Image, 'getSize')
       .mockImplementation(((_uri: string, _ok: any, fail: any) => fail(new Error('decode'))) as any);
 
-    await expect(recropExistingPhoto(REMOTE)).resolves.toBeNull();
+    await expect(recropExistingPhoto(REMOTE, { failedMessage: 'x' })).resolves.toBeNull();
     expect(mockPresent).not.toHaveBeenCalled();
     expect(mockForget).toHaveBeenCalled();
   });
@@ -344,7 +344,7 @@ describe('recropExistingPhoto', () => {
       adjusted: false,
     });
 
-    await expect(recropExistingPhoto(REMOTE)).resolves.toBeNull();
+    await expect(recropExistingPhoto(REMOTE, { failedMessage: 'x' })).resolves.toBeNull();
     // Kırpma çıktısı da çöp: yüklenmeyecekse diskte durmasın.
     expect(mockForget).toHaveBeenCalledWith('file:///documents/profile-photos/same.jpg');
   });
@@ -352,7 +352,7 @@ describe('recropExistingPhoto', () => {
   it('sayaç göndermez — tek fotoğraflık akış', async () => {
     mockPresent.mockResolvedValue(done('file:///crop.jpg'));
 
-    await recropExistingPhoto(REMOTE);
+    await recropExistingPhoto(REMOTE, { failedMessage: 'x' });
 
     const request = mockPresent.mock.calls[0][0];
     expect(request.index).toBeUndefined();
@@ -561,5 +561,66 @@ describe('önizleme kırpma kancası', () => {
     // Ara kare yeni dosya yazıldıktan sonra unutulur; yeni dosya asla.
     expect(mockForget).toHaveBeenCalledTimes(1);
     expect(mockForget).toHaveBeenCalledWith('file:///crop1.jpg');
+  });
+});
+
+describe('recropExistingPhoto — önizleme ekranında yerinde kırpma', () => {
+  const REMOTE = 'https://cdn.example.com/photo.jpg?v=42';
+  const OPTS = { failedMessage: 'x', commitLabel: 'Kaydet' };
+
+  beforeEach(() => {
+    mockDownload.mockReset();
+    mockDownload.mockImplementation(async (_url: string, destination: any) => destination);
+    jest
+      .spyOn(Image, 'getSize')
+      .mockImplementation(((_uri: string, success: any) => success(900, 1200)) as any);
+  });
+
+  it('indirilen kopyayı önizleme ekranında DOĞRUDAN kırpma kipinde açar; eski kırpıcı açılmaz', async () => {
+    runSession(async () => ({ status: 'cancelled' }));
+    await expect(recropExistingPhoto(REMOTE, OPTS)).resolves.toBeNull();
+    const req = mockShoot.mock.calls[0][0];
+    expect(req.startInCrop).toBe(true);
+    expect(req.frame).toBe('fill');
+    expect(req.source).toEqual({ uri: expect.stringContaining('recrop_'), width: 900, height: 1200 });
+    expect(typeof req.crop).toBe('function');
+    expect(req.commitLabel).toBe('Kaydet');
+    expect(req.commitHint).toBeUndefined();
+    expect(mockPresent).not.toHaveBeenCalled();
+  });
+
+  it('kırpmadan onaylanırsa HİÇBİR ŞEY yüklenmez (yeniden moderasyon yok) ve indirilen kopya silinir', async () => {
+    runSession(async (req) => {
+      await expect(req.commit!(req.source!)).resolves.toBeNull();
+      return { status: 'committed' };
+    });
+    await expect(recropExistingPhoto(REMOTE, OPTS)).resolves.toBeNull();
+    expect(ImageManipulator.manipulate).not.toHaveBeenCalled();
+    expect(mockForget).toHaveBeenCalledWith(expect.stringContaining('recrop_'));
+  });
+
+  it('kırpılıp onaylanırsa yükleme çıktısını döner, ara kare ve indirilen kopya silinir', async () => {
+    mockApply.mockResolvedValue({ uri: 'file:///crop1.jpg', width: 720, height: 960 });
+    runSession(async (req) => {
+      const next = await req.crop!(req.source!, RECT);
+      await expect(req.commit!(next!)).resolves.toBeNull();
+      return { status: 'committed' };
+    });
+    const photo = await recropExistingPhoto(REMOTE, OPTS);
+    expect(photo).toEqual({
+      uri: expect.stringContaining('photo_'),
+      mime: 'image/jpeg',
+      fileName: expect.stringContaining('.jpg'),
+    });
+    expect(mockForget).toHaveBeenCalledWith('file:///crop1.jpg');
+    expect(mockForget).toHaveBeenCalledWith(expect.stringContaining('recrop_'));
+  });
+
+  it('overlay bağlı değilse eski kırpıcı yoluna düşer', async () => {
+    // mockShoot varsayılanı 'unavailable' (beforeEach).
+    mockPresent.mockResolvedValue({ status: 'skipped' });
+    await expect(recropExistingPhoto(REMOTE, OPTS)).resolves.toBeNull();
+    expect(mockShoot).toHaveBeenCalledTimes(1);
+    expect(mockPresent).toHaveBeenCalledTimes(1);
   });
 });

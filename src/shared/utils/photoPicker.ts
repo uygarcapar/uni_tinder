@@ -592,7 +592,18 @@ export const fitPhotoForUpload = async (
  *    patladığında kullanıcı yeniden denemek için elinde dosya bulamaz). Nihai
  *    dosya ise `fitPhotoForUpload`ın çıktısıdır — asla unutulmaz.
  */
-const createPreviewSession = (failedMessage: string) => {
+const createPreviewSession = (
+  failedMessage: string,
+  options: {
+    /**
+     * Bu kare (kırpılmadan) onaylanırsa YÜKLENECEK BİR ŞEY YOK — profil
+     * "Düzenle": kaynak sunucudaki fotoğrafın kendisi; aynı kareyi geri
+     * göndermek onaylanmış fotoğrafı sebepsiz yere yeniden moderasyona sokar
+     * (yeni kayıt = yeni inceleme). Onay "başarılı" sayılır, sonuç `null`.
+     */
+    unchangedUri?: string;
+  } = {},
+) => {
   let collected: PickedPhoto | null = null;
 
   // Kırpma ekranı overlay'in İÇİNDE (yerinde kırpma kipi): kadrajı ve kaynak
@@ -612,6 +623,11 @@ const createPreviewSession = (failedMessage: string) => {
   };
 
   const commit: NonNullable<CameraRequest['commit']> = async (shot) => {
+    if (options.unchangedUri && shot.uri === options.unchangedUri) {
+      // Dosyaya dokunulmuyor: kaynağın sahibi çağıran (bkz. recropExistingPhoto).
+      collected = null;
+      return null;
+    }
     // Kırpılmış ara kare de dahil HER kare buradan geçer: 3:4 ara kare ek kesim
     // görmez, yalnızca 900x1200'e ölçeklenir.
     const fitted = await fitPhotoForUpload(shot);
@@ -774,6 +790,17 @@ const captureWithSystemCamera = async (): Promise<PickedPhoto | null> => {
 /**
  * Sunucuda DURAN bir fotoğrafı yeniden kırpar (profil düzenlemedeki "Düzenle").
  *
+ * ══════════════════════════════════════════════════════════════════════════
+ * AYNI ÖNİZLEME EKRANI, DOĞRUDAN KIRPMA KİPİNDE (istek).
+ * ══════════════════════════════════════════════════════════════════════════
+ * Eskiden ayrı, tam ekran kırpıcı (`CropperOverlay`) açılıyordu. Artık kayıt
+ * ve fotoğraf eklemeyle AYNI ekran: kamerasız mod (`source`), kipe açılışta
+ * giriliyor (`startInCrop`), kadraj yerinde seçiliyor, ✓ → önizleme → ok ile
+ * kaydediliyor. Kipten ✕ ile çıkılırsa önizleme kalır; oradaki ✕ vazgeçer.
+ *
+ * KIRPMADAN ONAY = YÜKLEME YOK (`unchangedUri`): eski `adjusted === false`
+ * kuralının karşılığı — dönüş `null`, çağıran hiçbir şey yüklemiyor.
+ *
  * Kaynak neden indiriliyor: ölçüyü okuyan `Image.getSize`, önizlemeyi çizen
  * expo-image ve kırpmayı yapan image-manipulator ÜÇ AYRI yükleyici. Uzak URL
  * doğrudan verilseydi üçü de kendi cache'inden farklı bir kopyayı çözebilir,
@@ -784,10 +811,19 @@ const captureWithSystemCamera = async (): Promise<PickedPhoto | null> => {
  * 3:4 çıktının kendisi. Yani yeniden kırpma ancak DAHA DAR bir çerçeve
  * seçebilir; büyütülen alan ilk yüklemedeki çözünürlükten üretilir.
  *
+ * Overlay bağlı değilse (`unavailable`) eski kırpıcı yoluna düşüyor — davranış
+ * orada birebir eskisi gibi.
+ *
  * İptal / indirme hatası → `null` (akış sessizce durur, çağıran hata göstermez).
  */
 export const recropExistingPhoto = async (
   remoteUri: string,
+  options: {
+    /** Ölçekleme patlarsa önizlemede satır içinde gösterilecek metin. */
+    failedMessage: string;
+    /** Onay okunun erişilebilir adı. */
+    commitLabel?: string;
+  },
 ): Promise<PickedPhoto | null> => {
   let source: string | null = null;
   try {
@@ -809,30 +845,53 @@ export const recropExistingPhoto = async (
     const size = await measure(source);
     if (!size) return null;
 
-    const outcome = await presentCropper({
+    const session = createPreviewSession(options.failedMessage, {
+      unchangedUri: source,
+    });
+    const outcome = await presentCameraCapture({
+      frame: 'fill',
+      source: { uri: source, width: size.width, height: size.height },
+      startInCrop: true,
+      commitLabel: options.commitLabel,
+      crop: session.crop,
+      commit: session.commit,
+    });
+
+    if (outcome.status === 'committed') return session.result();
+    if (outcome.status === 'captured') {
+      // `commit` verildiği için gelmez; gelirse kare sahipsiz kalmasın.
+      devLog('📷 [photoPicker] 🔴 yeniden kırpmada `captured` döndü');
+      forgetPhoto(outcome.shot.uri);
+      return null;
+    }
+    if (outcome.status !== 'unavailable') return null;
+
+    // ── Yedek: overlay yok → eski tam ekran kırpıcı (davranış birebir eski).
+    const cropped = await presentCropper({
       uri: source,
       srcWidth: size.width,
       srcHeight: size.height,
     });
 
-    if (outcome.status === 'done') {
+    if (cropped.status === 'done') {
       // Çerçeveye dokunulmadıysa yükleyecek YENİ bir şey yok. Aynı kırpmayı
       // geri göndermek, onaylanmış fotoğrafı sebepsiz yere yeniden moderasyona
       // sokar (yeni kayıt = yeni inceleme) — sessizce çıkıyoruz.
-      if (outcome.adjusted === false) {
-        forgetPhoto(outcome.photo.uri);
+      if (cropped.adjusted === false) {
+        forgetPhoto(cropped.photo.uri);
         return null;
       }
-      return outcome.photo;
+      return cropped.photo;
     }
-    if (outcome.status === 'failed') {
-      devLog('📷 [photoPicker] yeniden kırpma başarısız', outcome.error);
+    if (cropped.status === 'failed') {
+      devLog('📷 [photoPicker] yeniden kırpma başarısız', cropped.error);
     }
     return null;
   } finally {
-    // Kırpma çıktısı AYRI bir dosya (bkz. persistPickedPhoto) — indirilen
-    // kaynak bu noktadan sonra ölü ağırlık. presentCropper ancak çıktı diske
-    // yazıldıktan sonra çözülüyor, silme erken değil.
+    // İndirilen kaynak her hâlükârda ölü ağırlık: kırpılmışsa kanca onu zaten
+    // unuttu (bir önceki dosya), ✕'te overlay unuttu, kırpmadan onayda ise
+    // kimse dokunmadı — `forgetPhoto` idempotent, burada kesinleşiyor.
+    // Yükleme çıktısı (`fitPhotoForUpload` / kırpıcı) AYRI, kalıcı bir dosya.
     forgetPhoto(source);
   }
 };

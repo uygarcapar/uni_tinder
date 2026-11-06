@@ -1147,6 +1147,29 @@ export default function CameraCaptureOverlay() {
     resetCropTransform,
   ]);
 
+  /**
+   * AÇILIŞTA KIRPMA KİPİ (`request.startInCrop` — profil "Düzenle").
+   *
+   * Kip, kullanıcının basacağı kırp düğmesiyle AYNI yoldan (`handleCrop`)
+   * açılıyor: ölçü → `startScale` → devir kuralları birebir aynı, ayrı bir
+   * giriş kodu yok. Kamerasız modda kare `present()`te elde olduğu için ilk
+   * boş anda tetikleniyor.
+   *
+   * ⚠️ OTURUM BAŞINA TEK SEFER (`autoCropForRef`): kullanıcı ✕ ile kipten
+   * çıkınca önizleme kalmalı — efekt `cropping` false'a döndüğünde kipi geri
+   * açsaydı ekrandan çıkmanın yolu kalmazdı. Ölçü okunamazsa da yeniden
+   * denenmiyor (önizleme kalır, kırp düğmesi elle hâlâ basılabilir).
+   */
+  const autoCropForRef = useRef<Session | null>(null);
+  useEffect(() => {
+    if (!session || closing) return;
+    if (!session.request.startInCrop || !session.request.crop) return;
+    if (autoCropForRef.current === session) return;
+    if (!shot || busy || cropping) return;
+    autoCropForRef.current = session;
+    handleCrop();
+  }, [session, closing, shot, busy, cropping, handleCrop]);
+
   /** ⟲ — kadraj girişteki hâline (`startScale`, ortalı) YAYLA döner; başarısız
    *  bir ✓'den kalan satır içi hata da siliniyor (yeni deneme temiz başlasın). */
   const handleResetCrop = useCallback(() => {
