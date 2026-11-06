@@ -73,7 +73,7 @@ import {
   removeWhoLikedMe,
 } from "@/features/discover/swipeSlice";
 import { fetchConversations } from "@/features/chat/chatSlice";
-import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
+import { showInfoToast } from "@/shared/services/toaster";
 
 import uiBus from "@/shared/services/uiBus";
 import { colors } from "../../../shared/theme/colors";
@@ -96,8 +96,32 @@ type EmptyGlyphProps = {
   color?: string;
   strokeWidth?: number;
 };
-const EmptyHeartIcon = ({ size, color, strokeWidth }: EmptyGlyphProps) => (
-  <FireGlyph size={size} stroke={color} strokeWidth={strokeWidth} />
+//
+// MOD BAŞINA AYRI BİLEŞEN, tek `mode` prop'lu bir tane DEĞİL: `Icon` bir
+// bileşen TİPİ olarak geçiyor, yani sarmalayıcıyı render içinde kapatmak
+// (`(p) => <FireGlyph {...p} mode={mode} />`) her render'da yeni bir tip
+// üretir ve yukarıdaki remount derdi geri gelir. İkisi de modül seviyesinde
+// sabit; mod değişince tip değişiyor ve ikon bir kez remount oluyor — zaten
+// şekil de değişiyor, doğru davranış bu.
+const EmptyFireIconDating = ({ size, color, strokeWidth }: EmptyGlyphProps) => (
+  <FireGlyph
+    size={size}
+    stroke={color}
+    strokeWidth={strokeWidth}
+    mode="Dating"
+  />
+);
+const EmptyFireIconFriends = ({
+  size,
+  color,
+  strokeWidth,
+}: EmptyGlyphProps) => (
+  <FireGlyph
+    size={size}
+    stroke={color}
+    strokeWidth={strokeWidth}
+    mode="Friends"
+  />
 );
 // Balonun içindeki kalp burada da delik (fillRule evenodd) — konturlu çizimde
 // ikisi de ayrı ayrı çizilir, yani balonun içinde ince bir kalp kalır.
@@ -1466,11 +1490,8 @@ export default function LikesScreen() {
   // MatchNotification gelene kadar bekleme). Rozet de aynı karede düşer:
   // sayacı `next.length`e eşitlemiyoruz, o yalnızca YÜKLENEN sayfanın boyutu —
   // toplam daha büyükse rozeti sessizce yanlışa çekerdi.
-  const handleLikerSwiped = (likerUserId, direction) => {
+  const handleLikerSwiped = (likerUserId) => {
     if (!likerUserId) return;
-    const passed = likesRef.current.find(
-      (it) => it.userId === likerUserId || it.likerUserId === likerUserId,
-    );
     const next = likesRef.current.filter(
       (it) => it.userId !== likerUserId && it.likerUserId !== likerUserId,
     );
@@ -1483,20 +1504,17 @@ export default function LikesScreen() {
     // satır bu — yerel küme düşse de sunucunun `hasLikedMe` kolu kartı beş
     // dakika daha beğenilmiş hâlinde tutardı (feedQueries > staleTime).
     queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
-    // Pass = kesin kaçırılmış eşleşme; bu kişi zaten seni beğenmişti.
-    if (direction === "left") {
-      showMissedMatchToast({
-        name: passed?.name,
-        photoUrl: passed?.mainPhoto,
-      });
-    }
+    // Pass'te "kaçırdın" toast'ı YOK (bilerek): bu ekranda beğenenin kim
+    // olduğu zaten görünüyor, ret BİLİNÇLİ bir karar — kullanıcıya "kaçırdın"
+    // demek verdiği kararı yanlışlamak oluyordu. Toast yalnız Keşif'te anlamlı:
+    // orada kart beğenenini SÖYLEMEDEN geçiliyor (bkz. DiscoverScreen).
   };
 
   /**
    * Karttaki yuvarlak X / ✓ butonları — LikerSwipeModal'ı açmadan doğrudan
    * pas/beğeni. Sonuç tarafı modal'daki butonlarla BİREBİR aynı yolu kullanıyor
-   * (`useSwipeMutation` + `handleLikerSwiped`): liste/rozet düşmesi, kaçırılan
-   * eşleşme toast'ı ve mutual like'ta MatchNotification akışı tek yerden gelir.
+   * (`useSwipeMutation` + `handleLikerSwiped`): liste/rozet düşmesi ve mutual
+   * like'ta MatchNotification akışı tek yerden gelir.
    *
    * Kilit, kart dokunuşundakiyle AYNI (bkz. openLikerProfile): free kullanıcı
    * blur'lu bir kartı butonla da "harcayamaz" — kim olduğunu görmeden pas
@@ -1552,13 +1570,13 @@ export default function LikesScreen() {
         // aşağıdaki prune guard'ı), yani kaçırdıkların tarafını da buranın
         // düşürmesi gerek.
         runCardExit(likerUserId, "right", () => {
-          handleLikerSwiped(likerUserId, direction);
+          handleLikerSwiped(likerUserId);
           dropMissed(likerUserId);
         });
         return;
       }
       runCardExit(likerUserId, "left", () =>
-        handleLikerSwiped(likerUserId, direction),
+        handleLikerSwiped(likerUserId),
       );
     },
     // handleLikerSwiped her render'da yeniden yaratılıyor ama yalnızca ref +
@@ -1584,7 +1602,7 @@ export default function LikesScreen() {
       // Yönsüz çıkış: engelleme/şikayet bir "geç" ya da "beğen" değil, kart
       // yana uçmak yerine yerinde söner.
       runCardExit(userId, "out", () => {
-        handleLikerSwiped(userId, "block");
+        handleLikerSwiped(userId);
         // Kaçırdıkların listesi ayrı bir dizi — `handleLikerSwiped` ona dokunmaz.
         dropMissed(userId);
       });
@@ -1606,7 +1624,7 @@ export default function LikesScreen() {
         dropFromLists(userId);
         return;
       }
-      handleLikerSwiped(userId, direction);
+      handleLikerSwiped(userId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dropFromLists],
@@ -1896,7 +1914,13 @@ export default function LikesScreen() {
         <EmptyState
           // Not sekmesi kendi ürününün glif'ini alıyor: o listede eksik olan
           // şey beğeni değil NOT — boş sayfa hangi ürünü beklediğini söylesin.
-          Icon={tabKey === "note" ? EmptyNoteIcon : EmptyHeartIcon}
+          Icon={
+            tabKey === "note"
+              ? EmptyNoteIcon
+              : mode === "Friends"
+                ? EmptyFireIconFriends
+                : EmptyFireIconDating
+          }
           iconStrokeWidth={1}
           topOffset={0}
           text={

@@ -1197,6 +1197,9 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
  */
 export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
   const { t, features, infoBenefit, openBenefitInfo, closeBenefitInfo } = flow;
+  // Seçili mod — info sheet'indeki Fire/Spark adının kaynağı (satır adları
+  // zaten flow.features'ta mod-farkındalı geliyor, bkz. usePurchaseFlow).
+  const { mode } = useAppMode();
 
   // Özellik satırının tonu — info ikonu ve başlık TEK dokunma hedefi, ikisi de
   // bunu kullanır. TAM KONTRAST (açıkta siyah, koyuda beyaz): soluk alfa
@@ -1316,6 +1319,7 @@ export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
       <PremiumBenefitInfoSheet
         benefitKey={infoBenefit}
         onClose={closeBenefitInfo}
+        mode={mode}
       />
     </View>
   );

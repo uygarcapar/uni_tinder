@@ -224,7 +224,13 @@ describe('useSetIgnoreDistanceFilter', () => {
     });
     // Anahtar değişince backend Redis havuzunu düşürüyor; bayat desteyi
     // ekranda bırakmamak için invalidate şart.
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: swipeKeys.matches });
+    //
+    // ⚠️ Burası eskiden `swipeKeys.matches` bekliyordu ve testi YEŞİL tutarken
+    // bug'ı kaçırdı: deste mod başına ayrılınca (`["swipe","deck",mode]`) o
+    // anahtar hiçbir sorguya değmez oldu, test ise yalnız çağrının argümanına
+    // bakıyordu. Artık KÖK bekleniyor — canlı deste anahtarlarının hepsi
+    // (`deck(mode)`) bunun altında.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: swipeKeys.deckRoot });
   });
 
   it('isSuccess:false yanıtını hata sayar', async () => {

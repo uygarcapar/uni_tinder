@@ -13,6 +13,7 @@ import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import FireGlyph from "@/shared/components/FireGlyph";
 import PremiumBadge from "@/shared/components/PremiumBadge";
 import type { PremiumBenefitKey } from "@/features/profile/premiumBenefits";
+import type { AppMode } from "@/features/discover/modeTheme";
 
 /**
  * Premium maddesinin simgesi — açıklama sheet'inin tepesindeki büyük ikon
@@ -53,17 +54,27 @@ export default function PremiumBenefitIcon({
   benefitKey,
   size,
   color,
+  mode,
 }: {
   benefitKey: PremiumBenefitKey;
   size: number;
   color: string;
+  /**
+   * Uygulama modu — YALNIZ `fire` maddesini ilgilendiriyor: satırın metni
+   * zaten modla adlanıyor ("Sınırsız Spark", bkz. modeFireNameKey), ikon da
+   * onunla dönmeli. Verilmezse Dating.
+   *
+   * ⚠️ `premiumBadge` maddesi MODSUZ: premium ürünü mod ekseninde bölünmüyor,
+   * wordmark her iki modda aynı (aynı gerekçe: PremiumFlame).
+   */
+  mode?: AppMode;
 }) {
   // Glif'ler düz dolgu (gradyan DEĞİL): alev ürününde gradyanlı çiziliyor ama
   // burada tek başına, diğer maddelerin ince çizgili sembolleriyle aynı
   // ailede durması gereken bir ikon — gradyan onu tek başına bir rozete
   // çevirirdi.
   if (benefitKey === "fire") {
-    return <FireGlyph size={size} color={color} />;
+    return <FireGlyph size={size} color={color} mode={mode} />;
   }
   // "Profilinde premium rozeti" maddesinin simgesi ROZETİN KENDİSİ: satır
   // birebir o işareti vaat ediyor, o yüzden burada onun bir temsili değil

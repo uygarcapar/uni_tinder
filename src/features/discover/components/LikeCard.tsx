@@ -32,7 +32,12 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
-import { DEFAULT_APP_MODE, modeAccent, modeFireTint } from "../modeTheme";
+import {
+  DEFAULT_APP_MODE,
+  modeAccent,
+  modeFireTint,
+  type AppMode,
+} from "../modeTheme";
 import { likerNoteTargetView } from "../noteTarget";
 import { isUnlockedLike } from "../likeUnlock";
 import { easeGradient } from "react-native-easing-gradient";
@@ -725,7 +730,16 @@ function useGlassPhase(enabled: boolean) {
  * ⚠️ Pill SOLMUYOR, kayboluyor: not açılınca `LikeCard` onu tamamen KALDIRIYOR
  * (gerekçe orada). Buraya fade/scale animasyonu EKLEME.
  */
-function FirePill({ label, accent }: { label: string; accent: string }) {
+function FirePill({
+  label,
+  accent,
+  mode,
+}: {
+  label: string;
+  accent: string;
+  /** Glif modla dönüyor: Flört alev, Arkadaş yıldız (bkz. FireGlyph). */
+  mode: AppMode;
+}) {
   return (
     <View
       style={{
@@ -750,6 +764,7 @@ function FirePill({ label, accent }: { label: string; accent: string }) {
       <FireGlyph
         size={LIKE_CARD_PILL_ICON_SIZE}
         color={colors.onMediaInverse}
+        mode={mode}
       />
       <Text
         numberOfLines={1}
@@ -2033,7 +2048,11 @@ function LikeCard({
                     tahminleri bunu saymıyor. Bilinçli: ölçüm zaten `onLayout`ile
                     düzeliyor, sapma yalnız ilk karede ve perdede görünmüyor. */}
                 {item.isSuperLike && !!fireLabel && !noteExpanded && (
-                  <FirePill label={fireLabel} accent={modeAccent(mode)} />
+                  <FirePill
+                    label={fireLabel}
+                    accent={modeAccent(mode)}
+                    mode={mode}
+                  />
                 )}
                 <Animated.View
                   style={[

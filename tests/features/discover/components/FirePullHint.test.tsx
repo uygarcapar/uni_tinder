@@ -63,6 +63,15 @@ import {
 import tr from '@/shared/i18n/translations/tr';
 import en from '@/shared/i18n/translations/en';
 
+/**
+ * Metinler artık ürün adını {{fire}} ile alıyor (moda göre fire/spark,
+ * küçük harf — jest fısıltısı kaydı). Varsayılan mod Dating → "fire";
+ * ham sözlük değeri değil, EKRANDA görünen hâli bekleniyor.
+ */
+const withFire = (s: string, fire = 'fire') => s.replace(/\{\{fire\}\}/g, fire);
+const PULL_HINT = withFire(tr.discover.swipe.firePullHint);
+const RELEASE_HINT = withFire(tr.discover.swipe.fireReleaseHint);
+
 /** Ağaçtaki tüm `Animated.View` stillerini düzleştirip döndürür. */
 function layerStyles(tree: ReturnType<typeof render>) {
   return tree.UNSAFE_root
@@ -115,13 +124,27 @@ describe('FirePullHint', () => {
     // söylerdi.
     pull.value = 0.5;
     let tree = render(<FirePullHint />);
-    expect(lineOpacity(tree, tr.discover.swipe.firePullHint)).toBe(1);
-    expect(lineOpacity(tree, tr.discover.swipe.fireReleaseHint)).toBe(0);
+    expect(lineOpacity(tree, PULL_HINT)).toBe(1);
+    expect(lineOpacity(tree, RELEASE_HINT)).toBe(0);
 
     pull.value = 1;
     tree = render(<FirePullHint />);
-    expect(lineOpacity(tree, tr.discover.swipe.firePullHint)).toBe(0);
-    expect(lineOpacity(tree, tr.discover.swipe.fireReleaseHint)).toBe(1);
+    expect(lineOpacity(tree, PULL_HINT)).toBe(0);
+    expect(lineOpacity(tree, RELEASE_HINT)).toBe(1);
+  });
+
+  it('Arkadaş modunda ürün adı "spark" — "fire" hiçbir satırda geçmiyor', () => {
+    // Mod prop'la geliyor (DiscoverScreen > useAppMode); ad hâlâ küçük harf,
+    // jest fısıltısı kaydı korunuyor.
+    pull.value = 0.5;
+    const tree = render(<FirePullHint mode="Friends" />);
+    expect(
+      lineOpacity(tree, withFire(tr.discover.swipe.firePullHint, 'spark')),
+    ).toBe(1);
+    expect(
+      lineOpacity(tree, withFire(tr.discover.swipe.fireReleaseHint, 'spark')),
+    ).toBe(0);
+    expect(tree.queryByText(/fire/i)).toBeNull();
   });
 
   it('devir SADECE eşiğe bağlı — çekişle scrub edilemiyor', () => {
@@ -132,14 +155,14 @@ describe('FirePullHint', () => {
     for (const v of [0.5, 0.8, 0.9, 0.95, 0.999]) {
       pull.value = v;
       const tree = render(<FirePullHint />);
-      expect(lineOpacity(tree, tr.discover.swipe.fireReleaseHint)).toBe(0);
-      expect(lineOpacity(tree, tr.discover.swipe.firePullHint)).toBe(1);
+      expect(lineOpacity(tree, RELEASE_HINT)).toBe(0);
+      expect(lineOpacity(tree, PULL_HINT)).toBe(1);
     }
     // Eşikte TAM devir — ara değer yok.
     pull.value = 1;
     const tree = render(<FirePullHint />);
-    expect(lineOpacity(tree, tr.discover.swipe.fireReleaseHint)).toBe(1);
-    expect(lineOpacity(tree, tr.discover.swipe.firePullHint)).toBe(0);
+    expect(lineOpacity(tree, RELEASE_HINT)).toBe(1);
+    expect(lineOpacity(tree, PULL_HINT)).toBe(0);
   });
 
   it('yazı şeridin boyundan BAĞIMSIZ: güvenli alanın altında kalıyor', () => {
@@ -192,8 +215,8 @@ describe('FirePullHint', () => {
     pull.value = 1;
     const tree = render(<FirePullHint />);
     for (const line of [
-      tr.discover.swipe.firePullHint,
-      tr.discover.swipe.fireReleaseHint,
+      PULL_HINT,
+      RELEASE_HINT,
     ]) {
       expect(StyleSheet.flatten(tree.getByText(line).props.style)?.color).toBe(
         colors.onMedia,
@@ -281,8 +304,8 @@ describe('FirePullHint', () => {
       expect(tr.discover.swipe[key]).not.toBe(en.discover.swipe[key]);
     }
     // İki hâl birbirinden de farklı olmalı — devir görünmezse anlamsız.
-    expect(tr.discover.swipe.firePullHint).not.toBe(
-      tr.discover.swipe.fireReleaseHint,
+    expect(PULL_HINT).not.toBe(
+      RELEASE_HINT,
     );
   });
 

@@ -6,6 +6,7 @@ import {
   toastIconBackground,
   type ToastIconKind,
 } from "./toastIcons";
+import type { AppMode } from "@/features/discover/modeTheme";
 
 export type InfoToastProps = {
   title?: string;
@@ -17,9 +18,21 @@ export type InfoToastProps = {
    * mesajlara (oturum, moderasyon) simge takılmamalı.
    */
   icon?: ToastIconKind;
+  /**
+   * Toast'ın konusu olan ÜRÜNÜN modu — yalnız `icon: 'fire' | 'like'` glifini
+   * seçiyor (Flört alev / Arkadaş yıldız, bkz. FireGlyph). Metin zaten
+   * çağıranda modla kuruluyor (`modeFireNameKey`); bu, şeklin o metinden
+   * ayrışmasını engelliyor. Verilmezse Dating.
+   */
+  mode?: AppMode;
 };
 
-export default function InfoToast({ title, message, icon }: InfoToastProps) {
+export default function InfoToast({
+  title,
+  message,
+  icon,
+  mode,
+}: InfoToastProps) {
   // Simge dairesi dolgulu: cam kartın üstünde soluk bir tint yeterince
   // okunmuyordu. Dolgu açık modda siyah, koyu modda ürünün rengi — mesaj
   // hakkında nötr gri (toastIconBackground); glif her durumda `onMedia` beyaz.
@@ -61,7 +74,12 @@ export default function InfoToast({ title, message, icon }: InfoToastProps) {
               justifyContent: 'center',
             }}
           >
-            <ToastIconGlyph kind={icon} size={20} color={colors.onMedia} />
+            <ToastIconGlyph
+              kind={icon}
+              size={20}
+              color={colors.onMedia}
+              mode={mode}
+            />
           </View>
         ) : null}
         {body}

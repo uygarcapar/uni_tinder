@@ -36,6 +36,7 @@ import { useAppMode } from "@/features/discover/useAppMode";
 import {
   modeAccent,
   modeFireGradient,
+  modeFireNameKey,
   type AppMode,
 } from "@/features/discover/modeTheme";
 import { postNoteTarget } from "@/features/discover/noteTarget";
@@ -53,6 +54,7 @@ import { formatResetTime } from "@/features/discover/quotaFormat";
 import type { NoteTarget } from "@/shared/types";
 import { useFeedFlight } from "../feedCardFlight";
 import {
+  authorAlreadyLiked,
   authorIsMatched,
   authorLikedMe,
   authorLikeVisible,
@@ -126,10 +128,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   FEED_CODES,
+  MODE_CODES,
   feedCodeI18nKey,
   NOTE_SEND_CODES,
   noteSendCodeI18nKey,
 } from "@/shared/constants/responseCodes";
+import { feedListBlock } from "../feedListBlock";
 import { showInfoToast } from "@/shared/services/toaster";
 import { analytics } from "@/shared/services/analytics";
 import { usePremiumTier } from "@/features/profile/premiumTier";
@@ -153,7 +157,7 @@ import {
   useMyFeedPosts,
   useOwnFeedAvatar,
   useTogglePostLike,
-  patchAuthorPostsInCaches,
+  closeAuthorNoteGate,
 } from "../feedQueries";
 import {
   anonymousGate,
@@ -908,6 +912,19 @@ export default function FeedScreen() {
               return;
             }
 
+            // Arkadaş profili açılmamış (UT-2304, akış Arkadaş'a özel) →
+            // sheet kapanır: metni düzelterek çözülecek bir hata değil,
+            // composer'ı kilitli tutmak kullanıcıyı çıkışsız bırakırdı.
+            // Liste de aynı kodu alıp kapı ekranını çiziyor (feedListBlock);
+            // toast yalnız sheet kapanışını açıklıyor.
+            if (code === MODE_CODES.MODE_NOT_OPENED) {
+              setComposerVisible(false);
+              showInfoToast({
+                message: serverMessage ?? t("discover.mode.errors.UT-2304"),
+              });
+              return;
+            }
+
             // Anonim Plus gerektiriyor → sheet kapanır, paywall.
             if (code === FEED_CODES.ANONYMOUS_REQUIRES_PLUS) {
               setComposerVisible(false);
@@ -1062,9 +1079,16 @@ export default function FeedScreen() {
    * Alternatifi bayrak çözülünce butonları elinin altında takla attırmaktı —
    * kart hâlini bir kez, açılışta çözüyor (aşağıdaki deps).
    */
-  const authorHasLikedMe = useMemo(
+  /**
+   * OLGU kolu tek başına da lazım (tier'sız): alev süpürmesinin "eşleşme
+   * gelecek mi" kestirimi (Keşif'teki `willMatchOnLike`in karşılığı) premium'a
+   * BAKMAMALI — free kullanıcı, kendisini beğenmiş birine normal karttan Fire
+   * atabiliyor (görünürlük kapısı kartın HÂLİNİ kısıyor, olguyu değil) ve o
+   * aksiyonun ardından MatchModal perdesi geliyor; süpürme de oynarsa tek
+   * karardan iki alev görünür (flameSweep'teki kural).
+   */
+  const authorLikedMeFact = useMemo(
     () =>
-      authorLikeVisible(authorProfile.data, isPremium) &&
       authorLikedMe(authorProfile.data, (userId) =>
         // Yerel küme SEÇİLİ MODUN likerlarını tutuyor (fetchWhoLikedMe >
         // loadAppMode, bkz. swipeSlice.ts:30-43'teki not). `cardMode`
@@ -1077,7 +1101,11 @@ export default function FeedScreen() {
         // render churn; değer kart açılırken bir kez çözülüyor.)
         cardMode === selectedMode && hasLikedMe(store.getState(), userId),
       ),
-    [authorProfile.data, cardMode, selectedMode, isPremium],
+    [authorProfile.data, cardMode, selectedMode],
+  );
+  const authorHasLikedMe = useMemo(
+    () => authorLikeVisible(authorProfile.data, isPremium) && authorLikedMeFact,
+    [authorProfile.data, isPremium, authorLikedMeFact],
   );
 
   /**
@@ -1093,17 +1121,28 @@ export default function FeedScreen() {
   );
 
   /**
-   * Kartta HANGİ AKSİYONLAR var — moda, "yazar beni beğenmiş mi"ye VE "zaten
-   * eşleştik mi"ye göre (istek). Dört hâl (bkz. feedCardActions'ın kendi doc'u):
+   * Yazarı BEN ZATEN BEĞENDİM mi — kuralları `authorAlreadyLiked`'ın içinde
+   * (bayrak katılığı, mod kapsamı, premium kapısının NEDEN olmadığı).
+   */
+  const authorAlready = useMemo(
+    () => authorAlreadyLiked(authorProfile.data),
+    [authorProfile.data],
+  );
+
+  /**
+   * Kartta HANGİ AKSİYONLAR var — moda, "yazar beni beğenmiş mi"ye, "zaten
+   * eşleştik mi"ye VE "ben onu zaten beğendim mi"ye göre (istek). Beş hâl
+   * (bkz. feedCardActions'ın kendi doc'u):
    *   • NORMAL (henüz beğenilmemiş): yalnız Fire/Spark + not, X ve tik YOK.
    *   • BEĞENİLMİŞ: kabul (tik) + reddet (X), Fire ve not YOK.
    *   • EŞLEŞMİŞ: hiçbiri — zaten açık bir kanal var, yakılacak Fire/not yok.
+   *   • ZATEN BEĞENDİM: hiçbiri — ikinci gönderim ya UT-6404 ya boşa bakiye.
    *   • MOD YOK (`cardMode` null): hiçbiri — kart salt okunur.
    * Karar saf fonksiyonda (bkz. feedCardActions).
    */
   const cardActions = useMemo(
-    () => feedCardActions(cardMode, authorHasLikedMe, authorMatched),
-    [cardMode, authorHasLikedMe, authorMatched],
+    () => feedCardActions(cardMode, authorHasLikedMe, authorMatched, authorAlready),
+    [cardMode, authorHasLikedMe, authorMatched, authorAlready],
   );
 
   // Fire bakiyesi kartta rozet olarak gösteriliyor (keşifteki kartla aynı
@@ -1151,23 +1190,32 @@ export default function FeedScreen() {
     const resetText = statsQuery.data?.isPremium
       ? formatResetTime(statsQuery.data?.superLikeResetInSeconds, t)
       : null;
+    // Ürün adı moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
+    const fire = t(modeFireNameKey(selectedMode));
     showInfoToast(
       resetText
         ? {
-            title: t("discover.swipe.fireCooldownTitle"),
+            title: t("discover.swipe.fireCooldownTitle", { fire }),
             message: t("discover.swipe.fireCooldownMessage", {
               time: resetText,
             }),
             icon: "fire",
+            mode: selectedMode,
           }
         : {
-            title: t("discover.swipe.fireExhaustedTitle"),
-            message: t("discover.swipe.fireExhaustedMessage"),
+            title: t("discover.swipe.fireExhaustedTitle", { fire }),
+            message: t("discover.swipe.fireExhaustedMessage", { fire }),
             icon: "fire",
+            mode: selectedMode,
           },
     );
     setFirePurchaseVisible(true);
-  }, [statsQuery.data?.isPremium, statsQuery.data?.superLikeResetInSeconds, t]);
+  }, [
+    statsQuery.data?.isPremium,
+    statsQuery.data?.superLikeResetInSeconds,
+    selectedMode,
+    t,
+  ]);
 
   /**
    * Kart üzerinden not gönderimi.
@@ -1191,10 +1239,43 @@ export default function FeedScreen() {
      * şey hedefin nereden geldiği ve composer'da hangi önizlemenin çizildiği.
      */
     post?: FeedPostDto | null;
-    /** Gönderi dalında notun gideceği mod — kart açılmadığı için `cardMode` yok. */
+    /**
+     * Notun gideceği mod. Gönderi dalında `postNoteRequest`in kararı; yazar
+     * kartı dalında kartın modu, İSTEK ANINDA dondurulmuş hâliyle.
+     *
+     * ⚠️ YAZAR DALINDA `cardMode` CANLI OKUNAMAZ: composer açılırken kart
+     * kapanıyor (`setPreviewPostId(null)`) → author-profile sorgusu boş
+     * anahtara düşüyor → `cardMode` gönderim anında null. Canlı okuyan eski
+     * hâl notu modsuz yolluyor ve composer'ın butonunu Dating kırmızısına
+     * düşürüyordu.
+     */
     mode?: AppMode | null;
+    /**
+     * İstek anında "yazar beni zaten beğenmiş" OLGUSU (tier'sız) — gönderim
+     * başarılı olunca alev süpürmesinin oynayıp oynamayacağını belirliyor
+     * (eşleşme gelecekse kutlama MatchModal'ın, bkz. flameSweep kuralı).
+     * Bu da gönderim anında hesaplanamaz: kart kapalı, profil verisi yok.
+     */
+    willMatch?: boolean;
   } | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
+
+  /**
+   * Yazar kartından giden Fire/not kutlamasının süpürme aboneliği (Keşif'teki
+   * `noteFlameUnsub`un karşılığı). Katman GLOBAL (`<FireFlame />`
+   * AppNavigator'da, uiBus üzerinden) — buraya yeni alev katmanı KURULMUYOR,
+   * kampüs anlarının tiki de aynı katmanı kullanıyor (bkz. momentSweepUnsub).
+   */
+  const authorFlameUnsub = useRef<(() => void) | null>(null);
+  // Örtme anından önce ekrandan düşersek (sekme değişimi, logout) `onCovered`
+  // sökülmüş bir ağaca yazmasın (runFlameSweep'in dönüş sözleşmesi).
+  useEffect(
+    () => () => {
+      authorFlameUnsub.current?.();
+      authorFlameUnsub.current = null;
+    },
+    [],
+  );
 
   const handleAuthorNote = useCallback(
     (target: NoteTarget) => {
@@ -1218,9 +1299,16 @@ export default function FeedScreen() {
         setNotePurchaseVisible(true);
         return;
       }
-      setNoteRequest({ target, profile });
+      // Mod ve eşleşme kestirimi BURADA donduruluyor — kart az önce kapandı,
+      // gönderim anında ikisi de artık hesaplanamaz (bkz. noteRequest tipi).
+      setNoteRequest({
+        target,
+        profile,
+        mode: cardMode,
+        willMatch: authorLikedMeFact,
+      });
     },
-    [authorProfile.data, notesRemaining],
+    [authorProfile.data, notesRemaining, cardMode, authorLikedMeFact],
   );
 
   const handleSendAuthorNote = useCallback(
@@ -1234,26 +1322,28 @@ export default function FeedScreen() {
           comment,
           target: req.target,
           // Notun modu da taşınıyor: sunucu swipe satırını o modun altına
-          // yazıyor (bkz. useNoteMutation).
-          mode: cardMode ?? undefined,
+          // yazıyor (bkz. useNoteMutation). İstek anında dondurulmuş değer —
+          // `cardMode` burada artık null (kart kapalı, bkz. noteRequest tipi).
+          mode: req.mode ?? undefined,
         });
         analytics.capture("note_sent", {
           targetKind: req.target.kind,
           surface: "feed",
-          mode: cardMode ?? null,
+          mode: req.mode ?? null,
         });
         setNoteRequest(null);
         // ⚠️ KART YOLUNDAN GİDEN NOT DA KİŞİ SEVİYESİNDE SONUÇ DOĞURUYOR:
         // sunucu bundan sonra o yazarın TÜM gönderilerinde `AlreadySwiped`
         // dönecek. Akıştaki satırlar yamalanmazsa kart kapandıktan sonra
         // listede duran not butonları basılabilir kalır ve UT-6404 yer.
-        patchAuthorPostsInCaches(qc, req.profile.userId, (p) => ({
-          ...p,
-          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
-        }));
-        // TEK ONAY BU SATIR: Keşif'te notun ardından alev süpürmesi ve kartın
-        // desteden düşmesi de "gitti" diyordu, akışta öyle bir karşılık YOK —
-        // kart kapanıyor ve kullanıcı aynı listeye dönüyor.
+        closeAuthorNoteGate(qc, req.profile.userId);
+        // Yazar KARTLARININ bayatlaması burada ele alınmıyor: iyimser
+        // `myLikeDate` yaması + root invalidation mutation'ın kendisinde
+        // (swipeQueries > useNoteMutation) — gerekçe handleAuthorSwipe'taki
+        // notta (yarış).
+        // Onay Keşif'tekiyle AYNI ÇİFT (istek): toast + alev süpürmesi. Toast
+        // kime gittiğini söylüyor, alev kutlamayı veriyor (Keşif'te notun
+        // toast'ı bilerek duruyor — yalnız Fire'ınki kaldırılmıştı).
         showInfoToast({
           title: t("note.sentTitle"),
           message: t("note.sentMessage", {
@@ -1261,6 +1351,23 @@ export default function FeedScreen() {
           }),
           icon: "note",
         });
+        // EŞLEŞME GELİYORSA KUTLAMA YOK (flameSweep'teki kural): MatchModal
+        // birazdan aynı ateşin perde hâliyle açılacak, süpürmeyi de oynatmak
+        // tek bir nota iki alev demek. Kestirim istek anında donduruldu
+        // (`willMatch`, bkz. noteRequest tipi).
+        //
+        // `hold` YOK: Keşif'te örtünün altında deste ilerliyor, akışta örtünün
+        // saklayacağı bir değişim yok — composer çoktan kapandı, süpürme saf
+        // kutlama. Renk notun GİTTİĞİ moddan (mutasyona geçen değerin aynısı).
+        if (!req.willMatch) {
+          authorFlameUnsub.current?.();
+          authorFlameUnsub.current = runFlameSweep(
+            () => {
+              authorFlameUnsub.current = null;
+            },
+            { mode: req.mode ?? undefined },
+          );
+        }
       } catch (e: any) {
         const code = e?.response?.data?.code ?? null;
 
@@ -1276,11 +1383,11 @@ export default function FeedScreen() {
 
         // Hedef geçersiz: fotoğraf silinmiş ya da sıra kaymış — kart BAYAT.
         // Metni korumanın anlamı yok, aynı hedefe tekrar gönderilse yine düşer.
+        // Kartın tazelenmesini mutation'ın onSettled'ı yapıyor (eski buradaki
+        // invalidate `previewPostId` null olduğu için boş anahtarı — yani hiç
+        // bir şeyi — invalidate ediyordu).
         if (code === NOTE_SEND_CODES.INVALID_TARGET) {
           setNoteRequest(null);
-          qc.invalidateQueries({
-            queryKey: feedKeys.authorProfile(previewPostId ?? ""),
-          });
           showInfoToast({
             title: t("note.failedTitle"),
             message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
@@ -1298,7 +1405,7 @@ export default function FeedScreen() {
         );
       }
     },
-    [cardMode, noteMutation, noteRequest, previewPostId, qc, t],
+    [noteMutation, noteRequest, qc, t],
   );
 
   /**
@@ -1364,13 +1471,11 @@ export default function FeedScreen() {
         // yamasaydık aynı yazarın bir alttaki gönderisinde buton durur ve
         // basınca sunucudan UT-6404 yerdi.
         //
-        // ⚠️ Değer `AlreadySwiped` — sunucunun bir sonraki çekimde göndereceği
-        // kelimenin AYNISI. (`AlreadySent` sözleşmeden düştü: "bu gönderiye not
-        // attın" hâli kişi-başına-tek kuralı yüzünden hiç oluşmuyor.)
-        patchAuthorPostsInCaches(qc, userId, (p) => ({
-          ...p,
-          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
-        }));
+        // ⚠️ Yazılan değer (`AlreadySwiped`) sunucunun bir sonraki çekimde
+        // göndereceğinin AYNISI ve kuralın tek yeri `closeAuthorNoteGate` —
+        // Keşif'ten verilen kararlar da aynı fonksiyonu çağırıyor
+        // (swipeQueries), elle yazılsaydı ikisi ayrışırdı.
+        closeAuthorNoteGate(qc, userId);
         showInfoToast({
           title: t("note.sentTitle"),
           message: t("note.sentMessage", { name: post.author?.name ?? "" }),
@@ -1397,10 +1502,7 @@ export default function FeedScreen() {
           setNoteRequest(null);
           // Aynı yazarın DİĞER satırları da kapansın: hata zaten "bu kişiye
           // bir daha olmaz" diyor.
-          patchAuthorPostsInCaches(qc, userId, (p) => ({
-            ...p,
-            note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
-          }));
+          closeAuthorNoteGate(qc, userId);
           showInfoToast({
             title: t("note.failedTitle"),
             message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
@@ -1442,9 +1544,36 @@ export default function FeedScreen() {
    */
   const handleAuthorSwipe = useCallback(
     (userId: string, direction: string) => {
-      qc.invalidateQueries({
-        queryKey: feedKeys.authorProfile(previewPostId ?? ""),
-      });
+      // Fire'ın görsel onayı Keşif'tekiyle AYNI: alev süpürmesi (istek). Toast
+      // YOK — Keşif'te de bilerek kaldırılmıştı, alev onayı zaten veriyor
+      // (DiscoverScreen > handleSwipe'taki not). Kabul/reddet bu kutlamayı
+      // ALMAZ: kabulün kutlaması MatchModal'ın perdesi, reddinse kutlaması yok.
+      //
+      // EŞLEŞME GELİYORSA DA YOK (flameSweep kuralı): free kullanıcı kendisini
+      // beğenmiş birine normal karttan Fire atabiliyor (görünürlük kapısı
+      // kartın hâlini kısıyor, olguyu değil) ve ardından MatchModal perdesi
+      // geliyor — süpürme de oynarsa tek karardan iki alev.
+      //
+      // `hold` YOK: örtünün saklayacağı bir değişim yok (kart modalı zaten
+      // kapanıyor), süpürme saf kutlama. Renk Fire'ın GİTTİĞİ moddan
+      // (LikerSwipeModal'a geçen `mode`un aynısı).
+      if (direction === "up" && !authorLikedMeFact) {
+        authorFlameUnsub.current?.();
+        authorFlameUnsub.current = runFlameSweep(
+          () => {
+            authorFlameUnsub.current = null;
+          },
+          { mode: cardMode ?? undefined },
+        );
+      }
+      // ⚠️ BURADA AUTHOR-PROFILE INVALIDATION YOK ve bu KASITLI. Eski hâli tam
+      // burada invalidate ediyordu ve kart o an hâlâ açık olduğu için sorgu
+      // AKTİF yakalanıp POST'la yarışan bir GET atılıyordu: refetch swipe
+      // sunucuya yazılmadan dönüyor, cache "taze ama bayat" damgalanıyor ve
+      // yeniden açılan kart Fire/not'u yeniden çizip ikinci basışta "zaten
+      // attın" yediriyordu. Tazeleme artık mutation'ın KENDİSİNDE
+      // (swipeQueries > useSwipeMutation: onSuccess iyimser `myLikeDate`
+      // yaması + onSettled root invalidation) — yazımdan SONRA, yarışsız.
       if (direction === "block") {
         // Engellenen kişinin gönderileri sunucuda eleniyor — listeyi
         // tazelemek yeterli, elle budamaya gerek yok.
@@ -1463,7 +1592,7 @@ export default function FeedScreen() {
         uiBus.emit("likerHandled", { userId });
       }
     },
-    [dispatch, qc, previewPostId],
+    [dispatch, qc, authorLikedMeFact, cardMode],
   );
 
   const universityGate = universityPickerGate(me);
@@ -1702,20 +1831,25 @@ export default function FeedScreen() {
   }, []);
 
   /**
-   * UT-7301 terminal boş durumu.
-   *
-   * Bayrak kapalıyken her uç 403 dönüyor. Bu durumda "İlk gönderiyi sen at"
-   * göstermek kullanıcıya yapamayacağı bir şey teklif etmek olurdu; üstelik
-   * retry gürültüsü de anlamsız (sunucu fikrini saniyeler içinde değiştirmez).
-   * Normalde sekme zaten çizilmiyor — bu ekran yalnız bayrak OTURUM ORTASINDA
-   * kapandığında ya da dev kancasıyla görünür.
+   * TERMİNAL boş durumlar — karar saf fonksiyonda (feedListBlock):
+   *   • "disabled" (UT-7301) — özellik kapalı, CTA yok.
+   *   • "modeNotOpened" (UT-2304) — Arkadaş profili açılmamış (akış Arkadaş'a
+   *     özel, BE 2026-11-06'dan beri liste ucu da 403 dönüyor). CTA VAR.
+   * İkisinde de "İlk gönderiyi sen at" göstermek kullanıcıya yapamayacağı bir
+   * şey teklif etmek olurdu; retry gürültüsü de anlamsız. Normalde sekme zaten
+   * çizilmiyor — bu ekranlar yalnız durum OTURUM ORTASINDA ayrıştığında
+   * (bayrak kapandı / profil başka cihazdan değişti) ya da dev kancasıyla
+   * görünür.
    */
-  const disabledError = useMemo(() => {
-    const codes = [postsQuery.error, minePostsQuery.error, meQuery.error].map(
-      feedErrorCode,
-    );
-    return codes.includes(FEED_CODES.DISABLED);
-  }, [postsQuery.error, minePostsQuery.error, meQuery.error]);
+  const listBlock = useMemo(
+    () =>
+      feedListBlock(
+        [postsQuery.error, minePostsQuery.error, meQuery.error].map(
+          feedErrorCode,
+        ),
+      ),
+    [postsQuery.error, minePostsQuery.error, meQuery.error],
+  );
 
   const disabledEmpty = (
     <FeedEmptyWrap>
@@ -1727,6 +1861,30 @@ export default function FeedScreen() {
         // Sarmalayıcı dikeyde ortalıyor; EmptyState'in varsayılan 24'lük
         // üst payı bloğu aşağı kaydırıyordu. Mesajlar da 0 geçiyor.
         topOffset={0}
+      />
+    </FeedEmptyWrap>
+  );
+
+  /**
+   * UT-2304 kapısı — "kapalı"dan AYRI ekran: kullanıcının yapabileceği bir
+   * şey var (MODE_CODES'taki 2302/2304 ayrımı). CTA kurulumun sahibi olan
+   * Keşif'e götürüyor: ModeSetupSheet + submit akışı orada yaşıyor ve kapalı
+   * profilli Arkadaş destesi aynı "Profili aç" CTA'sını zaten çiziyor
+   * (emptyDeckCopy > MODE_NOT_OPENED) — akışa ikinci bir kurulum akışı
+   * kablolamak aynı sheet'in kopyasını doğururdu.
+   */
+  const modeGateEmpty = (
+    <FeedEmptyWrap>
+      <EmptyState
+        Icon={LayoutList}
+        iconStrokeWidth={1}
+        text={t("discover.mode.lockedTitle.Friends")}
+        subtitle={t("feed.modeGate.body")}
+        topOffset={0}
+        buttonLabel={t("discover.mode.openCta")}
+        onButtonPress={() => navigation.navigate("Discover")}
+        buttonLabelColor={colors.onMediaInverse}
+        buttonColor={accent}
       />
     </FeedEmptyWrap>
   );
@@ -2630,8 +2788,10 @@ export default function FeedScreen() {
          * notu tam olarak oranın duvarı.
          */
         empty={
-          disabledError ? (
+          listBlock === "disabled" ? (
             disabledEmpty
+          ) : listBlock === "modeNotOpened" ? (
+            modeGateEmpty
           ) : (
             // Boş durum İKİ sayfada da çıplak — akıştaki panel 2026-11-04'te
             // kaldırıldı (bkz. FeedEmptyWrap'ın notu).
@@ -2712,13 +2872,18 @@ export default function FeedScreen() {
           testID: "feed-btn-campus",
         }
       : null
-    : {
-        systemName: "square.and.pencil" as const,
-        fallback: Pencil,
-        onPress: openComposer,
-        label: t("feed.empty.cta"),
-        testID: "feed-btn-compose",
-      };
+    : // Liste BLOKE'yken (özellik kapalı / Arkadaş profili yok) paylaş butonu
+      // çizilmiyor: boş durum zaten tek doğru aksiyonu gösteriyor, buradaki
+      // buton basılınca sunucudan reddedilecek bir composer açardı.
+      listBlock !== null
+      ? null
+      : {
+          systemName: "square.and.pencil" as const,
+          fallback: Pencil,
+          onPress: openComposer,
+          label: t("feed.empty.cta"),
+          testID: "feed-btn-compose",
+        };
 
   return (
     <View testID="feed-screen" style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -3359,8 +3524,8 @@ export default function FeedScreen() {
       />
 
       {/* ── YAZAR KARTI ────────────────────────────────────────────────────
-          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. DÖRT
-          AYRI HÂL var, üçü aynı modalda (bkz. feedCardActions):
+          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. BEŞ
+          AYRI HÂL var, dördü aynı modalda (bkz. feedCardActions):
 
           (a) NORMAL (`cardMode` dolu, yazar beni beğenmemiş) →
               `LikerSwipeModal`, Fire/Spark + not açık, tik ve X yok. Akışta
@@ -3377,6 +3542,10 @@ export default function FeedScreen() {
               aksiyon yok (istek): eşleştiğin kişiyle kanal zaten açık, Fire ve
               not oraya bir şey eklemeden bakiyeden düşerdi; kabul/reddet de
               anlamsız, bekleyen bir karar yok.
+
+          (c2) ZATEN BEĞENDİM (`myLikeDate` dolu) → yine aksiyonsuz (istek):
+              beğenim sunucuda duruyor, ikinci Fire/not ya UT-6404 yiyor ya
+              bakiyeyi boşa yakıyor; bekleyen karar karşı tarafta.
 
           (d) MOD YOK (`cardMode` null: sunucu hiçbir modu uygun görmedi ya da
               alanı hiç göndermedi) → `PreviewModal`, salt okunur. Olmayan bir
@@ -3467,11 +3636,13 @@ export default function FeedScreen() {
         maxLength={statsQuery.data?.noteMaxLength ?? null}
         sending={noteMutation.isPending}
         errorText={noteError}
-        // Kartın modu — seçili mod DEĞİL. Not hangi modda GİDİYORSA buton o
-        // rengi alır; mutasyona geçen değerin aynısı (bkz. handleSendAuthorNote
-        // > `mode: cardMode ?? undefined`), böylece renk ile gönderilen mod tek
-        // kaynaktan geliyor. `null` → prop varsayılanı (Dating).
-        mode={(noteRequest?.post ? noteRequest.mode : cardMode) ?? undefined}
+        // Not hangi modda GİDİYORSA buton o rengi alır; mutasyona geçen
+        // değerin aynısı (bkz. handleSendAuthorNote > `mode: req.mode`),
+        // böylece renk ile gönderilen mod tek kaynaktan geliyor. İki dal da
+        // modu `noteRequest`e İSTEK ANINDA donduruyor — yazar dalında `cardMode`
+        // burada CANLI OKUNAMAZ: kart kapandı, değer çoktan null (composer
+        // Dating kırmızısına düşüyordu). `null` → prop varsayılanı (Dating).
+        mode={noteRequest?.mode ?? undefined}
       />
 
       {/* ── CONSUMABLE PAKETLERİ ────────────────────────────────────────────

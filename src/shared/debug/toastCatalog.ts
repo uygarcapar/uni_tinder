@@ -32,6 +32,11 @@ import type { ToastIconKind } from '@/shared/components/toaster/toastIcons';
 
 const t = (key: string, params?: Record<string, unknown>) => i18n.t(key, params) as string;
 
+// Fire metinleri artık ürün adını {{fire}} ile alıyor (moda göre Fire/Spark).
+// Katalog DEV yüzeyi ve moda bağlanmıyor — Dating adıyla çözüyoruz.
+const FIRE_NAME_KEY = 'discover.mode.fireName.Dating';
+const fireName = () => t(FIRE_NAME_KEY);
+
 /**
  * Avatarlı varyantların fotoğrafı — UZAK URL DEĞİL, paketin içindeki görsel.
  * Simülatör ağsızken uzak avatar hiç yüklenmez ve "fotoğraflı" varyant sessizce
@@ -388,7 +393,7 @@ export const TOAST_CATALOG: ToastGroup[] = [
         from: 'DiscoverScreen',
         run: () =>
           showInfoToast({
-            title: t('discover.swipe.fireCooldownTitle'),
+            title: t('discover.swipe.fireCooldownTitle', { fire: fireName() }),
             message: t('discover.swipe.fireCooldownMessage', { time: '3 gün sonra yenilenir' }),
             icon: 'fire',
           }),
@@ -399,8 +404,8 @@ export const TOAST_CATALOG: ToastGroup[] = [
         from: 'DiscoverScreen',
         run: () =>
           showInfoToast({
-            title: t('discover.swipe.fireExhaustedTitle'),
-            message: t('discover.swipe.fireExhaustedMessage'),
+            title: t('discover.swipe.fireExhaustedTitle', { fire: fireName() }),
+            message: t('discover.swipe.fireExhaustedMessage', { fire: fireName() }),
             icon: 'fire',
           }),
       },
@@ -412,8 +417,8 @@ export const TOAST_CATALOG: ToastGroup[] = [
         from: 'ConsumablePurchaseSheet · firePurchase',
         run: () =>
           showInfoToast({
-            title: t('firePurchase.successTitle'),
-            message: t('firePurchase.successMessage', { count: 5 }),
+            title: t('firePurchase.successTitle', { fire: fireName() }),
+            message: t('firePurchase.successMessage', { count: 5, fire: fireName() }),
             icon: 'fire',
           }),
       },
@@ -424,7 +429,7 @@ export const TOAST_CATALOG: ToastGroup[] = [
         run: () =>
           showInfoToast({
             title: t('firePurchase.pendingTitle'),
-            message: t('firePurchase.pendingMessage'),
+            message: t('firePurchase.pendingMessage', { fire: fireName() }),
             icon: 'fire',
           }),
       },

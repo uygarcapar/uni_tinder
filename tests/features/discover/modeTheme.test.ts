@@ -18,6 +18,7 @@ import {
   FLAME_OUTLINE_FRIENDS,
   isAppMode,
   modeAccent,
+  modeFireGlyph,
   modeFireGradient,
   modeFireNameKey,
   modeFireTint,
@@ -27,6 +28,14 @@ import {
   type AppMode,
 } from "@/features/discover/modeTheme";
 import { loadAppMode, saveAppMode } from "@/features/discover/modePrefs";
+import {
+  FLAME_PATH,
+  FLAME_VIEWBOX,
+} from "@/shared/components/icons/FlameGlyph";
+import {
+  SPARKLE_PATH,
+  SPARKLE_VIEWBOX,
+} from "@/shared/components/icons/SparkleGlyph";
 
 const USER = "user-1";
 
@@ -71,6 +80,37 @@ describe("modeTheme — mod farkındalı getter'lar", () => {
   it("i18n anahtarları enum değerine göre kuruluyor", () => {
     expect(modeFireNameKey("Friends")).toBe("discover.mode.fireName.Friends");
     expect(modeTitleKey("Dating")).toBe("discover.mode.title.Dating");
+  });
+
+  /**
+   * Ürünün ADI modla dönüyorsa ŞEKLİ de dönmeli: "Spark" yazan bir satırın
+   * yanında alev çizmek adı yalanlıyordu (bkz. FireGlyph).
+   *
+   * ⚠️ ANİMASYON BU TESTİN DIŞINDA: alev dalgası ve kartta yanma
+   * FLAME_SWEEP_PATH üstünde ve her iki modda ALEV — burada ölçülen yalnız
+   * DURAN ikon.
+   */
+  it("glif modla dönüyor: Flört alev, Arkadaş yıldız", () => {
+    expect(modeFireGlyph("Dating")).toEqual({
+      path: FLAME_PATH,
+      viewBox: FLAME_VIEWBOX,
+    });
+    expect(modeFireGlyph("Friends")).toEqual({
+      path: SPARKLE_PATH,
+      viewBox: SPARKLE_VIEWBOX,
+    });
+  });
+
+  /**
+   * İki glif de 24'lük grid'de ve UZUN KENARI 20 olacak şekilde bakelendi
+   * (bkz. scripts/bake-glyph.js). Aynı viewBox olmazsa aynı `size`ta farklı
+   * optik ağırlıkta çizilirlerdi ve çağıranların hepsi tek `size` geçiyor.
+   */
+  it("iki glif de aynı 24'lük grid'de", () => {
+    expect(modeFireGlyph("Dating").viewBox).toBe(
+      modeFireGlyph("Friends").viewBox,
+    );
+    expect(modeFireGlyph("Friends").viewBox).toBe("0 0 24 24");
   });
 
   /**

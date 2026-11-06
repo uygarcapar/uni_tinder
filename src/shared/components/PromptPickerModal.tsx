@@ -35,6 +35,8 @@ type Props = {
    */
   mode?: string | null;
   onSelect: (enumName: string) => void;
+  /** Seçici tamamen kapandığında (bkz. AppModal `onDismissed`). */
+  onDismissed?: () => void;
 };
 
 /** Seçenek satırının sağındaki kutu — akış kampüs/filtre sheet'i ile aynı ölçü. */
@@ -55,6 +57,7 @@ export default function PromptPickerModal({
   selectedKey,
   mode,
   onSelect,
+  onDismissed,
 }: Props) {
   const { t, i18n } = useTranslation();
   const [search, setSearch] = useState("");
@@ -91,6 +94,7 @@ export default function PromptPickerModal({
     <AppModal
       visible={visible}
       onClose={onClose}
+      onDismissed={onDismissed}
       title={t('profile.prompts.pickerTitle')}
       // Detentler ortak sabitten: en üst durak, seçiciyi açan profil düzenleme
       // sheet'iyle aynı tepe (bkz. SHEET_PICKER_SNAP_POINTS).

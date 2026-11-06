@@ -85,6 +85,7 @@ import {
 import DeleteAccountModal from "@/features/profile/components/DeleteAccountModal";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
 import { feedEnabledForSession } from '@/features/feed/feedFlag';
+import { feedAllowedForSession } from '@/features/feed/feedMode';
 // Yalnız kampüs simülasyonu için: kullanıcının KENDİ domain'i feed/me'de
 // duruyor ve bu ekranda başka hiçbir kaynaktan bilinmiyor (authUser'da ad var,
 // domain yok). feedKeys saf bir anahtar modülü — feedQueries'in hook/mutation
@@ -1155,13 +1156,14 @@ export default function SettingsScreen() {
         onToggle={() => togglePref('photoModerationAlerts')}
       />
 
-      {/* Lit Akışı bildirimleri. Akış bayrağı kapalıyken satır HİÇ çizilmiyor:
-          olmayan bir sekmenin bildirim ayarını göstermek anlamsız.
+      {/* Lit Akışı bildirimleri. Akış bayrağı kapalıyken — ya da Flört modunda,
+          akış ARKADAŞ'a özel (bkz. feedMode) — satır HİÇ çizilmiyor: olmayan bir
+          sekmenin bildirim ayarını göstermek anlamsız.
           ⚠️ MODERASYON ve KISIT bildirimleri bu anahtardan MUAF — onlar "sistem
           bildirimleri"ne bağlı (kullanıcı akış bildirimlerini kapatsa da bir
           kaldırma kararını duymalı). Metin bunu söylüyor ki kapatınca yanlış
           beklentiye girmesin — photoModerationAlerts'taki aynı özen. */}
-      {feedEnabledForSession() ? (
+      {feedEnabledForSession() && feedAllowedForSession() ? (
         <SettingsToggleRow
           icon={<SFIcon name="list.bullet" fallback={LayoutList} size={18} color={colors.text} strokeWidth={1.5} />}
           title={t('settings.feedAlerts.title')}
@@ -1176,7 +1178,7 @@ export default function SettingsScreen() {
           SystemAlerts'ten okunuyor): kullanıcı kampüs bildirimlerini kapatsa
           da fotosunun düştüğünü duymak zorunda — `photoModerationAlerts` ve
           `feedAlerts`taki aynı özen. */}
-      {feedEnabledForSession() ? (
+      {feedEnabledForSession() && feedAllowedForSession() ? (
         <SettingsToggleRow
           icon={<SFIcon name="mappin.and.ellipse" fallback={MapPin} size={18} color={colors.text} strokeWidth={1.5} />}
           title={t('settings.campusAlerts.title')}

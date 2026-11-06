@@ -97,10 +97,7 @@ import ProfileVisibilityBanner from "@/features/profile/components/ProfileVisibi
 import ProfilePhotoGrid from "@/features/profile/components/ProfilePhotoGrid";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
-import {
-  modeAccent,
-  type AppMode,
-} from "@/features/discover/modeTheme";
+import { type AppMode } from "@/features/discover/modeTheme";
 // Ekranlarla aynı tek kaynak (ProfileScreen da böyle okuyor) — editör kendi
 // mod kopyasını tutmuyor, segment de yok (bkz. resolveEditMode).
 import { useAppMode } from "@/features/discover/useAppMode";
@@ -1823,44 +1820,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           <EditProfileFormSkeleton />
         </View>
       )}
-
-      {/* ── MOD ROZETİ ─────────────────────────────────────────────────────
-          Segment'in yerinde SALT-OKUNUR bir rozet: form aktif modun profilini
-          düzenliyor ve kullanıcı moddan habersiz editöre girmiş olabilir —
-          hangi profilin düzenlendiği yazıyla söylenmeli (eski segment'in tek
-          kalan görevi). Mod RENGİ bilerek kullanılıyor: ModeSwitch'in "durum
-          rozeti gibi okunur" itirazı bir SEÇİM kontrolü içindi; bu zaten bir
-          durum rozeti.
-
-          `stage` kapısı YOK: kademeli mount'un en başında görünmeli —
-          kullanıcı hangi profili düzenlediğini bilmeden ada/fotoğrafa
-          bakmaya başlamamalı. */}
-      <View
-        style={{
-          alignSelf: "flex-start",
-          marginTop: 8,
-          marginBottom: 4,
-          paddingHorizontal: 12,
-          paddingVertical: 5,
-          borderRadius: 999,
-          borderCurve: "continuous",
-          borderWidth: 0.5,
-          borderColor: withAlpha(modeAccent(editMode), 0.45),
-          backgroundColor: withAlpha(modeAccent(editMode), 0.12),
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: "600",
-            color: modeAccent(editMode),
-          }}
-        >
-          {t("profile.edit.editingMode", {
-            mode: t(`discover.mode.title.${editMode}`),
-          })}
-        </Text>
-      </View>
 
       {/* ⚠️ "İnsanlar beni nasıl görüyor?" BUTONU KALDIRILDI (ürün kararı).
           Mod anahtarının hemen altında, formun ilk alanından önce duruyordu.

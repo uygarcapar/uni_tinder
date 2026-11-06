@@ -11,6 +11,7 @@ import {
   feedEnabledForSession,
   subscribeFeedFlag,
 } from "@/features/feed/feedFlag";
+import { feedAllowedInMode } from "@/features/feed/feedMode";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { selectUnreadForMode } from "@/features/chat/chatSlice";
 import { useAppMode } from "@/features/discover/useAppMode";
@@ -244,7 +245,14 @@ export default function TabNavigator() {
           tabBarBadge: likesBadge,
         }}
       />
-      {/* Lit Akışı. Bayrak kapalıyken sekme HİÇ render edilmiyor — çizilip her
+      {/* Lit Akışı — İKİ KAPI: backend bayrağı VE mod. Akış ARKADAŞ'ın yüzeyi,
+          Flört'te sekme hiç yok (2026-11-05). Ayrımın gerekçesi feedMode'da:
+          mod seçimi latch'in disk değerine YAZILMAMALI, yoksa Flört'te geçen
+          bir oturum özelliği kalıcı kapatırdı. Mod kapısı canlı iki yönde de
+          çalışıyor; kaldırma güvenli çünkü mod anahtarı Keşif başlığında ve
+          Profil avatarında — kullanıcı modu değiştirirken Akış'ta durmuyor,
+          yani kaldırılan route odakta değil.
+          Bayrak kapalıyken sekme HİÇ render edilmiyor — çizilip her
           uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. ORTADA
           durması canlı eklemeye ENGEL DEĞİL: TabRouter route listesi değişince
           odaklı sekmeyi İSMİYLE yeniden çözüyor (getStateForRouteNamesChange)
@@ -253,7 +261,7 @@ export default function TabNavigator() {
           kullanıcının seçili sekmesini oynatamaz. Rozet YOK: bekleyen yanıtlar
           Beğeniler rozetinde sayılıyor (sözleşme §10.1), aynı kümeyi iki
           sekmede göstermek sayıyı iki kez okuturdu. */}
-      {feedEnabled ? (
+      {feedEnabled && feedAllowedInMode(selectedMode) ? (
         <Tab.Screen
           name="Feed"
           component={FeedScreen}

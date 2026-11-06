@@ -11,7 +11,19 @@ import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import { swipeKeys } from "@/features/discover/swipeKeys";
 import { loadAppMode } from "@/features/discover/modePrefs";
+import { DEFAULT_APP_MODE } from "@/features/discover/modeTheme";
 import { noteTargetPayload } from "@/features/discover/noteTarget";
+// Akış yazar kartının cache'i — swipe/not KİŞİYE gidiyor ve o kişinin akış
+// kartlarını bayatlatıyor. İKİ MODÜL DE HAFİF ve bu şart: feedQueries'in
+// import ağacı toaster → react-native-notifier → gesture-handler çekiyor ve o
+// zincir discover test ortamını çökertmişti (feedAuthorCache'in doc'u).
+import { feedKeys } from "@/features/feed/feedKeys";
+import {
+  closeAuthorNoteGate,
+  patchAuthorProfilesInCaches,
+} from "@/features/feed/feedAuthorCache";
+// Akışın yaşadığı mod — beğeni yaması yalnız O kapsamda geçerli (bkz. onSuccess).
+import { FEED_MODE } from "@/features/feed/feedMode";
 import uiBus from "@/shared/services/uiBus";
 import type { NoteTarget, SwipeStats } from "@/shared/types";
 import {
@@ -70,7 +82,11 @@ export function usePotentialMatches(
     // cache'ine yazılır, mod değişiminde bir kare yabancı kart görünürdü.
     // Mod anahtarın parçası olduğu için elle reset de gerekmiyor: geçiş
     // yepyeni bir infinite query doğuruyor.
-    queryKey: mode ? swipeKeys.deck(mode) : swipeKeys.matches,
+    // Mod gelmezse DEFAULT_APP_MODE: anahtar KOŞULSUZ `deckRoot`un altında
+    // kalsın. Eskiden fallback ayrı bir köke (`["swipe","matches"]`) düşüyordu
+    // ve oraya yazılan desteyi hiçbir invalidate bulamıyordu. Sunucu da
+    // "mode yok = Dating" sayıyor, yani ad uydurma değil (bkz. loadAppMode).
+    queryKey: swipeKeys.deck(mode ?? DEFAULT_APP_MODE),
     queryFn: async ({ pageParam = 1 }: { pageParam: number }) => {
       const result = await swipeService.getPotentialMatches(null, pageParam, size, mode);
       return result;
@@ -131,7 +147,11 @@ export function useSetIgnoreDistanceFilter() {
       qc.setQueryData(swipeKeys.filters, (prev: any) =>
         prev ? { ...prev, ...result } : result,
       );
-      qc.invalidateQueries({ queryKey: swipeKeys.matches });
+      // `deckRoot` — TÜM modlar. Filtre ucu mod TAŞIMIYOR (PUT /swipe/Filters
+      // hesap geneli), yani yazılan tercih iki destenin de havuzunu değiştiriyor.
+      // Yalnız aktif modu tazelemek, kullanıcı diğerine geçtiğinde ona eski
+      // havuzu gösterirdi.
+      qc.invalidateQueries({ queryKey: swipeKeys.deckRoot });
     },
   });
 }
@@ -405,6 +425,49 @@ export function useSwipeMutation() {
         return;
       }
 
+      // Akış yazar kartlarının İYİMSER yaması: beğenim artık sunucuda, aynı
+      // kişinin kartı bir sonraki açılışta AKSİYONSUZ doğmalı (feedCardActions
+      // > ZATEN BEĞENDİM). Server-truth'u aşağıdaki onSettled invalidation'ı
+      // getiriyor; bu satır yalnız refetch dönene kadarki pencereyi kapatıyor.
+      // Pass ("left") HARİÇ: geçmek `myLikeDate` doldurmuyor.
+      // Reddedilen swipe BURAYA DÜŞMÜYOR (yukarıdaki return) — reddedilen
+      // karar kartı kilitlememeli.
+      if (variables?.direction !== "left" && variables?.userId) {
+        patchAuthorProfilesInCaches(qc, variables.userId, (p: any) => ({
+          ...p,
+          myLikeDate: new Date().toISOString(),
+        }));
+        // ⚠️ AKIŞ SATIRLARI AYRI BİR KAPI, yukarıdaki kart yaması onları
+        // KURTARMIYOR: satırdaki not butonu `myLikeDate`i değil gönderinin
+        // kendi `note.state`ini okuyor (feedPostNote > postNoteButtonVisible)
+        // ve o değer sayfa çekildiğinde donmuş bir anlık görüntü. Liste
+        // kendiliğinden de tazelenmiyor (`refetchOnMount: false`, odakta
+        // refetch yok), yani yamasak listeyi elle çekene kadar Keşif'ten
+        // beğendiğim kişinin gönderisinde buton durur ve basan UT-6404 yerdi.
+        //
+        // ⚠️ YALNIZ AKIŞIN MODUNDA. Sunucunun kapısı MOD KAPSAMLI: beğeni
+        // `SwipeAction` satırını kendi modunun altına yazıyor ve `note.state`
+        // o kapsamda hesaplanıyor (backend teyidi 2026-11-05:
+        // `GetStillHiddenTargetsAsync(..., mode)`). Yani Flört'te verilen bir
+        // beğeni Arkadaş'taki satırı KAPATMIYOR — sunucu orada `Ok` dönüyor ve
+        // not gönderimi de geçiyor (NoteHandler'ın dup kapısı da aynı mod
+        // kapsamlı çağrıyı kullanıyor). Koşulsuz yamasaydık gönderilebilir bir
+        // notun butonunu gizlerdik: ölü buton değil ama SESSİZ KAYIP.
+        //
+        // Akış ARKADAŞ'a özel (bkz. feedMode), o yüzden kapanması gereken tek
+        // kapsam Friends. Mod `variables`ta yoksa mutationFn'in gönderdiği
+        // değerin AYNISINA düşüyoruz — iki yerin ayrışması yanlış kapsamı
+        // yamalardı.
+        //
+        // Listeyi INVALIDATE ETMİYORUZ: her karar bütün akışı yeniden çekerdi
+        // (kullanıcı kaydırırken satırlar altından değişir). İyimser yama +
+        // sunucunun bir sonraki doğal çekimi yeterli.
+        const sentMode = variables.mode ?? loadAppMode(meId);
+        if (sentMode === FEED_MODE) {
+          closeAuthorNoteGate(qc, variables.userId);
+        }
+      }
+
       // Fire yanıtı bakiyenin server-truth'unu taşıyor: `remainingSuperLikes`
       // toplam (kota + kredi), `remainingPurchasedSuperLikes` kredinin kalanı.
       // onMutate'teki optimistic decrement yalnızca toplamı düşürüyor; kota mı
@@ -438,6 +501,18 @@ export function useSwipeMutation() {
         });
       }
     },
+    // Akış yazar kartlarının SERVER-TRUTH tazelemesi — onSettled, çünkü
+    // invalidation POST sunucuya YAZILDIKTAN sonra olmak zorunda. Karar anında
+    // (FeedScreen > handleAuthorSwipe'ta) yapılan invalidate, kart o an hâlâ
+    // açık olduğu için sorguyu AKTİF yakalıyor ve POST'la yarışan bir GET
+    // atıyordu: refetch swipe'tan ÖNCE dönüyor, cache "taze ama bayat"
+    // damgalanıyor ve 5 dk'lık staleTime penceresinde yeniden açılan kart
+    // Fire/not'u yeniden çiziyordu — ikinci basış sunucudan "zaten attın" yer.
+    // Hata dalında da tazelemek DOĞRU: başarısız swipe'ta iyimser yama yok,
+    // refetch yalnız gerçeği teyit eder.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
+    },
   });
 }
 
@@ -469,8 +544,35 @@ export function useNoteMutation() {
       /** Notun hangi modda gönderildiği — bkz. useSwipeMutation'daki not. */
       mode?: string | null;
     }) => swipeService.sendNote(userId, comment, noteTargetPayload(target), mode),
-    onSuccess: (response: any) => {
+    // ⚠️ `variables` ANOTE EDİLMİYOR: tip `mutationFn`in parametresinden
+    // çıkarsanıyor. Dar bir el yazımı ({ userId }) TVariables'ı daraltıp
+    // çağıranların `comment/target/mode` alanlarını tip hatasına düşürdü.
+    onSuccess: (response: any, variables) => {
       const result = response?.result;
+
+      // Not da bir beğeni: akış yazar kartları `myLikeDate`i dolu görmeli ki
+      // bir sonraki açılış AKSİYONSUZ doğsun — kalıbın tamamı useSwipeMutation
+      // onSuccess'teki aynı yamanın yanında. Buraya yalnız BAŞARI düşüyor
+      // (402/UT-6401 vb. mutation'ı reject ediyor), reddedilen not kartı
+      // kilitlemiyor.
+      if (variables?.userId) {
+        patchAuthorProfilesInCaches(qc, variables.userId, (p: any) => ({
+          ...p,
+          myLikeDate: new Date().toISOString(),
+        }));
+        // Akış satırları — gerekçe useSwipeMutation'daki aynı yamanın yanında.
+        // Not akışın KENDİ satırından gönderildiğinde FeedScreen de çağırıyor
+        // (orada hata dalı için de gerekiyor); iki çağrı da aynı fonksiyona
+        // gittiği için tekrarı zararsız, ayrışması imkânsız.
+        //
+        // ⚠️ BEĞENİDEN FARKLI OLARAK MOD KOŞULU YOK ve bu kasıtlı: NOT modsuz.
+        // `Notes` tablosunda modsuz `UNIQUE(ActorId, TargetId)` var, sunucu da
+        // satırın kapısını modsuz okuyor (`NoteAlreadySent`) — yani Flört'te
+        // gönderilen bir not Arkadaş'taki satırı da kapatıyor. Gönderim tarafı
+        // bununla tutarlı: ikinci not unique ihlaline düşüp UT-6404 dönüyor ve
+        // kredi iade ediliyor. (Backend teyidi 2026-11-05.)
+        closeAuthorNoteGate(qc, variables.userId);
+      }
 
       // Bakiyenin server-truth'u: `remainingNotes` toplam (kota + kredi),
       // `remainingPurchasedNotes` kredinin kalanı. Kota mı kredi mi harcandığını
@@ -503,6 +605,11 @@ export function useNoteMutation() {
           message: result.paywallMessage || result.message,
         });
       }
+    },
+    // Server-truth tazelemesi — gerekçe useSwipeMutation'daki onSettled'ın
+    // aynısı: invalidation yazımdan SONRA, iyimser yamanın düzelticisi.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
     },
   });
 }
@@ -671,7 +778,11 @@ export function useSaveFilters() {
       qc.setQueryData(swipeKeys.filters, (prev: any) =>
         prev ? { ...prev, ...result } : result,
       );
-      qc.invalidateQueries({ queryKey: swipeKeys.matches });
+      // `deckRoot` — TÜM modlar. Filtre ucu mod TAŞIMIYOR (PUT /swipe/Filters
+      // hesap geneli), yani yazılan tercih iki destenin de havuzunu değiştiriyor.
+      // Yalnız aktif modu tazelemek, kullanıcı diğerine geçtiğinde ona eski
+      // havuzu gösterirdi.
+      qc.invalidateQueries({ queryKey: swipeKeys.deckRoot });
     },
   });
 }

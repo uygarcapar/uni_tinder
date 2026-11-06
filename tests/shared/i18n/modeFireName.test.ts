@@ -31,6 +31,26 @@ const INTERPOLATED = [
   // Canlı beğeni toast'ı — adı OLAYIN modundan alıyor (IncomingLike.mode).
   'likeToast.fire',
   'likeToast.fireNoName',
+  // Kota toast'ları + çekme ipuçları (Discover/Feed, FirePullHint).
+  'discover.swipe.fireCooldownTitle',
+  'discover.swipe.firePullHint',
+  'discover.swipe.fireReleaseHint',
+  'discover.swipe.fireExhaustedTitle',
+  'discover.swipe.fireExhaustedMessage',
+  // Paywall karşılaştırma tablosu + info sheet'i.
+  'discover.premium.benefits.fire',
+  'discover.premium.benefitDetails.fire',
+  // Davet ödülü ve profil mağaza kartı.
+  'referral.reward.fire',
+  'profile.fireCard.title',
+  // Paket sheet'inin metinleri (FirePurchaseModal i18nParams ile geçiriyor).
+  'firePurchase.title',
+  'firePurchase.description',
+  'firePurchase.packLabel',
+  'firePurchase.successTitle',
+  'firePurchase.successMessage',
+  'firePurchase.pendingMessage',
+  'firePurchase.disclaimer',
 ];
 
 describe('mod-farkındalı ürün adı', () => {
@@ -59,11 +79,12 @@ describe('mod-farkındalı ürün adı', () => {
     expect(at(en, 'likes.tabFire')).toBe('{{fire}}s');
   });
 
-  it('satın alma metinleri BİLEREK dating-markalı kalıyor', () => {
-    // Plan kararı: paketler global, modal dating-markalı. Buraya {{fire}}
-    // eklenirse "Spark Satın Al" gibi sunucuda karşılığı olmayan bir ürün adı
-    // çıkar (wire adı superlike).
-    expect(at(tr, 'firePurchase.title')).not.toContain('{{fire}}');
-    expect(at(en, 'firePurchase.title')).not.toContain('{{fire}}');
+  it('satın alma metinleri de moda göre ad alıyor (2026-11-04 kararı)', () => {
+    // ESKİ karar tersine döndü: modal artık MOD-MARKALI — Arkadaş modunda
+    // "Spark Satın Al". Consumable wire'da hâlâ TEK (superlike); moda dönen
+    // yalnız GÖRÜNEN ad (FirePurchaseModal i18nParams ile geçiriyor).
+    expect(at(tr, 'firePurchase.title')).toContain('{{fire}}');
+    expect(at(en, 'firePurchase.title')).toContain('{{fire}}');
   });
+
 });

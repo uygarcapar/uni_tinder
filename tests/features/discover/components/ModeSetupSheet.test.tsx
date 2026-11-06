@@ -65,8 +65,8 @@ jest.mock('@/shared/hooks/useKeyboardAwareField', () => ({
 // payload. Stub, `onChange`i dışarıdan sürülebilir butonlara bağlıyor.
 const NEW_PHOTO = (i: number) => ({
   uri: `file:///n${i}.jpg`,
-  name: `n${i}.jpg`,
-  type: 'image/jpeg',
+  fileName: `n${i}.jpg`,
+  mime: 'image/jpeg',
 });
 jest.mock('@/features/discover/components/ModeSetupPhotoSection', () => {
   const React = require('react');

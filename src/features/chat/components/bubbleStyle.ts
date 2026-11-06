@@ -11,6 +11,11 @@
  */
 
 import { Dimensions } from "react-native";
+import {
+  DEFAULT_APP_MODE,
+  isAppMode,
+  modeAccent,
+} from "@/features/discover/modeTheme";
 import { colors } from "@/shared/theme/colors";
 
 /**
@@ -49,3 +54,30 @@ export const reactionChipBorder = () => ({
   borderWidth: 0.5,
   borderColor: colors.bg,
 });
+
+/**
+ * KENDİ balonumun dolgusu — sohbetin MODUNDAN geliyor.
+ *
+ * Sohbetler mod başına ayrı (UNIQUE(A,B,Mode)), yani bir konuşma baştan sona
+ * tek modun içinde yaşıyor: Arkadaş sohbetinde balon Spark yeşili, Dating'de
+ * marka kırmızısı. Kaynak `modeAccent` ve bu önemli — `colors.friendsAccent`i
+ * doğrudan okumak yasak (colors.ts'teki mod sözleşmesi), ayrıca
+ * `modeAccent("Dating")` zaten `litPlus` yani eski `messageOwn` değerinin
+ * AYNISI: Dating tarafında bu değişim piksel piksel no-op.
+ *
+ * ⚠️ Mürekkep her iki modda da `onMedia` (beyaz) kalıyor — uygulamanın her
+ * yerinde `modeAccent` dolgusunun eşi o (ConsumablePurchaseSheet > CTA).
+ *
+ * ⚠️ BURADA, iki çağıranın ortak dosyasında: gerçek balon (MessageBubble) ile
+ * uzun-bas klonu (MessageActionSheet) aynı rengi okumak ZORUNDA, yoksa menü
+ * açılırken balon renk değiştirir — bu dosyanın başındaki "klon ayrışırsa balon
+ * zıplar" kuralının renk hâli.
+ *
+ * ⚠️ FONKSİYON: palet mutable, modül seviyesinde değerlenirse tema değişiminde
+ * bayat kalır (reactionChipBorder'daki aynı gerekçe).
+ *
+ * Mod BİLİNMİYORSA (modu göndermeyen sunucudan kalan eski satırlar) Dating'e
+ * düşüyor — sunucunun kendi varsayılanı da o (bkz. ChatScreen > convMode).
+ */
+export const ownBubbleFill = (mode: unknown) =>
+  modeAccent(isAppMode(mode) ? mode : DEFAULT_APP_MODE);

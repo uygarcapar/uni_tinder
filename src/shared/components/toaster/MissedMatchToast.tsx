@@ -14,7 +14,9 @@ export type MissedMatchToastProps = {
 };
 
 /**
- * "Bir eşleşmeyi kaçırdın" — seni beğenmiş birini pass'ledikten sonra üstten düşer.
+ * "Bir eşleşmeyi kaçırdın" — Keşif'te seni beğenmiş birini farkında olmadan
+ * pass'ledikten sonra üstten düşer (Beğenenler ekranındaki bilinçli ret BUNU
+ * GÖSTERMEZ, bkz. showMissedMatchToast).
  * Bilgi amaçlı: dokunulabilir değil (o kişi artık Likes listesinde de yok).
  * Kabuk InfoToast ile aynı cam kart; solda geçilen kişinin avatarı var.
  */

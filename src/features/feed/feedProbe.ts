@@ -1,5 +1,5 @@
 import { queryClient } from "@/shared/queries/queryClient";
-import { FEED_CODES } from "@/shared/constants/responseCodes";
+import { FEED_CODES, MODE_CODES } from "@/shared/constants/responseCodes";
 import { feedKeys } from "./feedKeys";
 import feedService from "./feedService";
 import {
@@ -36,6 +36,11 @@ const GATED_BUT_ENABLED: ReadonlySet<string> = new Set([
   FEED_CODES.PROFILE_INCOMPLETE, // UT-7315
   FEED_CODES.FEED_RESTRICTED, // UT-7308
   FEED_CODES.UNIVERSITY_REQUIRES_PLUS, // UT-7310
+  // Akış Arkadaş'a özel (BE 2026-11-06): Arkadaş profili açılmamış kullanıcı
+  // 403 UT-2304 yiyor. Mod kapısı çalışıyorsa özellik AÇIK demektir — UT-7301
+  // ("özellik kapalı") ile karıştırma. Backend bazı uçları bu kod buraya
+  // girene KADAR bilerek kapısız bıraktı (tasarım §A.9) — sıra bağlayıcı.
+  MODE_CODES.MODE_NOT_OPENED, // UT-2304
 ]);
 
 /** feedService > guard'ın hata şekli: zarf `response.data`da. Axios'un kendi

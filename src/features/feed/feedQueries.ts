@@ -336,50 +336,19 @@ export function patchPostInCaches(
 }
 
 /**
- * Bir YAZARIN tüm gönderilerini yamalar — `patchPostInCaches`in kardeşi, tek
- * farkı eşleşmenin id ile değil `author.userId` ile kurulması.
+ * Yazar bazlı yamalar AYRI, HAFİF modülde (feedAuthorCache) — Keşif'ten verilen
+ * kararlar da aynı yamayı atmak zorunda ve `swipeQueries` bu dosyayı import
+ * EDEMİYOR: buradaki import ağacı toaster → react-native-notifier →
+ * gesture-handler çekiyor ve o zincir discover test ortamını çökertiyor.
  *
- * ⚠️ VAR OLMA SEBEBİ: not KİŞİ BAŞINA tek gidiyor (sunucuda `Note` tablosunda
- * modsuz `UNIQUE(ActorId, TargetId)`; backend tasarımı K1). Bir not gittiğinde
- * o yazarın yalnız dokunulan gönderisi değil, listede duran DİĞER gönderileri
- * de kapanıyor. Tek satır yamasaydık aynı yazarın bir alttaki gönderisinde
- * buton durmaya devam eder, basınca sunucudan UT-6404 yerdi — kaçındığımız
- * ölü butonun ta kendisi.
- *
- * ⚠️ Yazarsız satır (ANONİM gönderi: sunucu `author: null` yolluyor) hiç
- * eşleşmiyor. Anonim gönderiye zaten not atılamıyor ve kimliği açığa çıkaracak
- * bir yan etki üretmemesi için eşleştirme yalnız dolu `userId` üzerinden.
- *
- * İsabet yoksa referans korunuyor — gerekçe `patchPostInCaches`te.
+ * Buradan yeniden dışa aktarılıyorlar ki mevcut
+ * `from "@/features/feed/feedQueries"` çağıranları (FeedScreen, testler)
+ * değişmesin.
  */
-export function patchAuthorPostsInCaches(
-  qc: QueryClient,
-  authorUserId: string,
-  patch: PostPatch,
-): void {
-  const apply = (data: any) => {
-    if (!data?.pages) return data;
-    let hit = false;
-    const pages = data.pages.map((page: FeedPostPageDto) => {
-      const items = page?.items;
-      if (!Array.isArray(items)) return page;
-      let pageHit = false;
-      const nextItems = items.map((item) => {
-        if (!item?.author?.userId || item.author.userId !== authorUserId) {
-          return item;
-        }
-        pageHit = true;
-        return patch(item);
-      });
-      if (!pageHit) return page;
-      hit = true;
-      return { ...page, items: nextItems };
-    });
-    return hit ? { ...data, pages } : data;
-  };
-  qc.setQueriesData({ queryKey: feedKeys.postsRoot }, apply);
-  qc.setQueriesData({ queryKey: feedKeys.mine }, apply);
-}
+export {
+  closeAuthorNoteGate,
+  patchAuthorPostsInCaches,
+} from "./feedAuthorCache";
 
 /** Gönderiyi tüm liste cache'lerinden düşür (UT-7312, silme, şikayet sonrası). */
 export function removePostFromCaches(qc: QueryClient, postId: string): void {

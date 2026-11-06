@@ -67,7 +67,10 @@ describe('probeFeedFlagIfDue — başarı yolu', () => {
 });
 
 describe('probeFeedFlagIfDue — 403 kod ayrımı', () => {
-  it.each(['UT-7315', 'UT-7308', 'UT-7310'])(
+  // UT-2304: akış Arkadaş'a özel (2026-11-06) — Arkadaş profili açılmamış
+  // kullanıcıya uçlar 403 UT-2304 dönüyor. Bu da "özellik AÇIK ki mod kapısı
+  // çalışıyor" kanıtı; UT-7301 ("özellik kapalı") ile karıştırılmamalı.
+  it.each(['UT-7315', 'UT-7308', 'UT-7310', 'UT-2304'])(
     '%s = akış açık ama kullanıcı kapıda → latch "on" + pencere yakılır',
     async (code) => {
       mockGetMe.mockRejectedValue(codedError(code));

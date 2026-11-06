@@ -22,6 +22,8 @@ import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
  * Props:
  *   visible — açık/kapalı state
  *   onClose — modal dismiss olduğunda (swipe/backdrop tap/programatik) çağrılır
+ *   onDismissed — sheet kapalı konuma İNDİĞİNDE (animasyon bitti); klavye
+ *     kapanışın başında indiği için altta odak vermek isteyenler bunu bekler
  *   snapPoints — ['90%'] gibi gorhom snapPoints
  *   footer — sticky bottom footer içeriği (BottomSheetFooter ile sarılır)
  *   backdrop — 'blur' (VARSAYILAN, bkz. SheetBlurBackdrop) | 'default'
@@ -56,6 +58,7 @@ export default function AppBottomSheet({
   visible,
   onClose,
   onPresented,
+  onDismissed,
   snapPoints: snapPointsProp,
   children,
   footer,
@@ -202,6 +205,8 @@ export default function AppBottomSheet({
   onCloseRef.current = onClose;
   const onPresentedRef = useRef(onPresented);
   onPresentedRef.current = onPresented;
+  const onDismissedRef = useRef(onDismissed);
+  onDismissedRef.current = onDismissed;
 
   // Kilitlenmiş bir gorhom örneğini sıfırdan kurmak için remount anahtarı
   // (aşağıdaki watchdog'a bakın).
@@ -212,6 +217,11 @@ export default function AppBottomSheet({
     closeNotifiedRef.current = true;
     presentedRef.current = false;
     onCloseRef.current?.();
+    // `onClose`un aksine YALNIZ sheet gerçekten kapalı konuma indiğinde —
+    // çağıran `visible`ı kendisi false yapmış olsa bile. Kapanış animasyonu
+    // BAŞLARKEN klavye indiriliyor (onAnimate), yani kapanırken altta odak
+    // vermek boşa gidiyor; odak işini bu ana erteleyenler için.
+    onDismissedRef.current?.();
   }, []);
 
   const handleDismiss = useCallback(() => {

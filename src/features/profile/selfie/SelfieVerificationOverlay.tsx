@@ -443,39 +443,47 @@ function IntroStep({
         gap: 16,
       }}
     >
-      {/* Rozet BAŞLIKLA aynı satırda: sheet'te başlığın üstünde tek başına
-          duran ikon, kısalan yükseklikte iki ayrı blok gibi okunuyordu. */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+      {/* Yerleşim LocationPermissionSheet'in "centered" kipiyle aynı: üstte
+          ortada büyük rozet ikonu (dairesiz), altında ortalı başlık ve TEK paragraf açıklama.
+          Madde işaretleri kaldırıldı, yerine kısa `intro.summary` metni. */}
+      <View style={{ alignItems: "center", marginTop: 8, marginBottom: 8 }}>
         <SFIcon
           name="checkmark.seal.fill"
           fallback={ShieldCheck}
-          size={40}
+          size={88}
           color={colors.text}
+          strokeWidth={1.5}
+          weight="semibold"
           style={{ pointerEvents: "none" }}
         />
+      </View>
+      <View style={{ gap: 10 }}>
         <Text
           style={{
-            flex: 1,
             color: colors.text,
-            fontSize: 26,
+            fontSize: 24,
             fontWeight: "700",
+            textAlign: "center",
           }}
         >
           {t("profile.selfie.intro.title")}
         </Text>
-      </View>
-      <Text style={{ color: colors.textSecondary, fontSize: 15, lineHeight: 22 }}>
-        {t("profile.selfie.intro.description")}
-      </Text>
-
-      <View style={{ gap: 12 }}>
-        <IntroBullet text={t("profile.selfie.intro.bullet1")} />
-        <IntroBullet text={t("profile.selfie.intro.bullet2")} />
-        <IntroBullet text={t("profile.selfie.intro.bullet3")} />
+        <Text
+          style={{
+            color: colors.textSecondary,
+            fontSize: 15,
+            fontWeight: "400",
+            textAlign: "center",
+            lineHeight: 21,
+            paddingHorizontal: 4,
+          }}
+        >
+          {t("profile.selfie.intro.summary")}
+        </Text>
       </View>
 
       {/* `intro.privacyNote` BİLEREK ÇİZİLMİYOR: rozetin ne olduğunu/olmadığını
-          anlatan bu paragraf, madde işaretlerinin hemen altında üçüncü bir
+          anlatan bu paragraf, açıklamanın hemen altında ikinci bir
           açıklama katı oluyordu ve sheet'i "Başla"nın göründüğü yükseklikten
           aşağı itiyordu. Anahtar çeviride duruyor — hukuki metin DEĞİL (rıza
           Ayarlar > Gizlilik'te toplanıyor, bkz. dosya başı), yeri gelirse geri
@@ -520,26 +528,6 @@ function IntroStep({
   );
 }
 
-function IntroBullet({ text }: { text: string }) {
-  return (
-    <View style={{ flexDirection: "row", gap: 10 }}>
-      <Text style={{ color: colors.textSecondary, fontSize: 15, lineHeight: 22 }}>
-        •
-      </Text>
-      <Text
-        style={{
-          flex: 1,
-          color: colors.textSecondary,
-          fontSize: 15,
-          lineHeight: 22,
-        }}
-      >
-        {text}
-      </Text>
-    </View>
-  );
-}
-
 function ResultStep({
   result,
   onRetry,
@@ -568,7 +556,7 @@ function ResultStep({
         name={success ? "checkmark.seal.fill" : "exclamationmark.circle"}
         fallback={success ? BadgeCheck : ShieldCheck}
         size={56}
-        color={success ? colors.primary : colors.textSecondary}
+        color={success ? colors.primary : colors.text}
         style={{ pointerEvents: "none" }}
       />
       <Text
@@ -596,11 +584,9 @@ function ResultStep({
           : selfieReasonText(result.reasonCode, result.message)}
       </Text>
 
-      {!success && result.failedAtStep != null && (
-        <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: "center" }}>
-          {t("profile.selfie.result.failedAtStep", { step: result.failedAtStep })}
-        </Text>
-      )}
+      {/* "n. adımda takıldık" satırı BİLEREK çizilmiyor: başlık + metin
+          neyin olmadığını zaten söylüyor, adım numarası kullanıcıya bir şey
+          kazandırmıyordu. `failedAtStep` veride duruyor. */}
 
       {/* Butonlar sheet'in TAM GENİŞLİĞİNDE: dış kap `alignItems: "center"`
           olduğu için `alignSelf: "stretch"` verilmezse pill'ler metin kadar

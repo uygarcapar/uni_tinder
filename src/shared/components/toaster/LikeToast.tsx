@@ -23,7 +23,8 @@ export type LikeToastProps = {
   /**
    * OLAYIN modu (`IncomingLike.mode`) — ekranın seçili modu DEĞİL.
    *
-   * Tek işi ürünün adını seçmek: Flört'te "Fire", Arkadaş'ta "Spark". Olaydan
+   * İki işi var: ürünün ADINI seçmek (Flört'te "Fire", Arkadaş'ta "Spark") ve
+   * dairenin içindeki GLİFİ seçmek (alev / yıldız, bkz. FireGlyph). Olaydan
    * okunmasının sebebi MatchModal perdesindeki kuralın aynısı — bildirim
    * kullanıcı öbür moddayken (ya da arka planda) gelebiliyor. Verilmezse
    * Dating, yani modu bilmeyen çağıran (ör. debug kataloğu) bugünkü adı görür.
@@ -96,7 +97,12 @@ export default function LikeToast({
             {/* Glif `onMedia`: dolgu markanın rengi, `text` açık modda koyuya
                 dönüp renkli dairenin üstünde kayboluyordu. Boy MessageToast'ın
                 kişi ikonuyla aynı (20) — aynı daire, aynı ölçü. */}
-            <ToastIconGlyph kind={kind} size={20} color={colors.onMedia} />
+            <ToastIconGlyph
+              kind={kind}
+              size={20}
+              color={colors.onMedia}
+              mode={mode}
+            />
           </View>
         )}
         <View style={{ flex: 1, marginLeft: 12 }}>

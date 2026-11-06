@@ -23,6 +23,8 @@ import {
   premiumBenefitLabelKey,
   type PremiumBenefitKey,
 } from "@/features/profile/premiumBenefits";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeFireNameKey } from "@/features/discover/modeTheme";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { swipeKeys } from "@/features/discover/swipeQueries";
@@ -220,6 +222,9 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
   const queryClient = useQueryClient();
   const isPremium = useAppSelector(selectIsPremium);
   const { t } = useTranslation();
+  // Seçili mod — paywall tablosundaki Fire/Spark satırının görünen adı için.
+  const { mode } = useAppMode();
+  const fireName = t(modeFireNameKey(mode));
   // RC kimlik kapısının hedefi: satın alma bu id'ye yazılmalı. `?.` bilinçli —
   // paywall oturum açılmadan da mount edilebiliyor (bileşen her ekranda gömülü).
   const rcUserKey = premiumSyncUserKey(useAppSelector((s: any) => s.auth?.user));
@@ -271,7 +276,7 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
   const refetchPremiumScoped = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
     queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
-    queryClient.invalidateQueries({ queryKey: swipeKeys.matches });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.deckRoot });
   }, [queryClient]);
 
   // syncSubscriptionWithRetry fulfilled olsa bile `synced: false` dönebilir
@@ -568,9 +573,11 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
     () =>
       PREMIUM_BENEFIT_KEYS.map((key) => ({
         key,
-        label: t(premiumBenefitLabelKey(key)),
+        // `fire` satırının ürün adı moda göre ("Fire" / "Spark") — fazladan
+        // parametre diğer satırlarda zararsız.
+        label: t(premiumBenefitLabelKey(key), { fire: fireName }),
       })),
-    [t],
+    [t, fireName],
   );
 
   /** Sheet kapanışında seçimi sıfırlar — kap tarafından çağrılıyor. */

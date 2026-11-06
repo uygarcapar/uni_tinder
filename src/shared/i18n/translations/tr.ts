@@ -1107,6 +1107,7 @@ const tr = {
       // kaynak modun görünen adı ("Flört"/"Arkadaş") — açılan modun tersi.
       photos: {
         title: 'Fotoğraflar',
+        description: 'Bu profilde görünecek fotoğraflar. İlki ana fotoğrafın olur.',
         useExisting: '{{mode}} fotoğraflarımı kullan',
         addTile: 'Fotoğraf ekle',
         mainBadge: 'Ana',
@@ -1127,12 +1128,6 @@ const tr = {
       openTitle: {
         Dating: 'Flört profilini aç',
         Friends: 'Arkadaş profilini aç',
-      },
-      openIntro: {
-        Dating:
-          'Flört profilin ayrı: kendi sorularını ve ne aradığını burada belirliyorsun. Fotoğrafların ve temel bilgilerin aynı kalıyor.',
-        Friends:
-          'Arkadaş profilin ayrı: kendi sorularını ve ne için arkadaş aradığını burada belirliyorsun. Fotoğrafların ve temel bilgilerin aynı kalıyor.',
       },
       openSubmit: 'Profili aç',
       opening: 'Açılıyor…',
@@ -2060,6 +2055,9 @@ const tr = {
         bullet1: 'Hangi hareketlerin isteneceğine biz karar veririz, her seferinde değişir.',
         bullet2: 'Yalnızca iki kare gönderilir — video kaydı yapılmaz.',
         bullet3: 'Yüzün çerçeveye sığsın, ortam aydınlık olsun ve karede yalnız ol.',
+        // Sheet'te gösterilen TEK metin (madde işaretleri ve tire yok).
+        summary:
+          'Ön kameranla iki kısa hareket yap, ana fotoğrafınla karşılaştıralım. Video kaydı yapılmaz. Aydınlık bir ortamda, yüzün açık olsun.',
         // Bu ikisi hazırlık listesi: kamerada üç kare sonra öğrenilen her
         // `face_occluded` / `face_mismatch` bir denemeyi (saatlik 5 haktan
         // birini) yakıyor.
@@ -2273,9 +2271,6 @@ const tr = {
       validationError: 'Girdiğin bilgilerden biri geçersiz. İsim ve sınıf alanlarını kontrol et.',
       // 429: `photo` rate limit'i, fotoğraf yüklemeyle ORTAK kota.
       rateLimitError: 'Çok fazla değişiklik gönderdin. Biraz bekleyip tekrar dene.',
-      // Editörün tepesindeki salt-okunur mod rozeti — segment kalktı, form
-      // aktif modun profilini düzenliyor; hangisi olduğu yazıyla söyleniyor.
-      editingMode: '{{mode}} profili',
       nameTitle: 'İsim',
       nameDesc: 'Kartında ve mesajlarda görünen isim. Değiştirdiğinde her yerde güncellenir.',
       namePlaceholder: 'İsmin',

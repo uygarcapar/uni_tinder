@@ -93,6 +93,31 @@ export function useKeyboardAwareField(
     [ctx, gap],
   );
 
+  /**
+   * İlk hizalama BİR KARE sonra: odakla birlikte içerik değişebiliyor (ör.
+   * kurulum sheet'i formun dibine klavye payı ekliyor) ve o pay henüz layout'a
+   * girmemişken kaydırırsak scroll içeriğin eski sonuna çarpıp yarım kalıyor;
+   * kalanını 350ms'lik doğrulama tamamlıyor → alan İKİ ADIMDA iniyordu. Bir
+   * kare (≈16ms) klavye animasyonunun yanında fark edilmiyor.
+   */
+  const revealFrame = useRef<number | null>(null);
+  const clearRevealFrame = useCallback(() => {
+    if (revealFrame.current !== null) {
+      cancelAnimationFrame(revealFrame.current);
+      revealFrame.current = null;
+    }
+  }, []);
+  const scheduleReveal = useCallback(
+    (height: number) => {
+      clearRevealFrame();
+      revealFrame.current = requestAnimationFrame(() => {
+        revealFrame.current = null;
+        if (isFocused.current) reveal(height, 1);
+      });
+    },
+    [reveal, clearRevealFrame],
+  );
+
   const clearRecheck = useCallback(() => {
     if (recheckTimer.current) {
       clearTimeout(recheckTimer.current);
@@ -104,9 +129,9 @@ export function useKeyboardAwareField(
     (height: number) => {
       keyboardHeight.current = height;
       clearRecheck();
-      if (isFocused.current && height > 0) reveal(height, 1);
+      if (isFocused.current && height > 0) scheduleReveal(height);
     },
-    [reveal, clearRecheck],
+    [scheduleReveal, clearRecheck],
   );
 
   // Klavye tam açıldıktan sonraki doğrulama: ilk scroll, içerik sonuna (veya
@@ -151,9 +176,9 @@ export function useKeyboardAwareField(
       isFocused.current = true;
       // Klavye zaten açıksa (başka input'tan geçiş) yeni bir keyboard event'i
       // gelmez; ölçümü hemen kendimiz yapıyoruz.
-      if (keyboardHeight.current > 0) reveal(keyboardHeight.current, 1);
+      if (keyboardHeight.current > 0) scheduleReveal(keyboardHeight.current);
     },
-    [reveal],
+    [scheduleReveal],
   );
 
   const onBlur = useCallback(
@@ -169,11 +194,18 @@ export function useKeyboardAwareField(
       isFocused.current = false;
       targetRef.current = null;
       clearRecheck();
+      clearRevealFrame();
     },
-    [clearRecheck],
+    [clearRecheck, clearRevealFrame],
   );
 
-  useEffect(() => clearRecheck, [clearRecheck]);
+  useEffect(
+    () => () => {
+      clearRecheck();
+      clearRevealFrame();
+    },
+    [clearRecheck, clearRevealFrame],
+  );
 
   return { anchorRef, onFocus, onBlur };
 }

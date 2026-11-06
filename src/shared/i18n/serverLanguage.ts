@@ -71,7 +71,7 @@ export function refreshLocalizedCaches(refetchDeck = true): void {
   bustStaticCache();
   queryClient.invalidateQueries({ queryKey: ["common"] });
   queryClient.invalidateQueries({
-    queryKey: swipeKeys.matches,
+    queryKey: swipeKeys.deckRoot,
     refetchType: refetchDeck ? "all" : "none",
   });
 }

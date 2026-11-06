@@ -160,6 +160,19 @@ describe('anonim gönderi — kimlik sızdırmama', () => {
     expect(onPressAuthor).not.toHaveBeenCalled();
   });
 
+  // ⚠️ KENDİ GÖNDERİM DE AÇMAZ. Yazar kartı yolu (FeedScreen >
+  // handlePressAuthor → LikerSwipeModal) yazarı "karşı taraf" varsayıyor:
+  // kart NORMAL hâlde doğar ve kendi profiline Fire/not çizer (feedCardActions
+  // "kendi gönderi" hâlini bilmiyor, bilmesi de gerekmiyor — kapı burada).
+  // "Benim" sekmesi bu yüzden `onPressAuthor`u hiç geçirmiyor (FeedScreen'de
+  // sekme kapısı); ana akışta kendi gönderin de görünüyor ve oradaki tek kapı bu.
+  it('KENDİ gönderimde yazara dokunma profil AÇMAZ (karta Fire/not çizilirdi)', () => {
+    const onPressAuthor = jest.fn();
+    render(<FeedPostCard post={post({ isMine: true })} onPressAuthor={onPressAuthor} />);
+    fireEvent.press(screen.getByText('esra, 21'));
+    expect(onPressAuthor).not.toHaveBeenCalled();
+  });
+
   // ⚠️ YEDEĞİN EN KRİTİK SINIRI. Sunucu kendi gönderimin avatarını boş
   // bırakıyor ve kart onu kendi fotoğrafımla dolduruyor (aşağıdaki describe).
   // Gönderi ANONİM iken aynı yedek uygulanırsa kullanıcı kendi anonim
@@ -420,22 +433,60 @@ describe('Gönderilerim varyantı', () => {
 });
 
 /**
- * KONU ETİKETLERİ (istek, 2026-10-15).
+ * KONU ETİKETLERİ (istek, 2026-10-15; 2026-11-04'te SATIR İÇİNE taşındı).
  *
  * Üç kural birlikte test ediliyor:
  *  1. `#` + KÜÇÜK HARF — ve küçük harf `textTransform` ile değil
  *     `toDisplayLowercase` ile (Türkçe "İ" tuzağı, bkz. utils/textCase.ts).
- *  2. GÖVDEYLE AYNI PUNTO ve kapsül YOK: etiketin sol kenarı gövde metniyle
- *     birebir hizalı olmalı — eski çipin 9'luk yatay payı onu içeri itiyordu.
- *  3. ÇOKLU: `topics` doluysa hepsi, yoksa tek `topic`. İkisi de yoksa blok
+ *  2. GÖVDENİN DEVAMINDA (istek: "hashtagler yazılan textin altında değil
+ *     devamında olsun direkt"): etiketler gövdeyle AYNI paragrafın içinde,
+ *     son kelimenin peşinden akıyor ve onunla birlikte sarıyor. Eski ayrı
+ *     satır (flexWrap'li sıra) ve kapsül dolgusu YOK.
+ *  3. ÇOKLU: `topics` doluysa hepsi, yoksa tek `topic`. İkisi de yoksa etiket
  *     HİÇ çizilmiyor (varsayılan "Genel" uydurulmuyor).
  */
 describe('konu etiketleri', () => {
-  it('tek konu "#küçük harf" çizilir', () => {
+  /** Düğümün altındaki metin yapraklarını render sırasıyla topla. */
+  const textLeaves = (node: any): string[] => {
+    if (node == null) return [];
+    if (typeof node === 'string') return [node];
+    const kids = Array.isArray(node.children) ? node.children : [];
+    return kids.flatMap(textLeaves);
+  };
+
+  /**
+   * `parts`ı BU SIRAYLA içeren tek bir <Text> paragrafı var mı? "Devamında"
+   * olmanın tanımı tam olarak bu: etiket gövdeyle aynı metin düğümünün
+   * içinde ve ondan SONRA geliyor — altında ayrı bir blokta değil.
+   */
+  const hasInlineParagraph = (node: any, parts: string[]): boolean => {
+    if (!node || typeof node === 'string') return false;
+    if (node.type === 'Text') {
+      const joined = textLeaves(node).join('');
+      let at = 0;
+      const inOrder = parts.every((part) => {
+        const i = joined.indexOf(part, at);
+        if (i < 0) return false;
+        at = i + part.length;
+        return true;
+      });
+      if (inOrder) return true;
+    }
+    const kids = Array.isArray(node.children) ? node.children : [];
+    return kids.some((kid) => hasInlineParagraph(kid, parts));
+  };
+
+  it('tek konu "#küçük harf" GÖVDENİN DEVAMINDA çizilir', () => {
     render(<FeedPostCard post={post({ topic: 'Roommate' })} />);
     // tr sözlüğünde "Ev arkadaşı".
     expect(screen.getByText('#ev arkadaşı')).toBeTruthy();
     expect(screen.queryByText('Ev arkadaşı')).toBeNull();
+    expect(
+      hasInlineParagraph(screen.toJSON(), [
+        'Yarın kütüphane kaçta açılıyor?',
+        '#ev arkadaşı',
+      ]),
+    ).toBe(true);
   });
 
   /**
@@ -444,8 +495,9 @@ describe('konu etiketleri', () => {
    * KÜNYESİ: isim/tarih satırıyla aynı punto (15) ve aynı gri.
    *
    * ⚠️ AĞIRLIK TARİHTEN AYRI (500, 400 DEĞİL) — sonraki bir istek: "bi tık
-   * daha bold yap, 400'se 500 yap". 15pt'lik gri yazı kapsülün dolgusunun
-   * içinde 400'de silik okunuyordu. Punto ve renk hâlâ tarihin ölçüsü.
+   * daha bold yap, 400'se 500 yap". Gri yazı 400'de silik okunuyordu; satır
+   * içine taşındıktan sonra da 500 etiketi gövdeden ayıran tek şey (dolgu
+   * artık yok). Punto ve renk hâlâ tarihin ölçüsü.
    *
    * ⚠️ ÜÇ YÜZEY TEK SAYIYI OKUYOR (`feedTopicPill > TOPIC_TEXT`): kart,
    * filtre sheet'inin çipi ve composer'ın çipi. Buradaki sayı değişecekse
@@ -469,44 +521,41 @@ describe('konu etiketleri', () => {
   });
 
   /**
-   * ── KAPSÜL GERİ GELDİ: DOLGULU, ÇERÇEVESİZ ───────────────────────────────
+   * ── KAPSÜL DURUYOR, SATIR DURMUYOR (istekler sırayla: "devamında olsun
+   * direkt" + "pillden çıkarma ama hashtagi") ──────────────────────────────
    *
-   * İstek iki turda buraya geldi: "etrafına border koy" → "borderi sil,
-   * arkaplan rengi olsun, hafif temanın tersi, opacity az, px biraz daha az".
-   *
-   * ⚠️🔴 KALDIRILMASININ SEBEBİ DOLGU DEĞİL, HİZAYDI: eski çipin 9'luk yatay
-   * payı etiketi gövde metninden içeri itiyor ve kartın sol kenarı üç farklı
-   * hizada başlıyordu. O tespit hâlâ geçerli — bu yüzden pay küçük VE satır
-   * aynı sayı kadar sola çekiliyor. İki sayının AYNI kalması bu testin asıl
-   * konusu: ayrışırlarsa kapsül sessizce hizadan kayar ve belirti "kart biraz
-   * bozuk duruyor" gibi okunur.
+   * Etiket gövdenin devamında AMA hâlâ kapsülün içinde: iOS iç içe <Text>'te
+   * pay/yarıçap çizmediği için kapsül paragrafa gömülü satır içi bir <View>
+   * (dolgu/pay/yarıçap onda, yazı derisi içindeki <Text>'te — ikisi
+   * FeedPostBody'de). Gövdenin ALTINDAKİ eski ayrı satır (flexWrap'li sıra +
+   * negatif payla hiza dansı) ise tümden kalktı.
    */
-  it('dolgulu ama ÇERÇEVESİZ — kenarı gövdenin sol kenarında', () => {
+  it('kapsül satır İÇİNDE duruyor; ayrı etiket satırı YOK', () => {
     render(<FeedPostCard post={post({ topic: 'Event' })} />);
-    const label = screen.getByText('#etkinlik');
-    const style = Array.isArray(label.props.style)
-      ? Object.assign({}, ...label.props.style)
-      : label.props.style;
 
-    // ⚠️ ÇERÇEVE YOK: yazıyla aynı tondaki bir kontur, 15pt'lik bir etiketin
-    // etrafında yazıdan daha baskın okunuyordu.
-    expect(style.borderWidth).toBeUndefined();
-    /**
-     * ⚠️ DOLGU TEMANIN TERSİ ve HAFİF (`ink`): koyuda beyaz, açıkta siyah —
-     * kapsül iki temada da zeminden bir kademe ayrılıyor. Sabit bir yüzey
-     * tokenı (eski `surface2`) birinde zemine karışırdı.
-     *
-     * ⚠️ TESTLER KOYU PALETTE KOŞUYOR (jest varsayılanı), o yüzden beklenen
-     * değer BEYAZ. Polaritenin kendisi `ink()`in testinde çivili; burada
-     * korunan şey "sabit bir yüzey tokenı DEĞİL, düşük alfalı zıt mürekkep".
-     */
-    expect(style.backgroundColor).toMatch(/^rgba\(255,255,255,0\.0[0-9]\)$/);
+    // Etiketi saran dolgulu kutu — yaprakları YALNIZ etiket.
+    const findPillBox = (node: any): any => {
+      if (!node || typeof node === 'string') return null;
+      const s = Array.isArray(node.props?.style)
+        ? Object.assign({}, ...node.props.style)
+        : node.props?.style;
+      if (
+        node.type === 'View' &&
+        textLeaves(node).join('') === '#etkinlik' &&
+        s?.backgroundColor
+      ) {
+        return s;
+      }
+      const kids = Array.isArray(node.children) ? node.children : [];
+      for (const kid of kids) {
+        const hit = findPillBox(kid);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    expect(findPillBox(screen.toJSON())).toBeTruthy();
 
-    // Pay küçük ve satırın negatif payıyla BİREBİR eşit.
-    //
-    // ⚠️ SATIR `label.parent` DEĞİL: RNTL'in ağacında Text ile sarmalayıcı
-    // View'ın arasında ara düğümler var. Aranan şey satırın kendi imzası —
-    // sarabilen tek kap o.
+    // Eski etiket satırının imzası (sarabilen tek kap oydu) ARTIK YOK.
     const findRow = (node: any): any => {
       if (!node) return null;
       const s = Array.isArray(node.props?.style)
@@ -520,18 +569,20 @@ describe('konu etiketleri', () => {
       }
       return null;
     };
-    const rowStyle = findRow(screen.toJSON());
-    expect(rowStyle).toBeTruthy();
-    expect(style.paddingHorizontal).toBeLessThanOrEqual(4);
-    expect(rowStyle.marginLeft).toBe(-style.paddingHorizontal);
+    expect(findRow(screen.toJSON())).toBeNull();
   });
 
-  it('`topics` doluysa HEPSİ çizilir', () => {
+  it('`topics` doluysa HEPSİ, gövdenin peşinde SIRAYLA çizilir', () => {
     render(
       <FeedPostCard post={post({ topic: 'Event', topics: ['Event', 'Advice'] })} />,
     );
-    expect(screen.getByText('#etkinlik')).toBeTruthy();
-    expect(screen.getByText('#tavsiye')).toBeTruthy();
+    expect(
+      hasInlineParagraph(screen.toJSON(), [
+        'Yarın kütüphane kaçta açılıyor?',
+        '#etkinlik',
+        '#tavsiye',
+      ]),
+    ).toBe(true);
   });
 
   it('`topics` yoksa tek `topic`e düşülür (sunucu henüz dizi dönmüyor)', () => {

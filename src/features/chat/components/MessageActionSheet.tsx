@@ -36,6 +36,7 @@ import {
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
   bubbleCorners,
+  ownBubbleFill,
 } from "@/features/chat/components/bubbleStyle";
 import { colors, withAlpha, scrimAt } from "../../../shared/theme/colors";
 import { thinBlurTint } from "@/shared/theme/blur";
@@ -152,6 +153,8 @@ export default function MessageActionSheet({
   onReply,
   onEdit,
   onDelete,
+  // Sohbetin modu — klonun dolgusu gerçek balonla aynı olsun diye (bkz. bubbleBg).
+  mode,
 }: any) {
   const { t } = useTranslation();
   const progress = useSharedValue(0);
@@ -296,7 +299,9 @@ export default function MessageActionSheet({
   const actionsY = targetY + bubbleH + chipOverhang + GAP;
 
   const blurTint = thinBlurTint();
-  const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
+  // Gerçek balonla AYNI fonksiyondan (bubbleStyle > ownBubbleFill): klon başka
+  // bir renk okusaydı menü açılırken balon renk değiştirirdi.
+  const bubbleBg = isOwn ? ownBubbleFill(mode) : colors.surface2;
   // Cam yolu render anında sorulur: native sabit + Info.plist bayrağı, tema gibi
   // değişmez ama modül seviyesinde sabitlemek de bir kazanç sağlamaz.
   const glass = hasLiquidGlassSurface();

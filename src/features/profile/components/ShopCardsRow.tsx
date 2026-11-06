@@ -37,7 +37,8 @@ export default function ShopCardsRow({
   /** ProfileScreen'deki `showMembershipCard` — alttaki üyelik kartıyla TEK
    *  bayrak: "abonesin" iki yerde birden yazar ya da hiç yazmaz. */
   showPlusCard = false,
-  /** Seçili mod — yalnız plus kartının zeminini döndürüyor (bkz. PlusCard). */
+  /** Seçili mod — plus kartının zemini (bkz. PlusCard) ve Fire/Spark kartının
+   *  başlığındaki ürün adı buradan. */
   mode = DEFAULT_APP_MODE,
   onPlusPress,
 }: {
@@ -72,7 +73,7 @@ export default function ShopCardsRow({
       {showPlusCard && (
         <PlusCard cardWidth={cardWidth} mode={mode} onPress={onPlusPress} />
       )}
-      <FireCard cardWidth={cardWidth} />
+      <FireCard cardWidth={cardWidth} mode={mode} />
       <NoteCard cardWidth={cardWidth} />
     </ScrollView>
   );

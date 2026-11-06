@@ -10,6 +10,11 @@ import {
   premiumBenefitDetailKey,
   premiumBenefitLabelKey,
 } from "@/features/profile/premiumBenefits";
+import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 /**
  * Paywall'daki özellik satırının açıklaması.
@@ -28,12 +33,17 @@ import {
 export default function PremiumBenefitInfoSheet({
   benefitKey,
   onClose,
+  /** Seçili mod — `fire` maddesindeki ürün adı ("Fire" / "Spark") buradan. */
+  mode = DEFAULT_APP_MODE,
 }: {
   benefitKey: PremiumBenefitKey | null;
   onClose: () => void;
+  mode?: AppMode;
 }) {
   const { t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
+  // Fazladan parametre fire dışındaki maddelerde zararsız.
+  const fire = t(modeFireNameKey(mode));
 
   // Kapanma animasyonu sürerken `benefitKey` null'a düşüyor; son gösterilen
   // maddeyi tutmazsak sheet inerken başlık ve metin bir anda boşalıyor.
@@ -46,7 +56,7 @@ export default function PremiumBenefitInfoSheet({
     <AppModal
       visible={!!benefitKey}
       onClose={onClose}
-      title={shown ? t(premiumBenefitLabelKey(shown)) : ""}
+      title={shown ? t(premiumBenefitLabelKey(shown), { fire }) : ""}
       stackBehavior="push"
       dynamicSizing
       maxDynamicContentSize={windowHeight * 0.6}
@@ -68,7 +78,12 @@ export default function PremiumBenefitInfoSheet({
           büyük. */}
       <View style={{ alignItems: "center", marginBottom: 18 }}>
         {shown ? (
-          <PremiumBenefitIcon benefitKey={shown} size={56} color={colors.text} />
+          <PremiumBenefitIcon
+            benefitKey={shown}
+            size={56}
+            color={colors.text}
+            mode={mode}
+          />
         ) : null}
       </View>
       {/* Başlık İÇERİKTE: AppModal'ın header başlığı scroll'a bağlı fade
@@ -87,7 +102,7 @@ export default function PremiumBenefitInfoSheet({
           textAlign: "center",
         }}
       >
-        {shown ? t(premiumBenefitLabelKey(shown)) : ""}
+        {shown ? t(premiumBenefitLabelKey(shown), { fire }) : ""}
       </Text>
       <Text
         style={{
@@ -98,7 +113,7 @@ export default function PremiumBenefitInfoSheet({
           textAlign: "center",
         }}
       >
-        {shown ? t(premiumBenefitDetailKey(shown)) : ""}
+        {shown ? t(premiumBenefitDetailKey(shown), { fire }) : ""}
       </Text>
     </AppModal>
   );

@@ -27,7 +27,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Alert, Linking } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import FeedPostBody from '@/features/feed/components/FeedPostBody';
-import { BLOCK_GAP } from '@/features/feed/feedPostMetrics';
+import { BLOCK_GAP, BODY_LINE_HEIGHT } from '@/features/feed/feedPostMetrics';
 import { showInfoToast } from '@/shared/services/toaster';
 import tr from '@/shared/i18n/translations/tr';
 
@@ -183,6 +183,116 @@ describe('taşma kapısı', () => {
     };
 
     expect(findClipper(screen.toJSON())).toBeTruthy();
+  });
+});
+
+/**
+ * KONU ETİKETLERİ — GÖVDENİN DEVAMINDA (istek: "hashtagler yazılan textin
+ * altında değil devamında olsun direkt").
+ *
+ * Etiketler karttan HAZIR ("#küçük harf") geliyor ve gövdeyle AYNI <Text>
+ * paragrafının kuyruğuna ekleniyor: son kelimenin peşinden akıyorlar ve
+ * yazıyla birlikte sarıyorlar. Segmentleri ayrı bir kaba koymak satır akışını
+ * bitirirdi (dosyanın başındaki iç içe <Text> notu).
+ */
+describe('konu etiketleri', () => {
+  /** Düğümün altındaki metin yapraklarını render sırasıyla topla. */
+  const textLeaves = (node: any): string[] => {
+    if (node == null) return [];
+    if (typeof node === 'string') return [node];
+    const kids = Array.isArray(node.children) ? node.children : [];
+    return kids.flatMap(textLeaves);
+  };
+
+  it('etiketler SON KELİMENİN PEŞİNDE, aynı paragrafta', () => {
+    render(
+      <FeedPostBody
+        body="Ders notu arıyorum"
+        topicLabels={['#tavsiye', '#etkinlik']}
+      />,
+    );
+    // Paragrafın bileşik metni: gövde + boşlukla ayrılmış etiketler.
+    expect(textLeaves(screen.toJSON()).join('')).toBe(
+      'Ders notu arıyorum #tavsiye #etkinlik',
+    );
+  });
+
+  /**
+   * ── KAPSÜL SATIR İÇİNDE DE DURUYOR (istek: "pillden çıkarma ama
+   * hashtagi") ──────────────────────────────────────────────────────────────
+   *
+   * iOS iç içe <Text>'te pay/köşe yarıçapı ÇİZMEDİĞİ için kapsül satır içi
+   * bir <View> olarak gömülü: paragrafın akışında duruyor, dolgusu ve
+   * yarıçapı gerçek. Dolgu temanın tersi (`ink`) — testler koyu palette
+   * koşuyor, beklenen BEYAZ; alfa feedTopicPill > TOPIC_FILL_ALPHA.
+   */
+  it('etiket kapsülün İÇİNDE: satır içi kutuda dolgu + yarıçap + pay', () => {
+    render(<FeedPostBody body="merhaba" topicLabels={['#tavsiye']} />);
+
+    // Etiketi saran, yaprakları YALNIZ etiket olan kutuyu bul.
+    const findPillBox = (node: any): any => {
+      if (!node || typeof node === 'string') return null;
+      const s = Array.isArray(node.props?.style)
+        ? Object.assign({}, ...node.props.style)
+        : node.props?.style;
+      if (
+        node.type === 'View' &&
+        textLeaves(node).join('') === '#tavsiye' &&
+        s?.backgroundColor
+      ) {
+        return s;
+      }
+      const kids = Array.isArray(node.children) ? node.children : [];
+      for (const kid of kids) {
+        const hit = findPillBox(kid);
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    const pill = findPillBox(screen.toJSON());
+    expect(pill).toBeTruthy();
+    expect(pill.backgroundColor).toMatch(/^rgba\(255,255,255,0\.0[0-9]\)$/);
+    expect(pill.borderRadius).toBeGreaterThan(0);
+    expect(pill.paddingHorizontal).toBeGreaterThan(0);
+
+    /**
+     * ── DİKEY HİZA (istek: "ortadan hizala ama textle bozuluyo üsttü") ─────
+     *
+     * iOS satır içi View'ın TABANINI metnin taban çizgisine oturtuyor —
+     * kapsül bu yüzden yukarı biniyordu. İki kural birlikte:
+     *
+     * 1. Kapsül SATIRA SIĞMALI: iç yazının satırı + dikey paylar gövdenin
+     *    satır kutusunu (BODY_LINE_HEIGHT) aşarsa TextKit satırı
+     *    büyütmüyor (maximumLineHeight), kutu kırpılıp "bozuk" görünüyor.
+     * 2. Taban çizgisinden metnin optik ortasına GÖRSEL translateY — layout'a
+     *    dokunmuyor, yalnız boyama kayıyor.
+     */
+    const inner = screen.getByText('#tavsiye');
+    const innerStyle = Array.isArray(inner.props.style)
+      ? Object.assign({}, ...inner.props.style)
+      : inner.props.style;
+    expect(innerStyle.lineHeight + 2 * pill.paddingVertical).toBeLessThanOrEqual(
+      BODY_LINE_HEIGHT,
+    );
+
+    const nudge = (pill.transform ?? []).find(
+      (part: Record<string, number>) => 'translateY' in part,
+    );
+    expect(nudge?.translateY).toBeGreaterThan(0);
+  });
+
+  it('etiket verilmezse gövde olduğu gibi', () => {
+    render(<FeedPostBody body="merhaba" />);
+    expect(textLeaves(screen.toJSON()).join('')).toBe('merhaba');
+  });
+
+  it('uzun basınca kopyalanan YALNIZ gövde — etiketler değil', () => {
+    // Etiket kullanıcının yazdığı metnin parçası değil, gönderinin künyesi;
+    // yapıştırılan şeye "#tavsiye" sızarsa gövde bozulmuş olur.
+    render(<FeedPostBody body="merhaba" topicLabels={['#tavsiye']} />);
+    fireEvent(screen.getByText(/merhaba/), 'longPress');
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('merhaba');
   });
 });
 

@@ -6,6 +6,11 @@ import ConsumableShopCard, {
 } from "@/features/profile/components/ConsumableShopCard";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { useConsumableCardBalance } from "@/features/profile/consumableCardBalance";
+import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 /**
  * Mağaza şeridinin sol kartı: Fire paketi satın alma girişi + bakiye.
@@ -21,8 +26,11 @@ import { useConsumableCardBalance } from "@/features/profile/consumableCardBalan
 export default function FireCard({
   /** Şeritten geliyor; varsayılan iki kartlık genişlik (bkz. ShopCardsRow). */
   cardWidth = SHOP_CARD_WIDTH_2UP,
+  /** Seçili mod — kart başlığındaki ürün adı buradan ("Fire" / "Spark"). */
+  mode = DEFAULT_APP_MODE,
 }: {
   cardWidth?: number;
+  mode?: AppMode;
 } = {}) {
   const { t } = useTranslation();
   const { balance, refetch } = useConsumableCardBalance("superLikesRemaining", {
@@ -43,10 +51,12 @@ export default function FireCard({
       <ConsumableShopCard
         testID="fire-card"
         cardWidth={cardWidth}
-        title={t("profile.fireCard.title")}
+        title={t("profile.fireCard.title", { fire: t(modeFireNameKey(mode)) })}
         subtitle={subtitle}
         onPress={() => setSheetVisible(true)}
-        renderGlyph={(size, color) => <FireGlyph size={size} color={color} />}
+        renderGlyph={(size, color) => (
+          <FireGlyph size={size} color={color} mode={mode} />
+        )}
       />
 
       <FirePurchaseModal

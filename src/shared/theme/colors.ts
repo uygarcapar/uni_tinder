@@ -94,7 +94,8 @@ interface Palette {
    * lit shop / Fire sheet'lerinin zemini (gradients.shopBackdrop'ın son
    * durağıyla eşleşir). MARKA DEĞİL, ZEMİN: bu iki sheet'in içeriği fotoğraf
    * değil normal chrome, o yüzden modla döner ve üstündeki her şey `text` /
-   * `ink()` ile çizilir. Tek istisna litPlus dolgulu CTA — orası `onMedia`.
+   * `ink()` ile çizilir. Tek istisna vurgu dolgulu CTA (premium'da litPlus,
+   * consumable sheet'lerinde modeAccent) — orası `onMedia`.
    */
   shopSurface: string;
   border: string;
