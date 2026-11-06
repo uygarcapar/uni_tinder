@@ -604,6 +604,7 @@ export const VoiceLockedActions = memo(function VoiceLockedActions({
   sendLabel,
   onTrashRect,
   trashActive,
+  sendFill,
 }: {
   /** Kayıt süresi — kayıt çubuğunda DEĞİL burada, ortadaki yuvada. */
   durationText: string;
@@ -620,6 +621,8 @@ export const VoiceLockedActions = memo(function VoiceLockedActions({
   }) => void;
   /** Parmak şu an çöp kutusunun üstünde — bırakırsa kayıt silinir. */
   trashActive?: boolean;
+  /** Gönder butonunun dolgusu — sohbet moduna göre (ownBubbleFill). */
+  sendFill?: string;
 }) {
   const trashRef = useRef<View>(null);
   // Ölçüm bir kez onLayout'ta alınıyor ama ilk denemede 0 dönebiliyor (view
@@ -742,7 +745,7 @@ export const VoiceLockedActions = memo(function VoiceLockedActions({
                 width: COMPOSER_ACTION_W,
                 height: ACTION_H,
                 borderRadius: 16,
-                backgroundColor: colors.messageOwn,
+                backgroundColor: sendFill ?? colors.messageOwn,
                 alignItems: "center",
                 justifyContent: "center",
                 opacity: pressed ? 0.85 : 1,

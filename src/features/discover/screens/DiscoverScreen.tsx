@@ -43,6 +43,7 @@ import {
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper, {
   CARD_ENTRY_DISTANCE,
+  DECK_RASTER_NOW_EVENT,
 } from "@/features/discover/components/SwipeWrapper";
 import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
@@ -218,6 +219,13 @@ const FRESH_DECK_MAX_WAIT_MS = 6000;
  * boş kapağı daha sık gösterir, uzatmak kutlamayı sürükler.
  */
 const COVER_WAIT_BUDGET_MS = 1200;
+
+/**
+ * Alevin altında destenin oturmasına verilen EMNİYET bütçesi (bkz.
+ * settleBehindFlame). Normal yol ~1 sn (panel 240 + cam 700 + pay); bu sayı
+ * yalnız haber hiç gelmezse alevi serbest bırakmak için.
+ */
+const DECK_SETTLE_BUDGET_MS = 2500;
 
 /*
  * ── `REWIND_SLOT_WARMUP_MS` KALDIRILDI ────────────────────────────────────
@@ -1917,9 +1925,10 @@ export default function DiscoverScreen() {
    * Destenin önündeki YENİ arka kart mount edildi mi.
    *
    * Devir karesinde `false`: o karede yalnız index kayıyor, `idx+2` çizilmiyor.
-   * Kart boyanıp dalga salıverildiğinde `true` oluyor ve arka kart ORADA mount
-   * ediliyor. Kaybı yok — sonraki basışa saniyeler var, ısınmaya fazlasıyla
-   * yetiyor (bkz. SwipeCard > PANEL_WARMUP_MS 240 ms).
+   * Yeni üst kart boyanınca `true` oluyor ve arka kart ALEV HÂLÂ PARKTAYKEN
+   * mount ediliyor; dalga ancak o kart tamamen oturunca salıveriliyor (bkz.
+   * settleBehindFlame — 2026-11-06'ya kadar mount salıvermeden SONRAYDI ve
+   * çekilen dalgayı takıltıyordu).
    */
   const [deckSettled, setDeckSettled] = useState(true);
 
@@ -1950,14 +1959,71 @@ export default function DiscoverScreen() {
     pendingRelease.current = false;
     // Commit bitti ≠ ekrana BOYANDI. Bir kare daha bekleniyor; alev o ana kadar
     // ekranı kapatmaya devam ediyor.
-    requestAnimationFrame(() => {
-      releaseFlameSweep();
-      // ⚠️ SALIVERMEDEN SONRA, aynı karede değil: `setDeckSettled` yeni arka
-      // kartın mount'unu başlatıyor ve onu salıvermeyle AYNI tick'e koymak o
-      // mount'u kritik pencereye geri sokardı (bkz. renderStack > deckSettled).
-      // Burada dalga çekilmeye başlamış, üstteki kart çoktan boyanmış durumda.
+    requestAnimationFrame(() => settleBehindFlame());
+  });
+
+  /**
+   * ── DESTE ALEVİN ALTINDA TAMAMEN OTURUYOR, SONRA ALEV GİDİYOR (2026-11-06) ──
+   *
+   * İstek: "ateş ekranı tam kapladığı sırada arkada render olsun, kart yerine
+   * gelsin, tamamen render olduktan sonra gitsin alev."
+   *
+   * Eskiden yeni arka kartın (`idx+2`) mount'u SALIVERMEDEN SONRA başlıyordu —
+   * gerekçe parkı kısa tutmaktı. Bedeli: kartın ağır zinciri (mount → 240 ms
+   * sonra panel → 700 ms sonra dokuz cam kutunun yenilemesi → 1.5 sn sonra
+   * örtülü kartların rasterleştirmesi) dalga ÇEKİLİRKEN ana thread'e
+   * düşüyordu; ana thread dolunca dalganın native kaydırması da takılıyordu.
+   * "Arkada kart varsa ateş kasıyor" tam buydu.
+   *
+   * Şimdi sıra:
+   *   1. Yeni üst kart boyandı (yukarıdaki iki kapı) — alev parkta.
+   *   2. Arka kart mount ediliyor (`deckSettled`), alev hâlâ parkta.
+   *   3. Arka kart "tamamen oturdum" diyor (SwipeCard > onSettled: panel +
+   *      cam yenilemesi). O sırada eski üst kartın paneli de yuvada soğumuş
+   *      oluyor (PANEL_COOLDOWN_MS < panel + cam süresi).
+   *   4. Örtülü kartlar ŞİMDİ dokuya alınıyor (DECK_RASTER_NOW_EVENT).
+   *   5. İki kare sonra (raster de boyansın) alev salıveriliyor.
+   *
+   * Bedel GECİKME: park ~1 sn uzuyor (nefes alarak bekliyor). Arka kart yoksa
+   * (destenin sonu) beklenecek bir şey yok, doğrudan salıverme.
+   *
+   * BÜTÇE emniyet içindir, tavan değil: haber hiç gelmezse (kart deste
+   * altımızdan değişti, beklenmeyen bir dal) alev sonsuza kadar kalmasın.
+   */
+  const awaitingSettle = useRef<string | null>(null);
+  const settleBudget = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSettleWait = () => {
+    if (settleBudget.current) clearTimeout(settleBudget.current);
+    settleBudget.current = null;
+    awaitingSettle.current = null;
+  };
+
+  const finishSettle = useEvent(() => {
+    clearSettleWait();
+    uiBus.emit(DECK_RASTER_NOW_EVENT);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => releaseFlameSweep()),
+    );
+  });
+
+  const settleBehindFlame = useEvent(() => {
+    const back = potentialMatches[currentIndex + 1];
+    if (!back) {
       setDeckSettled(true);
-    });
+      releaseFlameSweep();
+      return;
+    }
+    // Ref, setState'ten ÖNCE: arka kartı çizen render onu okuyor.
+    awaitingSettle.current = back.userId;
+    if (settleBudget.current) clearTimeout(settleBudget.current);
+    settleBudget.current = setTimeout(finishSettle, DECK_SETTLE_BUDGET_MS);
+    setDeckSettled(true);
+  });
+
+  /** Arka kartın "tamamen oturdum" haberi — yalnız beklenen kart sayılır. */
+  const handleBackSettled = useEvent((userId: string) => {
+    if (awaitingSettle.current !== userId) return;
+    finishSettle();
   });
 
   /**
@@ -2718,6 +2784,9 @@ export default function DiscoverScreen() {
       // Dalga, bu devrin ekrana boyanmasını BEKLİYOR (bkz. tryReleaseFlame) ve
       // yeni arka kart bu karede çizilmiyor — ikisi de `setCurrentIndex`ten
       // ÖNCE işaretleniyor ki devir karesi ilk hâlinden itibaren doğru olsun.
+      // Önceki devrin oturma beklemesi (varsa) bu devre ait değil: bütçesi
+      // dolup YENİ dalgayı erken salıvermesin.
+      clearSettleWait();
       pendingRelease.current = true;
       setDeckSettled(false);
       setCurrentIndex((i) => i + 1);
@@ -2949,6 +3018,7 @@ export default function DiscoverScreen() {
     resetCardExpandState();
     // `advanceDeck`teki ikilinin aynısı: dalga bu devrin boyanmasını bekliyor,
     // yeni arka kart devir karesinde çizilmiyor.
+    clearSettleWait();
     pendingRelease.current = true;
     setDeckSettled(false);
     setCurrentIndex((i) => i + 1);
@@ -3275,6 +3345,11 @@ export default function DiscoverScreen() {
       // olarak `false` kalır ve deste bir daha arka kart çizmezdi.
       pendingRelease.current = false;
       clearCoverWait();
+      // Oturmasını beklediğimiz arka kart da yok: alevi bekletme.
+      if (awaitingSettle.current) {
+        clearSettleWait();
+        releaseFlameSweep();
+      }
       setDeckSettled(true);
       // Deste çizilmiyor = yuva da yok. Bayrağı `renderStack` yazıyor ve o
       // şu an hiç çağrılmıyor; bayat kalırsa geri al basışı kartı mount
@@ -3392,6 +3467,10 @@ export default function DiscoverScreen() {
                   ? handleCoverReady
                   : undefined
             }
+            // Yalnız ARKADAKİ kart: alev parkı onun oturmasını bekliyor (bkz.
+            // settleBehindFlame). Referans sabit (useEvent), memo bozulmuyor;
+            // beklenmeyen haberleri handler kendisi eliyor.
+            onSettled={!isTopCard && !isWarm ? handleBackSettled : undefined}
           />
         );
       });

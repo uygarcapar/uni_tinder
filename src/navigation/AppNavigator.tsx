@@ -1124,41 +1124,42 @@ export default function AppNavigator() {
       realtimeService.on('IncomingLike', (payload) => {
         if (!mounted) return;
         /**
-         * ⚠️ ÖBÜR MODUN BEĞENİSİ SESSİZ. Beğeniler ekranı, rozet ve Keşif'in
-         * `whoLikedMeIds` kümesi SEÇİLİ MODUN verisi (sunucu listeyi `mode` ile
-         * süzüyor). Arkadaş modunda gelen bir beğeni Flört'teyken rozete
-         * yazılsaydı sayı listede bulunmayan bir karta işaret eder, toast'a
-         * basan kullanıcı da boş bir listeye düşerdi.
+         * ⚠️ ÖBÜR MODUN BEĞENİSİ ROZETE/LİSTEYE YAZILMAZ — ama TOAST ÇIKAR.
+         * Beğeniler ekranı, rozet ve Keşif'in `whoLikedMeIds` kümesi SEÇİLİ
+         * MODUN verisi (sunucu listeyi `mode` ile süzüyor). Arkadaş modunda gelen
+         * bir beğeni Flört'teyken rozete yazılsaydı sayı listede bulunmayan bir
+         * karta işaret ederdi.
          *
-         * Olay kaybolmuyor: kullanıcı o moda geçtiğinde liste ve rozet kanonik
-         * cevapla yeniden çekiliyor (bkz. LikesScreen mod değişimi effect'i).
+         * Toast ise gösteriliyor (2026-11-06 ürün kararı): başlığı mod etiketiyle
+         * başlıyor ("[Arkadaş] …") ve basınca mod OLAYIN moduna devrediliyor
+         * (bkz. showLikeToast), yani kullanıcı boş listeye düşmüyor. Liste/rozet
+         * o moda geçişte kanonik cevapla yeniden çekiliyor (LikesScreen mod
+         * değişimi effect'i).
          *
-         * ALAN YOKSA bastırma YAPILMIYOR: eski sunucu/olay şeması `mode`
-         * taşımıyorsa bugünkü davranış korunur — bilinmeyen bir modu "öbür mod"
-         * saymak bütün beğenileri sessize alırdı.
+         * ALAN YOKSA "öbür mod" sayılmıyor: eski sunucu/olay şeması `mode`
+         * taşımıyorsa bugünkü davranış korunur.
          */
         const likeMode = payload?.mode;
-        if (
-          isAppMode(likeMode) &&
-          likeMode !== readAppModeFor(store.getState()?.auth?.user?.id)
-        ) {
-          return;
+        const meId = store.getState()?.auth?.user?.id;
+        const isOtherMode =
+          isAppMode(likeMode) && likeMode !== readAppModeFor(meId);
+        if (!isOtherMode) {
+          dispatch(addWhoLikedMe(payload?.likerUserId));
+          /**
+           * Akış yazar kartı BAYATLADI: bu kişinin gönderisine girildiğinde
+           * kabul/reddet çizilmeli. Kart `staleTime: 5dk` ile cache'li
+           * (feedQueries > useFeedAuthorProfile), yani sunucunun `hasLikedMe`
+           * kolu beş dakika boyunca "hayır" demeye devam ederdi.
+           *
+           * Yerel `whoLikedMeIds` kolu (yukarıdaki `addWhoLikedMe`) bu boşluğu
+           * ÇOĞU HÂLDE kapatıyor ama hepsini değil: kart yalnız `cardMode ===
+           * selectedMode` iken o kümeye bakıyor (bkz. FeedScreen >
+           * authorHasLikedMe). Tazeleme iki kolu da hizalıyor.
+           */
+          queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
+          uiBus.emit('incomingLike', payload);
+          scheduleLikesReconcile();
         }
-        dispatch(addWhoLikedMe(payload?.likerUserId));
-        /**
-         * Akış yazar kartı BAYATLADI: bu kişinin gönderisine girildiğinde
-         * kabul/reddet çizilmeli. Kart `staleTime: 5dk` ile cache'li
-         * (feedQueries > useFeedAuthorProfile), yani sunucunun `hasLikedMe`
-         * kolu beş dakika boyunca "hayır" demeye devam ederdi.
-         *
-         * Yerel `whoLikedMeIds` kolu (yukarıdaki `addWhoLikedMe`) bu boşluğu
-         * ÇOĞU HÂLDE kapatıyor ama hepsini değil: kart yalnız `cardMode ===
-         * selectedMode` iken o kümeye bakıyor (bkz. FeedScreen >
-         * authorHasLikedMe). Tazeleme iki kolu da hizalıyor.
-         */
-        queryClient.invalidateQueries({ queryKey: feedKeys.authorProfileRoot });
-        uiBus.emit('incomingLike', payload);
-        scheduleLikesReconcile();
 
         if (appStateRef.current !== 'active') return;
         // Düz beğenide kimlik premium'a kilitli (bkz. LikesScreen / bildirim
@@ -1176,10 +1177,11 @@ export default function AppNavigator() {
           senderName: identityLocked ? null : payload?.likerDisplayName,
           photoUrl: identityLocked ? null : payload?.likerPhotoUrl,
           preview: payload?.notePreview ?? null,
-          // Ürünün adı OLAYIN modundan ("Fire" / "Spark"). Buraya kadar gelen
-          // olay zaten seçili modun (çapraz-mod yukarıda bastırılıyor) ama ad
-          // yine payload'dan okunuyor: tek doğruluk kaynağı olay.
+          // Ürünün adı, başlıktaki mod etiketi ve tap'teki mod devri OLAYIN
+          // modundan ("Fire"/"Spark", "[Flört]"/"[Arkadaş]") — olay öbür
+          // modun da olabilir.
           mode: isAppMode(likeMode) ? likeMode : undefined,
+          selfUserId: meId,
         });
       }),
       // Karşı taraf eşleşmeyi kaldırdı. BİLDİRİM GÖSTERİLMEZ (ürün kararı:

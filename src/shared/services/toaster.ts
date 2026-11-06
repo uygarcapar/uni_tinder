@@ -118,9 +118,17 @@ export function showMessageToast({
   });
 }
 
-export function showLikeToast(arg: LikeToastProps) {
+export function showLikeToast({
+  selfUserId,
+  ...arg
+}: LikeToastProps & { selfUserId?: string | null }) {
   const goToLikes = () => {
     if (!navigationRef.isReady()) return;
+    // MOD DEVRİ navigate'ten önce (showMessageToast ve Like push'ıyla aynı):
+    // toast öbür modun beğenisiyse Beğeniler o modun listesiyle açılsın —
+    // yoksa ekran seçili modun listesini çeker ve beğeni orada YOK (boş ekran).
+    // Aynı modsa `writeAppMode` no-op.
+    if (arg.mode) writeAppMode(selfUserId, arg.mode);
     navigationRef.navigate('HomeTabs' as never, { screen: 'Likes' } as never);
   };
 

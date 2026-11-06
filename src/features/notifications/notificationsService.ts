@@ -125,6 +125,12 @@ export interface NotificationItem {
   senderUserId?: string | null;
   /** Tetikleyenin profil fotoğrafı. Kullanıcının fotoğrafı yoksa da null gelebilir. */
   senderPhotoUrl?: string | null;
+  /**
+   * Bildirimin modu ("Dating" | "Friends") — yalnız moda bağlı türlerde (bugün
+   * Like/SuperLike/Note) dolu, diğerlerinde null. Başlığın "[Arkadaş] …"
+   * etiketi SUNUCUDA yazılıyor; istemci bunu yalnız tap'te mod devri için okur.
+   */
+  mode?: string | null;
   isRead: boolean;
   readAt?: string | null;
   createdAt: string;

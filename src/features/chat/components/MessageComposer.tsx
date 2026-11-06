@@ -81,6 +81,7 @@ import {
 } from "@/features/chat/components/VoiceRecordingUI";
 import { showInfoToast } from "@/shared/services/toaster";
 import { colors, scrimAt, veil } from "../../../shared/theme/colors";
+import { ownBubbleFill } from "@/features/chat/components/bubbleStyle";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 const TYPING_DEBOUNCE_MS = 1500;
@@ -440,6 +441,9 @@ type Props = {
   // composer hemen ardından `""`a döner VE `draftRef`i `""`e çekip diske öyle
   // yazardı — görünen metin kaybolur, taslak diskten SİLİNİR.
   editing?: boolean;
+  // Sohbetin modu — gönder butonu kendi balonumla AYNI dolguyu taşır
+  // (bubbleStyle > ownBubbleFill): Arkadaş'ta yeşil, Dating'de kırmızı.
+  mode?: unknown;
 };
 
 /**
@@ -465,7 +469,10 @@ function MessageComposer({
   onLockedPress,
   onSendVoice,
   editing,
+  mode,
 }: Props) {
+  // Render anında: palet mutable (tema değişimi).
+  const sendFill = ownBubbleFill(mode);
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   // Taslak varsa metin ilk render'da dolu başlar: gönder butonu aktif, ayna
@@ -1412,7 +1419,7 @@ function MessageComposer({
                     borderRadius: 16,
                     alignItems: "center",
                     justifyContent: "center",
-                    backgroundColor: colors.messageOwn,
+                    backgroundColor: sendFill,
                     opacity: showMic ? 0 : canSend ? 1 : 0.35,
                     overflow: "hidden",
                   }}
@@ -1536,7 +1543,7 @@ function MessageComposer({
                   pointerEvents="none"
                   style={[
                     recordingFillShape,
-                    { backgroundColor: colors.messageOwn },
+                    { backgroundColor: sendFill },
                   ]}
                 />
               ))}
@@ -1630,6 +1637,7 @@ function MessageComposer({
                 sendLabel={t("chat.input.send")}
                 onTrashRect={handleTrashRect}
                 trashActive={trashHot}
+                sendFill={sendFill}
               />
             </View>
           )}

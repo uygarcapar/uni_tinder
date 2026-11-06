@@ -16,6 +16,7 @@ import {
   Platform,
   StyleSheet,
   Keyboard,
+  type LayoutChangeEvent,
 } from "react-native";
 import { Image } from "expo-image";
 import type { MessageDto } from "@/shared/types";
@@ -1509,6 +1510,62 @@ function ChatScreen({
     [dispatch, editing],
   );
 
+  // YANITLI GÖNDERİM — şerit kapanışı ile balon ekleme AYNI karede olmalı:
+  // şerit kapanınca composer ~59px kısalıyor, açılan boşluğu yeni balon
+  // dolduruyor (ayrı karelerde olursa önce boş bir şerit görünüp sonra doluyor).
+  // Ama aynı karede İKİ kaydırma çakışıyordu: maintainScrollAtEnd'in ANİMASYONLU
+  // scrollToEnd'i hedefi ESKİ (uzun) composer inset'iyle hesaplıyor, ardından
+  // KeyboardChatScrollView (useExtraContentPadding) inset küçülünce scroll'u
+  // ANINDA -59 düzeltiyor → liste önce yukarı aşıp sonra yerine çekiliyordu.
+  // Çözüm: o kısa pencerede kütüphanenin anlık düzeltmesini kbFreeze ile sustur
+  // (freeze yalnız SCROLL düzeltmesini atlar, inset yine güncellenir), yeni
+  // composer yüksekliği raporlanınca dibe TEK native animasyonlu scroll at —
+  // native scrollToEnd güncel contentInset'i bildiği için hedef doğru; devam
+  // eden bayat animasyonu da mevcut konumdan yumuşakça yeniden hedefler.
+  const replyPinPendingRef = useRef(false);
+  const replyPinTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const releaseReplyFreeze = useCallback(() => {
+    // Uzun-bas menüsü kendi kilidini tutuyorsa (askıda çözülme var ya da
+    // klavyeyi geri açacak) ona dokunma.
+    if (kbUnfreezeRef.current || restoreKbRef.current) return;
+    kbFreeze.value = false;
+  }, [kbFreeze]);
+  const runReplyPin = useCallback(() => {
+    if (!replyPinPendingRef.current) return;
+    replyPinPendingRef.current = false;
+    const native = listRef.current?.getNativeScrollRef?.();
+    if (typeof native?.scrollToEnd === "function") {
+      native.scrollToEnd({ animated: true });
+    } else {
+      listRef.current?.getScrollResponder?.()?.scrollResponderScrollToEnd?.({
+        animated: true,
+      });
+    }
+    // Çözülmeyi kaydırma oturana kadar ertele: inset değişimi UI'da bir sonraki
+    // karede okunuyor; freeze ondan ÖNCE inerse düzeltme yine çalışıp atlatır.
+    const t = setTimeout(() => {
+      replyPinTimersRef.current.delete(t);
+      releaseReplyFreeze();
+    }, 350);
+    replyPinTimersRef.current.add(t);
+  }, [releaseReplyFreeze]);
+  useEffect(
+    () => () => {
+      replyPinTimersRef.current.forEach(clearTimeout);
+      replyPinTimersRef.current.clear();
+    },
+    [],
+  );
+  // Composer ölçüsü kütüphaneye raporlandıktan SONRA (shared value UI'da bir
+  // sonraki karede okunur) dibe kaydır.
+  const handleComposerLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      onComposerLayout(e);
+      if (replyPinPendingRef.current) requestAnimationFrame(runReplyPin);
+    },
+    [onComposerLayout, runReplyPin],
+  );
+
   const handleInputSend = useCallback(
     (payload: any) => {
       // Düzenleme modundayken gönder tuşu YENİ metni normal gönderim yoluna
@@ -1518,10 +1575,22 @@ function ChatScreen({
         handleSubmitEdit(payload.content);
         return;
       }
+      if (replyTo) {
+        // Bkz. yukarıdaki YANITLI GÖNDERİM notu. Freeze, state commit'inden
+        // ÖNCE UI'a inmeli → handleSend/setReplyTo'dan önce yazılır.
+        kbFreeze.value = true;
+        replyPinPendingRef.current = true;
+        // onLayout gelmezse (yükseklik değişmedi) de takılı kalma.
+        const t = setTimeout(() => {
+          replyPinTimersRef.current.delete(t);
+          runReplyPin();
+        }, 200);
+        replyPinTimersRef.current.add(t);
+      }
       handleSend(payload);
       setReplyTo(null);
     },
-    [handleSend, editing, handleSubmitEdit],
+    [handleSend, editing, handleSubmitEdit, replyTo, kbFreeze, runReplyPin],
   );
   // Boş sohbetteki açılış önerisi chip'i — dokunuş = mesajı olduğu gibi gönder.
   // Kota kilidini composer ile AYNI kuralla okuyoruz (quotaRef, render state'i
@@ -2757,7 +2826,7 @@ function ChatScreen({
               composerRef={composerRef}
               inputRef={composerInputRef}
               apiRef={composerApiRef}
-              onComposerLayout={onComposerLayout}
+              onComposerLayout={handleComposerLayout}
               replyTo={editing ? editingReplyShim : replyTo}
               onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
@@ -2769,6 +2838,7 @@ function ChatScreen({
               onLockedPress={handleLockedPress}
               onSendVoice={composerOnSendVoice}
               editing={!!editing}
+              mode={convMode}
             />
           </KeyboardStickyView>
         </KeyboardGestureArea>
@@ -2804,7 +2874,7 @@ function ChatScreen({
               composerRef={composerRef}
               inputRef={composerInputRef}
               apiRef={composerApiRef}
-              onComposerLayout={onComposerLayout}
+              onComposerLayout={handleComposerLayout}
               replyTo={editing ? editingReplyShim : replyTo}
               onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
@@ -2816,6 +2886,7 @@ function ChatScreen({
               onLockedPress={handleLockedPress}
               onSendVoice={composerOnSendVoice}
               editing={!!editing}
+              mode={convMode}
             />
           </KeyboardStickyView>
         </View>

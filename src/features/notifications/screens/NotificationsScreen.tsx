@@ -40,6 +40,8 @@ import {
 import SFIcon, { type SFSymbol } from '@/shared/components/SFIcon';
 import NoteGlyph from '@/shared/components/NoteGlyph';
 import notificationsService from '@/features/notifications/notificationsService';
+import { isAppMode } from '@/features/discover/modeTheme';
+import { writeAppMode } from '@/features/discover/useAppMode';
 import profileService from '@/features/profile/profileService';
 import uiBus, { requestPhotoHighlight } from '@/shared/services/uiBus';
 import { openFeed } from '@/features/feed/feedEntry';
@@ -219,6 +221,7 @@ export default function NotificationsScreen() {
   // sadece senderUserId + senderPhotoUrl var, displayName yok.
   const conversations = useAppSelector((s) => s.chat.conversations);
   const isPremium = useAppSelector(selectIsPremium);
+  const meId = useAppSelector((s) => (s as any).auth?.user?.id as string | undefined);
   // Elde son bilinen sayfa varsa ekran ONUNLA açılıyor: iskelet yok, boş ekran
   // yok, altındaki tazeleme sessizce üstüne yazıyor.
   const [items, setItems] = useState(
@@ -357,6 +360,10 @@ export default function NotificationsScreen() {
     }
 
     if (GOES_TO_LIKES[item.type]) {
+      // MOD DEVRİ navigate'ten önce (push ve toast'la aynı): Beğeniler seçili
+      // modun listesini çekiyor; Flört'teyken Arkadaş beğenisine basınca mod
+      // çevrilmezse ekran BOŞ açılırdı. Mod yoksa (eski satır) dokunulmuyor.
+      if (isAppMode(item.mode)) writeAppMode(meId, item.mode);
       (navigation as any).navigate('HomeTabs', { screen: 'Likes' });
       return;
     }
@@ -402,7 +409,7 @@ export default function NotificationsScreen() {
       return;
     }
     // System → hedef yok.
-  }, [navigation, conversations, dispatch]);
+  }, [navigation, conversations, dispatch, meId]);
 
   // Bölüm başlıkları veri içine serpiştiriliyor (FlatList'in sticky olmayan
   // basit section davranışı). items değişmedikçe yeniden hesaplanmıyor.
@@ -453,8 +460,10 @@ export default function NotificationsScreen() {
           ) : !loading ? (
             <View className="flex-1 items-center justify-center pb-[50%]">
               <EmptyState
+                // `sf` GEÇİLMİYOR, iOS'ta da lucide çiziliyor — Beğeniler'in
+                // boş durumuyla aynı kalınlık için (SF sembolü "regular"
+                // ağırlıkta kalın okunuyor; bkz. LikesScreen boş durumu).
                 Icon={BellOff}
-                sf="bell.slash"
                 iconStrokeWidth={1}
                 topOffset={0}
                 text={t('notifications.empty')}

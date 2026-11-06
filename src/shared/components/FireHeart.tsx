@@ -1,10 +1,12 @@
 import { useEffect } from "react";
+import { useAnimationsActive } from "@/shared/hooks/useAnimationsActive";
 import { View, StyleSheet } from "react-native";
 import { Heart } from "@/shared/icons";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
@@ -43,8 +45,14 @@ export default function FireHeart({
   // Band kalpten geniş → parıltının falloff'u yumuşak. Boyutla orantılı ölçekle.
   const bandWidth = size * 2.7;
   const shimmerProgress = useSharedValue(0);
+  // Görünmeyen sekmede/arka planda parıltı DÖNMEZ (bkz. useAnimationsActive).
+  const active = useAnimationsActive();
   useEffect(() => {
-    if (!shimmer) return;
+    if (!shimmer || !active) {
+      cancelAnimation(shimmerProgress);
+      shimmerProgress.value = 0;
+      return;
+    }
     shimmerProgress.value = 0;
     shimmerProgress.value = withRepeat(
       withSequence(
@@ -55,7 +63,7 @@ export default function FireHeart({
       -1,
       false,
     );
-  }, [shimmer, shimmerProgress]);
+  }, [shimmer, active, shimmerProgress]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
     transform: [

@@ -392,6 +392,59 @@ export function flameWaveGeometry(
   };
 }
 
+/** Şeridin dış konturu (pt) — canvas kutusu da konturun yarısını saymak zorunda. */
+export const FLAME_OUTLINE_WIDTH = 5;
+
+/** Dalganın geçerken yanal yalpası (pt) — kutunun yatay payı bu. */
+export const FLAME_SWAY_PX = 7;
+
+/**
+ * ── CANVAS ŞERİT BOYUNDA, KAYDIRMA NATIVE (2026-11-06) ───────────────────
+ *
+ * Eskiden canvas ekran boyundaydı ve dalga Skia'nın İÇİNDE bir `Group
+ * transform` ile kaydırılıyordu → süpürme boyunca Skia her karede (60 fps) tam
+ * ekran yeniden çiziyordu: ~2 ekran boyunda, dokuz glifin birleşimi olan bir
+ * path'in gradyan dolgusu + 5 pt kontur. Şekil ise saniyede yalnız 14 kez
+ * değişiyor; aradaki 46 karede değişen tek şey KONUM. "Alev çıkınca kasıyor"
+ * bunun bedeliydi.
+ *
+ * Artık canvas şeridin kendi boyunda ve öteleme onu taşıyan `Animated.View`in
+ * transform'unda: aradaki kareler Core Animation'da bir katman kaydırması
+ * (bedava), Skia yalnız titreşim karesi değişince (14 fps) çiziyor.
+ *
+ * Bedeli bellek: kutu ekranın ~2 katı boyunda, yani süpürme süresince (≈2 sn)
+ * daha büyük bir drawable. Süpürme bitince canvas hemen sökülüyor.
+ *
+ * Kutunun koordinatları — path'in yerel uzayına göre:
+ *   • `originY`: path'in y=0'ı kutunun tepesinden bu kadar aşağıda. Üst
+ *     dillerin en uzun hâli (TONGUE_PEAK) + konturun yarısı + pay.
+ *   • `height`: gövde `bandHeight`te bitiyor (alt kenarın kesicisi o hizanın
+ *     altını tamamen siliyor, bkz. buildFlameWave), üstüne aynı pay.
+ *   • `padX`: yalpa kutuyu yana kaydırırken kenarda boşluk açılmasın.
+ *
+ * Testle kilitli (tests/features/discover/flameWavePath.test.ts): path'in
+ * gerçek sınırları (glifin kontrol noktalarıyla, her titreşim fazında) kutunun
+ * içinde kalmalı — taşan dil ucu düz bir çizgiyle kesilmiş görünür.
+ */
+export interface FlameCanvasBox {
+  originY: number;
+  height: number;
+  padX: number;
+}
+
+export function flameCanvasBox(geo: FlameWaveGeometry): FlameCanvasBox {
+  const edge = FLAME_OUTLINE_WIDTH / 2 + 2;
+  // Glifin kontrol noktaları gridin 2'sinin biraz üstüne çıkıyor (1.91);
+  // %2'lik pay o farkı ve yatırmanın yuvarlamasını fazlasıyla örtüyor.
+  const reach = geo.tongueHeight * TONGUE_PEAK * (1 - TONGUE_EMBED) * 1.02;
+  const originY = Math.ceil(reach + edge);
+  return {
+    originY,
+    height: Math.ceil(originY + geo.bandHeight + edge),
+    padX: FLAME_SWAY_PX,
+  };
+}
+
 /**
  * PERDE modu — eşleşme kutlaması (bkz. MatchModal).
  *

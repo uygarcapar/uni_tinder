@@ -8,10 +8,16 @@
  */
 import {
   COVER_HOLD_LIMIT_MS,
+  FLAME_OUTLINE_WIDTH,
   FLAME_WAVE_MS,
+  FLICKER_FRAMES,
   HOLD_BREATHE_MS,
+  buildFlameWave,
+  flameCanvasBox,
   flameWaveGeometry,
+  type WaveApi,
 } from '@/features/discover/components/flameWavePath';
+import { FLAME_SWEEP_PATH } from '@/shared/components/icons/FlameGlyph';
 
 /** Elde bulunan telefon/tablet oranları + iki patolojik uç. */
 const SCREENS: Array<[string, number, number]> = [
@@ -99,5 +105,94 @@ describe('flameWaveGeometry · örtme anı', () => {
     // kullanıcı "duran bir alev" görür, canlılık kaybolur.
     expect(HOLD_BREATHE_MS).toBeGreaterThan(0);
     expect(HOLD_BREATHE_MS).toBeLessThan(COVER_HOLD_LIMIT_MS / 4);
+  });
+});
+
+/**
+ * Sınır kutusu adaptörü — path'i çizmeden, glifin KONTROL NOKTALARINDAN
+ * muhafazakâr bir kutu çıkarıyor (bezier eğrisi kontrol noktalarının dışbükey
+ * zarfında kalır). Fark işlemi kutuyu küçültmüyor: yalnız ÜST sınırı test
+ * ediyoruz ve fark onu ancak aşağı itebilir.
+ */
+type Box = { minX: number; minY: number; maxX: number; maxY: number };
+const EMPTY: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+const bboxApi: WaveApi<Box> = {
+  fromSVG: (d) => {
+    // Sweep glifi yalnız MUTLAK komutlar kullanıyor (M/C/Z) — sayılar düz x,y çiftleri.
+    expect(d).not.toMatch(/[a-y]/);
+    const n = (d.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+    const b = { ...EMPTY };
+    for (let i = 0; i + 1 < n.length; i += 2) {
+      b.minX = Math.min(b.minX, n[i]);
+      b.maxX = Math.max(b.maxX, n[i]);
+      b.minY = Math.min(b.minY, n[i + 1]);
+      b.maxY = Math.max(b.maxY, n[i + 1]);
+    }
+    return b;
+  },
+  empty: () => ({ ...EMPTY }),
+  addRect: (p, x, y, w, h) => {
+    p.minX = Math.min(p.minX, x);
+    p.minY = Math.min(p.minY, y);
+    p.maxX = Math.max(p.maxX, x + w);
+    p.maxY = Math.max(p.maxY, y + h);
+  },
+  transform: (p, [a, b, tx, c, d, ty]) => {
+    const pts = [
+      [p.minX, p.minY],
+      [p.maxX, p.minY],
+      [p.minX, p.maxY],
+      [p.maxX, p.maxY],
+    ].map(([x, y]) => [a * x + b * y + tx, c * x + d * y + ty]);
+    p.minX = Math.min(...pts.map((q) => q[0]));
+    p.maxX = Math.max(...pts.map((q) => q[0]));
+    p.minY = Math.min(...pts.map((q) => q[1]));
+    p.maxY = Math.max(...pts.map((q) => q[1]));
+  },
+  union: (dst, src) => {
+    dst.minX = Math.min(dst.minX, src.minX);
+    dst.minY = Math.min(dst.minY, src.minY);
+    dst.maxX = Math.max(dst.maxX, src.maxX);
+    dst.maxY = Math.max(dst.maxY, src.maxY);
+  },
+  difference: () => {},
+  offset: (p, dx, dy) => {
+    p.minX += dx;
+    p.maxX += dx;
+    p.minY += dy;
+    p.maxY += dy;
+  },
+};
+
+describe('flameCanvasBox · şerit boyunda canvas', () => {
+  it.each(SCREENS)('%s: dil uçları kutudan TAŞMIYOR (her fazda)', (_name, w, h) => {
+    const geo = flameWaveGeometry(w, h);
+    const box = flameCanvasBox(geo);
+    for (let i = 0; i < FLICKER_FRAMES; i++) {
+      const b = buildFlameWave(bboxApi, {
+        glyph: FLAME_SWEEP_PATH,
+        width: w,
+        bandHeight: geo.bandHeight,
+        tongueHeight: geo.tongueHeight,
+        phase: i / FLICKER_FRAMES,
+      });
+      // Kutunun tepesi path uzayında -originY; konturun yarısı da sığmalı.
+      expect(b.minY - FLAME_OUTLINE_WIDTH / 2).toBeGreaterThanOrEqual(-box.originY);
+    }
+  });
+
+  it.each(SCREENS)('%s: gövdenin dibi + kontur kutunun içinde', (_name, w, h) => {
+    const geo = flameWaveGeometry(w, h);
+    const box = flameCanvasBox(geo);
+    expect(box.originY + geo.bandHeight + FLAME_OUTLINE_WIDTH / 2).toBeLessThanOrEqual(
+      box.height,
+    );
+  });
+
+  it('kutu israf etmiyor — dil payı en uzun dilin boyunu geçmiyor', () => {
+    // Bellek bedeli (≈2 ekran boyu drawable) kutunun boyuyla büyüyor; pay
+    // "ne olur ne olmaz" diye şişirilirse süpürme boyunca boşuna piksel taşınır.
+    const geo = flameWaveGeometry(393, 852);
+    expect(flameCanvasBox(geo).originY).toBeLessThan(geo.tongueHeight);
   });
 });

@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { BlurView } from "expo-blur";
 import { colors as theme } from "@/shared/theme/colors";
 import { ultraThinBlurTint } from "@/shared/theme/blur";
-import { hasLiquidGlassSurface } from "@/shared/theme/glass";
+import { hasSectionGlass } from "./CardSectionBox";
 
 /**
  * Açık kartın ZEMİNİ — ana fotoğrafın blur'lanmış hali.
@@ -171,7 +171,9 @@ const BACKDROP_BLUR_SCREEN_RADIUS =
  * RENDER ANINDA ÇAĞRILIYOR, modül seviyesinde sabitlenmiyor: bayrağın kaynağı
  * native modülün kendi sabiti, modül import sırasına bağlanmasın.
  */
-const blurViewPath = (): boolean => hasLiquidGlassSurface();
+// 2026-11-06: kapı artık kutuların KENDİ bayrağı (bkz. CardSectionBox >
+// CARD_SECTION_GLASS) — kutular camsızken zemin de 26 altı yoluna düşüyor.
+const blurViewPath = (): boolean => hasSectionGlass();
 
 /**
  * ── ÖLÇEK: ÇERÇEVEYİ DOLDURAN EN KÜÇÜK BÜYÜTME ────────────────────────────
