@@ -531,7 +531,6 @@ export default function CropperOverlay() {
       <CropFrame
         visible={cropping}
         frame={{ left: winLeft, top: winTop, width: layout.winW, height: layout.winH }}
-        area={{ width: screenW, height: screenH }}
         gridStyle={gridStyle}
       />
 

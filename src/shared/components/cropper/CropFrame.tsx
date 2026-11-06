@@ -7,10 +7,10 @@ import type { Rect } from "./cropStage";
 /**
  * Kırpma çerçevesi katmanı: karartma + 3×3 ızgara + köşe tırnakları.
  *
- * `area`  — karartmanın kapsadığı kutu (kırpıcıda ekranın tamamı); katman o
- *           kutunun sol üst köşesine oturuyor, yani çağıranın koordinat
- *           uzayında (0,0)'dan başlıyor.
- * `frame` — pencere dikdörtgeni, `area` içinde.
+ * Katman ÜST KUTUSUNU doldurur (`absoluteFill`): karartma ebadı çağıranın
+ * verdiği bir sayıdan değil ana kutunun kendisinden geliyor (Android'de pencere
+ * yüksekliği kök kutudan farklı olabiliyor).
+ * `frame` — pencere dikdörtgeni, üst kutunun koordinat uzayında.
  *
  * ⚠️ BU BİLEŞEN, CAM BUTONLARIN KARDEŞİ OLARAK KONMALI, ATASI DEĞİL: kendi
  * opaklığı animasyonlu ve ata zincirinde animasyonlu opaklık liquid glass'ı
@@ -19,12 +19,10 @@ import type { Rect } from "./cropStage";
 export function CropFrame({
   visible,
   frame,
-  area,
   gridStyle,
 }: {
   visible: boolean;
   frame: Rect;
-  area: { width: number; height: number };
   gridStyle: ReturnType<typeof useAnimatedStyle>;
 }) {
   /**
@@ -48,7 +46,7 @@ export function CropFrame({
     // maskesi gerektirirdi; Apple Photos da keskin köşe kullanıyor.
     <Animated.View
       pointerEvents="none"
-      style={[{ position: "absolute", left: 0, top: 0, width: area.width, height: area.height }, frameStyle]}
+      style={[StyleSheet.absoluteFill, frameStyle]}
     >
       <View style={{ position: "absolute", left: 0, right: 0, top: 0, height: top, backgroundColor: scrim }} />
       <View style={{ position: "absolute", left: 0, right: 0, top: top + height, bottom: 0, backgroundColor: scrim }} />

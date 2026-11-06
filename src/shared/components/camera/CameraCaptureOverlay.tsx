@@ -324,9 +324,11 @@ export default function CameraCaptureOverlay() {
    * kararının tam tersi.
    *
    * Bu iki değer expo-image'in `onDisplay`inden yazılıyor (dosya GERÇEKTEN
-   * çizildi) ve hangi uri'nin çizildiğini tutuyor — bayrak değil uri, çünkü
-   * aynı native görüntü kaynak değiştirdiğinde eski uri'nin olayı yeni
-   * kaynağı "hazır" saymamalı.
+   * çizildi) ve çizilen uri'yi tutuyor. Koruma uri'nin kendisinden değil iki
+   * şeyden geliyor: `handleCrop` kaynak değişirken `setCropShownUri(null)`
+   * ile değeri düşürüyor ve okuyan taraf `cropSrc.uri` ile KARŞILAŞTIRIYOR.
+   * (Not: `onDisplay` olayı kaynak taşımıyor; işleyici render anındaki uri'yi
+   * yazıyor, yani eski kaynağın geç gelen olayını ayırt etmiyoruz.)
    *   • `cropShownUri`: kip görüntüsü çizildi mi. Çizilene kadar kip katmanı
    *     ŞEFFAF zeminle alttakinin ÜSTÜNDE duruyor; çizilince siyah zemine
    *     geçiyor. Geometri `startScale`de piksel piksel aynı → devir görünmez.
@@ -743,7 +745,13 @@ export default function CameraCaptureOverlay() {
     resetTransform: resetCropTransform,
     resetGestureFlags: resetCropGestureFlags,
   } = useCropGestures({
-    cropping,
+    // ✓ işlenirken (`busy`) kadraj DONUYOR: yoksa kullanıcı ✓'ye bastıktan
+    // sonra fotoğrafı oynatabilir ve sonuç eski dikdörtgenle çıkardı. Yalnız
+    // tanıyıcıları kapatıyor: kadraj değerleri ve `latest` yerinde kalıyor,
+    // sıçrama yok (`cropping` kapalıyken `peek` false → settleBack kadrajı
+    // OLDUĞU gibi bırakıyor); ✓ başarısız olup `busy` düşünce jestler aynı
+    // kadrajdan devam ediyor.
+    cropping: cropping && !busy,
     // Kip DIŞINDA hiçbir jest yok: önizlemede pinch bir "bakış" bile değil.
     peek: false,
     srcW: cropSrc?.w ?? 1,
@@ -1133,9 +1141,11 @@ export default function CameraCaptureOverlay() {
     resetCropTransform,
   ]);
 
-  /** ⟲ — kadraj girişteki hâline (`startScale`, ortalı) YAYLA döner. */
+  /** ⟲ — kadraj girişteki hâline (`startScale`, ortalı) YAYLA döner; başarısız
+   *  bir ✓'den kalan satır içi hata da siliniyor (yeni deneme temiz başlasın). */
   const handleResetCrop = useCallback(() => {
     if (busy || !cropScales) return;
+    setError(null);
     resetCropTransform(true, { s: cropScales.startScale, tx: 0, ty: 0 });
   }, [busy, cropScales, resetCropTransform]);
 
@@ -1521,7 +1531,6 @@ export default function CameraCaptureOverlay() {
           <CropFrame
             visible={cropping}
             frame={cropFrame}
-            area={{ width: layout.winW, height: layout.winH }}
             gridStyle={cropGridStyle}
           />
         ) : null}
@@ -1620,7 +1629,7 @@ export default function CameraCaptureOverlay() {
             <MediaChromeIconButton
               systemImage="crop"
               fallbackIcon={Crop}
-              label={t("common.cropper.crop")}
+              label={cropping ? t("common.cancel") : t("common.cropper.crop")}
               onPress={handleCrop}
               disabled={busy || !shot}
               active={cropping}
