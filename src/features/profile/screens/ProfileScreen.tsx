@@ -1725,8 +1725,9 @@ export default function ProfileScreen() {
 
   const addPhotoFromGallery = async () => {
     // KAYITLA AYNI ÖNİZLEME (istek): seçilen fotoğraf kamera ekranının donmuş
-    // kare görünümünde açılıyor — sağ altta onay oku, kırpıcı yalnız kırp'a
-    // basılırsa. Eskiden seçimden hemen sonra kırpıcı açılıyordu
+    // kare görünümünde açılıyor — sağ altta onay oku, kırpma yalnız kırp'a
+    // basılırsa ve önizlemede YERİNDE yapılıyor (kırpıcı ekranı açılmıyor).
+    // Eskiden seçimden hemen sonra kırpıcı açılıyordu
     // (`pickAndCropPhotos`). Tek fotoğraf: bu uç her seferinde bir tane
     // yüklüyor (tavan kontrolü `handleAddPhoto`da).
     // Galeri İZNİ SORULMUYOR: seçim PHPicker'da, yani süreç dışında yapılıyor.
@@ -1748,8 +1749,9 @@ export default function ProfileScreen() {
     let picked: PickedPhoto | null;
     try {
       // KAYITLA AYNI ÖNİZLEME (istek): deklanşörden sonra ekran değişmiyor,
-      // kare kamera penceresinde donuyor, sağ altta onay oku; kırpıcı yalnız
-      // kırp'a basılırsa açılıyor. Eskiden çekimden hemen sonra kırpıcı
+      // kare kamera penceresinde donuyor, sağ altta onay oku; kırpma yalnız
+      // kırp'a basılırsa ve önizlemede YERİNDE yapılıyor (kırpıcı açılmıyor).
+      // Eskiden çekimden hemen sonra kırpıcı
       // açılıyordu (`captureAndCropPhoto`).
       // ⚠️ `facing` VERİLMİYOR → ARKA kamera: kayıttan farkı bilerek —
       // profile kıyafet/ortam karesi de giriyor (bkz. cameraBridge > `facing`).

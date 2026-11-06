@@ -13,8 +13,9 @@ export type Rect = { left: number; top: number; width: number; height: number };
  * Pencerenin içinde 3:4 çerçeve. Genişlik pencereye ya da pencerenin 3:4
  * yüksekliğine sığan en büyük değer; iki eksende ortalı.
  *
- * NEDEN min(winW, winH·3/4): dar ama uzun bir pencerede (küçük cihaz) çerçeve
- * taşmasın diye yüksekliğe göre daralıyor; geniş pencerede tam genişlik kalıyor.
+ * NEDEN min(winW, winH·3/4): geniş ve KISA bir pencerede (ör. 393×400 → 300 geniş)
+ * çerçeve taşmasın diye yüksekliğe göre daralıyor; dar ve uzun pencerede `winW`
+ * bağlayıcı, yani tam genişlik kalıyor.
  */
 export function cropFrameInWindow(a: { winW: number; winH: number }): Rect {
   const { winW, winH } = a;

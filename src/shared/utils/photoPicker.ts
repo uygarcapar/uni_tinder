@@ -646,7 +646,8 @@ export const captureAndPreviewPhoto = async (options: {
     // KAMPÜSÜN TAM PENCERESİ (deklanşöre kadar) — 3:4 kutu DEĞİL. İstek
     // birebir: "çok kare gibi oluyor, görüntü çekme tuşuna kadar uzansın".
     // Bedeli bilerek kabul edildi: pencere ekran oranında, kare 3:4; önizleme
-    // iki yandan dar, yüklenen kare (`fitPhotoForUpload` / kırpıcı çıktısı)
+    // iki yandan dar, yüklenen kare (HER ZAMAN `fitPhotoForUpload`
+    // çıktısı; kırpılmış çekim araya giren bir ara üründür, o da buradan geçer)
     // görülenden yanlarda biraz GENİŞ — kampüs anlarıyla aynı tolerans.
     frame: 'fill',
     commitLabel: options.commitLabel,
