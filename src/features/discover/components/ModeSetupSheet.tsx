@@ -23,6 +23,10 @@ import { sanitizePrompts } from "@/features/profile/promptPayload";
 import type { ProfilePromptAnswer } from "@/shared/types";
 import { colors } from "@/shared/theme/colors";
 import type { AppMode } from "../modeTheme";
+import ModeSetupPhotoSection, {
+  SETUP_MIN_PHOTOS,
+  type SetupPhotoChoice,
+} from "./ModeSetupPhotoSection";
 
 /**
  * MİNİ KURULUM — kapalı bir modun profilini açma akışı.
@@ -73,7 +77,20 @@ export interface ModeSetupSheetProps {
      * kapalıyken alan HİÇ eklenmiyor.
      */
     interestedIn?: string[];
+    /** Yalnız `photoSetup` doluyken payload'da — bkz. prop'un doc'u. */
+    photos?: SetupPhotoChoice;
   }) => void;
+  /**
+   * Fotoğraf adımı — İLK AÇILIŞTA dolu geçilir (kaynak modun GÖRÜNÜR
+   * fotoğrafları + görünen adı), havuz-güncelleme yolunda (profil zaten
+   * açık) NULL/undefined: bölüm hiç çizilmez ve payload `photos` taşımaz —
+   * açık profilin fotoğraflarına dokunulmaz ("gönderilmeyen alana
+   * dokunulmaz", openProfileMode'un aynı kuralı).
+   */
+  photoSetup?: {
+    sourcePhotos: Array<{ photoId: string; photoImageUrl: string | null }>;
+    sourceModeLabel: string;
+  } | null;
   /**
    * Arkadaş modunda "kimleri görmek istersin" havuz sorusu sorulsun mu.
    *
@@ -93,6 +110,7 @@ export default function ModeSetupSheet({
   onClose,
   mode,
   onSubmit,
+  photoSetup = null,
   asksFriendsPool = false,
   submitting = false,
   errorText = null,
@@ -137,6 +155,21 @@ export default function ModeSetupSheet({
   const [promptIssues, setPromptIssues] = useState<Record<number, string>>({});
   const [localError, setLocalError] = useState<string | null>(null);
 
+  /**
+   * Foto seçimi. Varsayılan: kaynakta yeterli (≥ SETUP_MIN_PHOTOS) görünür
+   * foto varsa DEVRAL — kullanıcının eski davranışla aynı sonuca tek
+   * dokunuşla ulaşması; azsa yeni-kare hâli (devralmak profili gizli açardı,
+   * bölümün kendi doc'undaki görünürlük gerekçesi).
+   */
+  const defaultPhotoChoice = useCallback((): SetupPhotoChoice => {
+    return (photoSetup?.sourcePhotos.length ?? 0) >= SETUP_MIN_PHOTOS
+      ? { kind: "existing" }
+      : { kind: "new", photos: [] };
+  }, [photoSetup]);
+  const [photoChoice, setPhotoChoice] = useState<SetupPhotoChoice>(
+    defaultPhotoChoice,
+  );
+
   // Cevaplar her tuşta değil, editörün commit'iyle geliyor — bu yüzden
   // submit anında `flush()` ile açık taslak zorla yazdırılıyor (kayıt
   // adımındaki ve profil düzenlemedeki aynı kural).
@@ -151,8 +184,12 @@ export default function ModeSetupSheet({
       setPrompts([]);
       setPromptIssues({});
       setLocalError(null);
+      setPhotoChoice(defaultPhotoChoice());
       promptsRef.current = null;
     }
+    // defaultPhotoChoice bilerek deps'te DEĞİL: photoSetup sheet açıkken
+    // değişirse (profil tazelendi) kullanıcının o anki seçimini ezmemeli.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, mode]);
 
   const handlePromptsChange = useCallback((next: ProfilePromptAnswer[]) => {
@@ -223,6 +260,18 @@ export default function ModeSetupSheet({
       return;
     }
 
+    // Foto adımı: yeni-kare yolunda görünürlük eşiğinin altı durdurulur —
+    // sunucu kabul eder ama profil gizli açılır (HiddenInsufficientPhotos),
+    // kullanıcı bunu buradan başka hiçbir yerde öğrenemez.
+    if (
+      photoSetup &&
+      photoChoice.kind === "new" &&
+      photoChoice.photos.length < SETUP_MIN_PHOTOS
+    ) {
+      setLocalError(t("discover.mode.photos.minHint"));
+      return;
+    }
+
     setLocalError(null);
     onSubmit({
       intents,
@@ -230,8 +279,20 @@ export default function ModeSetupSheet({
       // Bölüm çizilmediyse alan HİÇ gönderilmiyor: kilitli kullanıcıda değeri
       // sunucu kendi türetiyor, ölü yük göndermenin anlamı yok.
       ...(showsInterestedIn ? { interestedIn } : {}),
+      // Foto da aynı kural: havuz-güncelleme yolunda alan hiç yok.
+      ...(photoSetup ? { photos: photoChoice } : {}),
     });
-  }, [intents, interestedIn, isFriends, onSubmit, prompts, showsInterestedIn, t]);
+  }, [
+    intents,
+    interestedIn,
+    isFriends,
+    onSubmit,
+    photoChoice,
+    photoSetup,
+    prompts,
+    showsInterestedIn,
+    t,
+  ]);
 
   const shownError = errorText ?? localError;
 
@@ -374,6 +435,22 @@ export default function ModeSetupSheet({
       >
         {t(`discover.mode.openIntro.${mode}`)}
       </Text>
+
+      {/* ── Fotoğraflar — modun yüzü, o yüzden EN ÜSTTE. Yalnız ilk açılışta
+             (photoSetup dolu); havuz-güncelleme yolunda bölüm hiç yok. ── */}
+      {photoSetup ? (
+        <View style={{ marginTop: 16 }}>
+          <ModeSetupPhotoSection
+            sourcePhotos={photoSetup.sourcePhotos}
+            sourceModeLabel={photoSetup.sourceModeLabel}
+            value={photoChoice}
+            onChange={(next) => {
+              setLocalError(null);
+              setPhotoChoice(next);
+            }}
+          />
+        </View>
+      ) : null}
 
       {/* ── Niyet ── */}
       <Section

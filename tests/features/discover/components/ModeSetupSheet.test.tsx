@@ -60,8 +60,49 @@ jest.mock('@/shared/hooks/useKeyboardAwareField', () => ({
   }),
 }));
 
+// Foto bölümünün kendi davranışı kendi testinde (ModeSetupPhotoSection.test) —
+// burada yalnız sheet'in kablolaması: bölümün çizilme koşulu, doğrulama ve
+// payload. Stub, `onChange`i dışarıdan sürülebilir butonlara bağlıyor.
+const NEW_PHOTO = (i: number) => ({
+  uri: `file:///n${i}.jpg`,
+  name: `n${i}.jpg`,
+  type: 'image/jpeg',
+});
+jest.mock('@/features/discover/components/ModeSetupPhotoSection', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  return {
+    __esModule: true,
+    SETUP_MIN_PHOTOS: 2,
+    default: ({ value, onChange }: any) => (
+      <>
+        <Text testID="photo-section">{value.kind}</Text>
+        <Pressable
+          testID="photo-set-new-1"
+          onPress={() => onChange({ kind: 'new', photos: [NEW_PHOTO(1)] })}
+        >
+          <Text>new1</Text>
+        </Pressable>
+        <Pressable
+          testID="photo-set-new-2"
+          onPress={() =>
+            onChange({ kind: 'new', photos: [NEW_PHOTO(1), NEW_PHOTO(2)] })
+          }
+        >
+          <Text>new2</Text>
+        </Pressable>
+      </>
+    ),
+  };
+});
+
 import { render, fireEvent, screen } from '@testing-library/react-native';
 import ModeSetupSheet from '@/features/discover/components/ModeSetupSheet';
+
+const SOURCE = [
+  { photoId: 'p1', photoImageUrl: 'https://x/1.jpg' },
+  { photoId: 'p2', photoImageUrl: 'https://x/2.jpg' },
+];
 
 const setup = (props: any = {}) => {
   const onSubmit = jest.fn();
@@ -72,6 +113,7 @@ const setup = (props: any = {}) => {
       mode={props.mode ?? 'Friends'}
       onSubmit={onSubmit}
       asksFriendsPool={props.asksFriendsPool}
+      photoSetup={props.photoSetup}
     />,
   );
   return { onSubmit, view };
@@ -138,6 +180,66 @@ describe('ModeSetupSheet — Friends havuz bölümü', () => {
 
     expect(onSubmit).toHaveBeenCalled();
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('interestedIn');
+  });
+});
+
+describe('ModeSetupSheet — fotoğraf adımı', () => {
+  const PHOTO_SETUP = { sourcePhotos: SOURCE, sourceModeLabel: 'Flört' };
+
+  it('photoSetup doluyken bölüm çizilir ve varsayılan payload kind:existing', () => {
+    const { onSubmit } = setup({ mode: 'Friends', photoSetup: PHOTO_SETUP });
+    pickIntent();
+
+    submit();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ photos: { kind: 'existing' } }),
+    );
+  });
+
+  it('photoSetup verilmemişse bölüm YOK ve payload photos TAŞIMIYOR', () => {
+    const { onSubmit } = setup({ mode: 'Friends' });
+    pickIntent();
+
+    submit();
+
+    expect(screen.queryByTestId('photo-section')).toBeNull();
+    expect(onSubmit).toHaveBeenCalled();
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('photos');
+  });
+
+  it('kaynakta <2 foto varken varsayılan yeni-kare hâli', () => {
+    setup({
+      mode: 'Friends',
+      photoSetup: { sourcePhotos: [SOURCE[0]], sourceModeLabel: 'Flört' },
+    });
+
+    expect(screen.getByTestId('photo-section').children[0]).toBe('new');
+  });
+
+  it('yeni-kare yolunda 2\'den az fotoyla gönderim engellenir', () => {
+    const { onSubmit } = setup({ mode: 'Friends', photoSetup: PHOTO_SETUP });
+    pickIntent();
+    fireEvent.press(screen.getByTestId('photo-set-new-1'));
+
+    submit();
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByText('discover.mode.photos.minHint')).not.toBeNull();
+  });
+
+  it('2 fotoyla payload kind:new taşır', () => {
+    const { onSubmit } = setup({ mode: 'Friends', photoSetup: PHOTO_SETUP });
+    pickIntent();
+    fireEvent.press(screen.getByTestId('photo-set-new-2'));
+
+    submit();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        photos: { kind: 'new', photos: [NEW_PHOTO(1), NEW_PHOTO(2)] },
+      }),
+    );
   });
 });
 
