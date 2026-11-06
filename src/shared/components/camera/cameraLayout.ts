@@ -14,6 +14,30 @@
 export type PreviewFrame = 'fill' | 'photo';
 
 /**
+ * Alt şerit — pencerenin altı ile ekranın altı arasındaki bant.
+ *
+ * İçindeki TEK kontrol (canlı kamerada deklanşör, galeri önizlemesinde onay
+ * oku) şeridin TAM ORTASINDA: altındaki boşluk (ekranın alt kenarına) ile
+ * üstündeki boşluk (pencerenin alt kenarına) EŞİT. Boşluk `insetBottom`un
+ * kendisi (ev göstergesinin şeridi), güvenli alanı olmayan cihazda taban 20 —
+ * yoksa kontrol ekranın kenarına yapışırdı.
+ *
+ * ⚠️ `controlH` ÇAĞIRANIN: galeriden gelen fotoğrafta deklanşör YOK, şeritte
+ * yalnız ok duruyor. Şeridi deklanşöre (72pt) göre ayırmak, pencerenin altında
+ * hiçbir şeyin durmadığı boş bir bant bırakıyordu — istek birebir: "deklanşör
+ * olmadığı için fotoğrafın görünen kısmı alt kenara daha fazla yaklaşsın".
+ * Okla (48pt) ölçülen şerit pencereyi 24pt aşağı uzatıyor; ok yine pencerenin
+ * DIŞINDA, kendi şeridinde (kullanıcı seçimi: ok fotoğrafın üstüne binmesin).
+ */
+export function footerStrip(a: {
+  insetBottom: number;
+  controlH: number;
+}): { footerGap: number; footerH: number } {
+  const footerGap = Math.max(a.insetBottom, 20);
+  return { footerGap, footerH: 2 * footerGap + a.controlH };
+}
+
+/**
  * Önizleme penceresi. `insetTop`/`footerH` KAMERA ekranının kendi ölçüleri.
  *
  * İKİ PENCERE DE ÜSTE DAYALI ve aynı tepeden (güvenli alanın hemen altı)

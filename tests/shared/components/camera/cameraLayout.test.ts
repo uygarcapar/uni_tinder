@@ -1,5 +1,5 @@
 import { frameWindow, centerCropRect } from '@/shared/components/cropper/cropGeometry';
-import { cameraChrome, previewWindow } from '@/shared/components/camera/cameraLayout';
+import { cameraChrome, footerStrip, previewWindow } from '@/shared/components/camera/cameraLayout';
 
 describe('previewWindow', () => {
   const phone = { screenW: 393, screenH: 852, insetTop: 59, headerH: 123, footerH: 140 };
@@ -85,5 +85,26 @@ describe('cameraChrome', () => {
     expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true, cropping: true }))
       .toEqual({ shutter: false, flash: false, flip: false, retake: false, reset: true, crop: true, confirm: true, hint: true });
     expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true, cropping: true }).reset).toBe(true);
+  });
+});
+
+describe('footerStrip', () => {
+  it('deklanşör şeridi: kontrol ortada, üstte ve altta EŞİT boşluk', () => {
+    expect(footerStrip({ insetBottom: 34, controlH: 72 })).toEqual({ footerGap: 34, footerH: 140 });
+  });
+
+  it('galeri: deklanşör yok, şerit yalnız ok kadar — pencere 24pt aşağı uzanır', () => {
+    const camera = footerStrip({ insetBottom: 34, controlH: 72 });
+    const gallery = footerStrip({ insetBottom: 34, controlH: 48 });
+    expect(gallery).toEqual({ footerGap: 34, footerH: 116 });
+    const phone = { screenW: 393, screenH: 852, insetTop: 59, headerH: 123 };
+    const winCam = previewWindow({ ...phone, footerH: camera.footerH, frame: 'fill' });
+    const winGal = previewWindow({ ...phone, footerH: gallery.footerH, frame: 'fill' });
+    expect(winGal.winH - winCam.winH).toBe(24);
+    expect(winGal.top).toBe(winCam.top);
+  });
+
+  it('güvenli alanı olmayan cihazda boşluk tabanı 20', () => {
+    expect(footerStrip({ insetBottom: 0, controlH: 48 })).toEqual({ footerGap: 20, footerH: 88 });
   });
 });

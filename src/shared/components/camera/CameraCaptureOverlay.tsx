@@ -55,7 +55,7 @@ import {
   type CameraRequest,
   type CameraShot,
 } from "./cameraBridge";
-import { cameraChrome, previewWindow } from "./cameraLayout";
+import { cameraChrome, footerStrip, previewWindow } from "./cameraLayout";
 import { resolveShotSize } from "./shotSize";
 
 /**
@@ -640,9 +640,15 @@ export default function CameraCaptureOverlay() {
      * ⚠️ TABAN 20: güvenli alanı olmayan cihazda (insets.bottom = 0) düğme
      * ekranın kenarına yapışırdı. Çentiklide ölçü `insets.bottom`un kendisi,
      * yani ev göstergesinin şeridi kadar — düğme onun üstünde kalıyor.
+     *
+     * ⚠️ KAMERASIZ MODDA (galeri / "Düzenle") ŞERİT OK KADAR: deklanşör hiç
+     * çizilmiyor, şeritte yalnız onay oku var. Hesap `footerStrip`te (saf,
+     * testli); pencere o yolda 24pt (iPhone 15) aşağı uzanıyor — gerekçe orada.
      */
-    const footerGap = Math.max(insets.bottom, 20);
-    const footerH = 2 * footerGap + SHUTTER;
+    const { footerGap, footerH } = footerStrip({
+      insetBottom: insets.bottom,
+      controlH: previewOnly ? SEND : SHUTTER,
+    });
     /**
      * ══════════════════════════════════════════════════════════════════════
      * PENCERE GÜVENLİ ALANIN ALTINDAN DEKLANŞÖRE KADAR — 3:4 DEĞİL.
@@ -700,7 +706,7 @@ export default function CameraCaptureOverlay() {
       footerH,
     });
     return { headerH, footerGap, ...win };
-  }, [frame, insets.top, insets.bottom, screenH, screenW]);
+  }, [frame, previewOnly, insets.top, insets.bottom, screenH, screenW]);
 
   /**
    * KIRPMA KİPİNİN GEOMETRİSİ — hepsi PENCERENİN kendi uzayında.
