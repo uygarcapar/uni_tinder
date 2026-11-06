@@ -25,7 +25,7 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
-  pickAndCropPhotos,
+  pickAndPreviewPhotos,
   captureAndPreviewPhoto,
   recropExistingPhoto,
   type PickedPhoto,
@@ -1724,11 +1724,18 @@ export default function ProfileScreen() {
   };
 
   const addPhotoFromGallery = async () => {
-    // Kayıt akışıyla aynı 3:4 crop'lu seçim. Galeri İZNİ SORULMUYOR: seçim
-    // PHPicker'da, yani süreç dışında yapılıyor.
+    // KAYITLA AYNI ÖNİZLEME (istek): seçilen fotoğraf kamera ekranının donmuş
+    // kare görünümünde açılıyor — sağ altta onay oku, kırpıcı yalnız kırp'a
+    // basılırsa. Eskiden seçimden hemen sonra kırpıcı açılıyordu
+    // (`pickAndCropPhotos`). Tek fotoğraf: bu uç her seferinde bir tane
+    // yüklüyor (tavan kontrolü `handleAddPhoto`da).
+    // Galeri İZNİ SORULMUYOR: seçim PHPicker'da, yani süreç dışında yapılıyor.
     let picked: PickedPhoto[];
     try {
-      picked = await pickAndCropPhotos(1);
+      picked = await pickAndPreviewPhotos(1, {
+        failedMessage: t('common.cropper.failed'),
+        commitLabel: t('common.add'),
+      });
     } catch (e: any) {
       devLog("Galeri seçimi hatası:", e);
       return;
