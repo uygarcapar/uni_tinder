@@ -12,7 +12,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
   Platform,
   Switch,
   Alert,
@@ -22,25 +21,19 @@ import {
   type ViewStyle,
 } from "react-native";
 import { showInfoToast } from "@/shared/services/toaster";
-import { resolvePhotoUri } from "@/shared/utils/photoUri";
-import { Image } from "expo-image";
-import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedReaction,
   withSpring,
   withTiming,
   withRepeat,
-  withSequence,
   Easing,
-  runOnJS,
   type SharedValue,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import {
+  AlertTriangle,
   ChevronDown,
-  Plus,
   X,
   Check,
   InfoIcon,
@@ -94,15 +87,14 @@ import {
   countPhotosAwaitingReview,
   countRejectedPhotos,
   hasPhotosAwaitingReview,
+  moderationReasonText,
   normalizePhotoModeration,
   resolveRequiredPhotoCount,
 } from "@/features/profile/photoModeration";
 import { photoModerationCodeKey } from "@/shared/constants/responseCodes";
 import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
 import ProfileVisibilityBanner from "@/features/profile/components/ProfileVisibilityBanner";
-import PhotoModerationBadge, {
-  PhotoModerationScrim,
-} from "@/features/profile/components/PhotoModerationBadge";
+import ProfilePhotoGrid from "@/features/profile/components/ProfilePhotoGrid";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
 import {
@@ -127,41 +119,23 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
 import { useTranslation } from "react-i18next";
-import { colors } from "../../../shared/theme/colors";
+import { colors, withAlpha } from "../../../shared/theme/colors";
 import HobbyIcon from "@/shared/components/HobbyIcon";
-
-// ─── Reanimated Grid Hesaplamaları ─────────────────────────────────────────
-const { width: WINDOW_WIDTH } = Dimensions.get("window");
-const CONTAINER_PADDING = 20;
-const AVAILABLE_WIDTH = WINDOW_WIDTH - CONTAINER_PADDING * 2;
-const ITEM_WIDTH = AVAILABLE_WIDTH * 0.31;
-const GAP = (AVAILABLE_WIDTH - 3 * ITEM_WIDTH) / 2;
-const ITEM_HEIGHT = ITEM_WIDTH * (4 / 3);
-const ROW_GAP = 20;
-const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
+// Izgara geometrisi AYRI ve SAF modülde — mod başına fotoğrafla birlikte mod
+// kurulum sheet'i de aynı hesabı kullanacak; kopyalanırsa iki yüzey ayrışır.
+// Testleri: tests/features/profile/components/photoGridGeometry.test.ts
+import {
+  CONTAINER_PADDING,
+  ITEM_HEIGHT,
+  ITEM_WIDTH,
+  ROW_GAP,
+  getPosition,
+} from "@/features/profile/components/photoGridGeometry";
 
 // Edit formu ilk kez mount edildi mi? İlk mount progressive (stage 1→4, skeleton);
 // sonraki her mount doğrudan stage 4 → anında tam form (skeleton/pop-in yok).
 // Modül seviyesi olduğu için remount'lar arası yaşar.
 let editFormWarmedUp = false;
-
-const getContainerHeight = (photoCount) =>
-  photoCount <= 2 ? ITEM_HEIGHT : 2 * ITEM_HEIGHT + ROW_GAP;
-
-const getPosition = (index) => {
-  "worklet";
-  return {
-    x: (index % 3) * (ITEM_WIDTH + GAP),
-    y: Math.floor(index / 3) * (ITEM_HEIGHT + ROW_GAP),
-  };
-};
-
-const getOrder = (tx, ty, maxIndex) => {
-  "worklet";
-  const col = Math.round(tx / (ITEM_WIDTH + GAP));
-  const row = Math.round(ty / (ITEM_HEIGHT + ROW_GAP));
-  return Math.max(0, Math.min(row * 3 + col, maxIndex));
-};
 
 // ─── Icon haritaları ───────────────────────────────────────────────────────
 // iOS'ta SF Symbol, Android'de lucide fallback. `sf` opsiyonel — SF karşılığı
@@ -718,146 +692,6 @@ const OptionListItem = React.memo(function OptionListItem({
   );
 });
 
-// ─── Photo grid components ─────────────────────────────────────────────────
-// Photo yüklenirken absolute overlay olarak shimmer'lı SkelBox göster.
-// SkelBox h:number bekliyor; foto cell'i %100 doldurduğu için absolute fill
-// + onLayout ile genişlik/yükseklik ölçüp shimmer translate'i hesaplıyoruz.
-function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
-  const shimmer = useSharedValue(0);
-  const widthSV = useSharedValue(0);
-
-  useEffect(() => {
-    shimmer.value = withRepeat(
-      withTiming(1, { duration: 1200, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, [shimmer]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: (shimmer.value - 1) * widthSV.value }],
-  }));
-
-  return (
-    <View
-      pointerEvents="none"
-      onLayout={(e) => {
-        widthSV.value = e.nativeEvent.layout.width;
-      }}
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        borderRadius,
-        backgroundColor: colors.surface,
-        overflow: "hidden",
-      }}
-    >
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          {
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "200%",
-            height: "100%",
-          },
-          animStyle,
-        ]}
-      >
-        <LinearGradient
-          colors={[
-            "transparent",
-            colors.shimmer,
-            "transparent",
-            colors.shimmer,
-            "transparent",
-          ]}
-          locations={[0, 0.25, 0.5, 0.75, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
-    </View>
-  );
-}
-
-/**
- * Bildirimden gelen fotoğrafın etrafında nabız gibi atan halka.
- *
- * Kutunun İÇİNDE (absoluteFill + aynı yarıçap): kart `overflow: hidden` ve
- * dışarı çizilen bir halka kırpılırdı. `pointerEvents="none"` — vurgu yalnız
- * görsel, altındaki sürükle/sil hedeflerini yutmuyor.
- *
- * Ömrü kendi içinde bitiyor: yumuşak açılış → birkaç nabız → yavaş sönme.
- * Eskiden sonsuz `withRepeat` idi ve ProfileScreen 4.5sn sonra bileşeni
- * unmount edince halka tam parlaklıkken bir karede yok oluyordu. Sekans
- * kasten o pencereden kısa (≈4.4sn): unmount ettiğinde ekranda zaten
- * görünmüyor, sönme kesilmiyor.
- */
-const HIGHLIGHT_FADE_IN_MS = 260;
-const HIGHLIGHT_PULSE_MS = 850;
-const HIGHLIGHT_PULSE_COUNT = 4; // çift sayı → sekans tam parlaklıkta biter
-const HIGHLIGHT_FADE_OUT_MS = 700;
-
-function PhotoHighlightRing({ borderRadius }: { borderRadius: number }) {
-  const opacity = useSharedValue(0);
-  useEffect(() => {
-    opacity.value = withSequence(
-      withTiming(1, {
-        duration: HIGHLIGHT_FADE_IN_MS,
-        easing: Easing.out(Easing.quad),
-      }),
-      withRepeat(
-        withTiming(0.4, {
-          duration: HIGHLIGHT_PULSE_MS,
-          easing: Easing.inOut(Easing.quad),
-        }),
-        HIGHLIGHT_PULSE_COUNT,
-        true,
-      ),
-      withTiming(0, {
-        duration: HIGHLIGHT_FADE_OUT_MS,
-        easing: Easing.in(Easing.quad),
-      }),
-    );
-  }, [opacity]);
-  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        {
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          borderRadius,
-          borderCurve: "continuous",
-          borderWidth: 3,
-          // litPlus kırmızısı — primary'nin bir tık doygunu, vurgu bu yüzden
-          // kart kenarlarında daha net okunuyor.
-          //
-          // ⚠️ MODLA DÖNMÜYOR, bilerek. Eskiden "Kaydırmaya başla" CTA'sıyla
-          // aynı renk olduğu yazılıydı; o CTA artık `modeAccent` okuyor
-          // (Friends'te yeşil), bu halka okumuyor. İki gerekçe: fotoğraflar
-          // iki modun PAYLAŞTIĞI veri (modun kendi içeriği prompt + niyet),
-          // ve bu halka kalıcı bir yüzey değil — bir kez atıp sönen darbe.
-          // Yeşile çevirmek istenirse `editMode` iki seviye aşağı prop olarak
-          // geçirilmeli; bileşen modül seviyesinde.
-          borderColor: colors.litPlus,
-        },
-        style,
-      ]}
-    />
-  );
-}
-
 /**
  * Fotoğrafın moderasyon durumunun karşılaştırılabilir özeti.
  *
@@ -877,205 +711,6 @@ function moderationSignature(photo: any): string {
     m.reasonCode ?? "",
   ].join("|");
 }
-
-// expo-image — memory+disk cache → modal her açıldığında foto cache'ten anında
-// gelir, ilk yüklemede shimmer gösterilir. Native cachePolicy reliable olduğu
-// için RN Image'daki onLoad-cached-hit problemi ve 5s safety-net gerekmez.
-function PhotoItem({ photo, onPress, savingPhoto, highlighted = false }: any) {
-  const [loading, setLoading] = useState(true);
-  // photoId'li sürüm parametresi: silinip yeniden yüklenen foto backend'de aynı
-  // slot URL'ine düşse bile cache anahtarı değişir (bkz. photoUri.ts).
-  const uri = resolvePhotoUri(photo);
-  const { status, isVisibleToOthers } = normalizePhotoModeration(photo);
-
-  return (
-    <View style={{ width: "100%", height: "100%" }}>
-      <View
-        style={{
-          width: "100%",
-          height: "100%",
-          borderRadius: 20,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          backgroundColor: colors.surface,
-          // "+" kutusuyla aynı çerçeve (bkz. add-btn): koyu fotoğrafların
-          // kenarı zeminde kaybolmasın, boş slotla dolu slot aynı kutu okunsun.
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-        }}
-      >
-        <Image
-          source={uri ? { uri } : null}
-          // recyclingKey: view yeniden kullanıldığında expo-image önceki
-          // görüntüyü ekranda tutar; anahtar değişince temizler. Foto ekleme /
-          // silme sonrası bir sonraki foto "eski foto" olarak çizilmesin.
-          recyclingKey={photo.photoId != null ? String(photo.photoId) : null}
-          style={{ width: "100%", height: "100%" }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          transition={150}
-          onLoad={() => setLoading(false)}
-          onError={() => setLoading(false)}
-        />
-        {/* Kullanıcı KENDİ fotoğrafını her durumda görür; yayında olmayanı
-            gizlemek yerine soluklaştırıp rozetle sebebini belirtiyoruz. */}
-        <PhotoModerationScrim
-          isVisibleToOthers={isVisibleToOthers}
-          borderRadius={20}
-        />
-        <PhotoModerationBadge
-          status={status}
-          isVisibleToOthers={isVisibleToOthers}
-        />
-        {loading && <PhotoShimmer borderRadius={20} />}
-        {highlighted && <PhotoHighlightRing borderRadius={20} />}
-      </View>
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={() => onPress(photo)}
-        disabled={savingPhoto}
-        style={{
-          position: "absolute",
-          top: -8,
-          right: -8,
-          borderRadius: 999,
-          width: 32,
-          height: 32,
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 50,
-          backgroundColor: colors.surface,
-        }}
-      >
-        <View pointerEvents="none">
-          <SFIcon
-            name="xmark"
-            fallback={X}
-            size={16}
-            strokeWidth={3}
-            color={colors.textSecondary}
-            weight="bold"
-          />
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const SortablePhoto = React.memo(function SortablePhoto({
-  id,
-  index,
-  positions,
-  maxIndex,
-  children,
-  onDragEnd,
-}: any) {
-  const isDragging = useSharedValue(false);
-  const position = getPosition(index);
-  const translateX = useSharedValue(position.x);
-  const translateY = useSharedValue(position.y);
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-  const scale = useSharedValue(1);
-  // zIndex'i state ile tutuyoruz, useAnimatedStyle'a sokmuyoruz. Fabric'te
-  // zIndex layout property'sidir ve animated style içinde okunduğunda her
-  // frame ShadowTree commit'i tetikler — 6 photo × her frame = saniyede
-  // yüzlerce commit → react_native_assert "attempts < 1024" SIGABRT.
-  const [dragZ, setDragZ] = useState(0);
-
-  // ÖNCEKİ: mount'ta withSpring(translateX.value) no-op spring fırlatıyordu →
-  // 12 paralel spring loop. Initial değer zaten doğru, spring'e gerek yok.
-
-  useAnimatedReaction(
-    () => positions.value[id],
-    (newIndex, prev) => {
-      // Initial fire'da (prev === null) ve değişiklik yoksa spring kurma —
-      // mount sırasındaki gereksiz spring cascade'ini önler.
-      if (newIndex === undefined) return;
-      if (prev === undefined && newIndex === index) return;
-      if (newIndex === prev) return;
-      if (isDragging.value) return;
-      const pos = getPosition(newIndex);
-      translateX.value = withSpring(pos.x, SPRING_CONFIG);
-      translateY.value = withSpring(pos.y, SPRING_CONFIG);
-    },
-  );
-
-  // ÖNCESİ: useAnimatedReaction(isDragging) mount sırasında 6 photo × 1
-  // worklet kaydı → reanimated başlangıç maliyeti. SONRASI: scale spring'i
-  // ve dragZ state'i pan gesture handler'larında doğrudan tetikleniyor.
-  // Mount'ta hiçbir worklet kayıt edilmiyor, drag feedback aynı.
-
-  const panGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activateAfterLongPress(220)
-        .onStart(() => {
-          isDragging.value = true;
-          startX.value = translateX.value;
-          startY.value = translateY.value;
-          scale.value = withSpring(1.05, SPRING_CONFIG);
-          runOnJS(setDragZ)(100);
-        })
-        .onUpdate((event) => {
-          translateX.value = startX.value + event.translationX;
-          translateY.value = startY.value + event.translationY;
-
-          const newIndex = getOrder(
-            translateX.value,
-            translateY.value,
-            maxIndex,
-          );
-          const oldIndex = positions.value[id];
-
-          if (newIndex !== oldIndex && newIndex !== undefined) {
-            const newPositions = { ...positions.value };
-            for (const key in newPositions) {
-              if (newPositions[key] === newIndex) {
-                newPositions[key] = oldIndex;
-                break;
-              }
-            }
-            newPositions[id] = newIndex;
-            positions.value = newPositions;
-          }
-        })
-        .onEnd(() => {
-          isDragging.value = false;
-          scale.value = withSpring(1, SPRING_CONFIG);
-          runOnJS(setDragZ)(0);
-          const finalPos = getPosition(positions.value[id]);
-          runOnJS(onDragEnd)(positions.value, false);
-          translateX.value = withSpring(finalPos.x, SPRING_CONFIG);
-          translateY.value = withSpring(finalPos.y, SPRING_CONFIG, () => {
-            runOnJS(onDragEnd)(positions.value, true);
-          });
-        }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, maxIndex, onDragEnd],
-  );
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: ITEM_WIDTH,
-    height: ITEM_HEIGHT,
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ] as any,
-  }));
-
-  return (
-    <GestureDetector gesture={panGesture}>
-      <Animated.View style={[animatedStyle, { zIndex: dragZ }]}>
-        {children}
-      </Animated.View>
-    </GestureDetector>
-  );
-});
 
 // ─── Lightweight skeleton ──────────────────────────────────────────────────
 // Modal açılırken parent tarafından render edilir. Heavy form mount'unu maskeler.
@@ -1442,6 +1077,15 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   //   promptSubmitErrors → sunucudan dönen UT-22xx retleri
   const [promptFieldErrors, setPromptFieldErrors] = useState<Record<number, string>>({});
   const [promptSubmitErrors, setPromptSubmitErrors] = useState<PromptFieldError[]>([]);
+  // Fotoğraf reddi SATIR İÇİNDE gösteriliyor, toast ile DEĞİL.
+  //
+  // ⚠️ SESSİZ TUZAK: `NotifierWrapper` App.tsx'te `BottomSheetModalProvider`ın
+  // İÇİNDE duruyor, yani toast sheet'in ALTINDA çiziliyor. Bu modal açıkken
+  // gösterilen her toast görünmez — kullanıcıya göre "kaydete bastım, hiçbir
+  // şey demedi". Ana fotoğrafı yüzsüz/yayında olmayan bir kareye taşımak tam
+  // da bu yoldan geçtiği için sebep hiç ulaşmıyordu. (Aynı gerekçe:
+  // CameraCaptureOverlay'in satır içi hatası.)
+  const [photoSubmitError, setPhotoSubmitError] = useState<string | null>(null);
 
   // ── Cinsiyet ────────────────────────────────────────────────────────────
   // Kayıtta (RegisterStep7) seçilen kimlik alanı; artık buradan da değiştirilebiliyor.
@@ -1564,6 +1208,31 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     id = setTimeout(tick, SECTION_SCROLL_DELAY);
     return () => clearTimeout(id);
   }, [focusSection, stage, scrollToOffset]);
+
+  /**
+   * Fotoğraf hatasını satır içinde yazar ve ızgarayı görünür hâle getirir.
+   *
+   * Scroll ŞART: kaydet düğmesi header'da, hata ise formun yukarısındaki
+   * fotoğraf bölümünde. Kullanıcı en altta (ör. burçlar) kaydete bastıysa
+   * mesaj ekran dışında kalır ve yine "hiçbir şey demedi" olur.
+   * `focusSection` akışıyla aynı retry'li tick: ölçüm veya scroll view hazır
+   * değilse birkaç kez daha dener.
+   */
+  const showPhotoError = useCallback(
+    (message: string) => {
+      setPhotoSubmitError(message);
+      let attempt = 0;
+      const tick = () => {
+        const y = sectionOffsets.current.photos;
+        const done = y != null && scrollToOffset(y - SECTION_SCROLL_GAP);
+        if (!done && ++attempt < SECTION_SCROLL_RETRIES) {
+          setTimeout(tick, SECTION_SCROLL_DELAY);
+        }
+      };
+      setTimeout(tick, SECTION_SCROLL_DELAY);
+    },
+    [scrollToOffset],
+  );
 
   // ── Photo grid (draft order) ────────────────────────────────────────────
   const [draftPhotoOrder, setDraftPhotoOrder] = useState([]);
@@ -1773,6 +1442,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     if (!isChanged && draftPhotoOrderRef.current === current) return;
     setDraftPhotoOrder(draftPhotoOrderRef.current);
     if (photoOrderDirtyRef.current) setPhotoOrderDirty(true);
+    // Sıra değişti → eski red artık hangi fotoğrafı anlattığı belirsiz; dursun
+    // istemiyoruz. Yeni karar bir sonraki kaydette veriliyor.
+    setPhotoSubmitError(null);
   }, []);
 
   // ── Submit ─────────────────────────────────────────────────────────────
@@ -1783,6 +1455,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     if (savingProfile) return;
     setSavingProfile(true);
     onSavingChange?.(true);
+    // Yeni denemede eski foto reddi kalmasın — fotoğraf bloğu aşağıda, prompt
+    // temizliğinden ÖNCE çalışıyor, o yüzden temizlik en başta.
+    setPhotoSubmitError(null);
     try {
       // "Kaydet" input'u blur ETMİYOR (sheet `keyboardShouldPersistTaps="handled"`):
       // "Bitir"e basılmadan kaydedilirse açık slotun cevabı üst state'e hiç
@@ -2019,11 +1694,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           // kullanıcıyı uyarıyoruz (rehber §3c).
           const nextMain = normalizePhotoModeration(orderToSave[0]);
           if (!nextMain.isVisibleToOthers) {
-            showInfoToast({
-              title: t("profile.photoModeration.reorderMainBlockedTitle"),
-              message: t("profile.photoModeration.reorderMainBlockedMessage"),
-              variant: "error",
-            });
+            // Toast DEĞİL satır içi: bu modal açıkken toast sheet'in altında
+            // kalıyor (bkz. photoSubmitError).
+            showPhotoError(
+              // Sunucunun kendi gerekçesi varsa o yazılıyor ("ana fotoğrafta
+              // yüz yok" gibi) — jenerik "bu fotoğraf yayında değil" metni
+              // kullanıcıya NE yapacağını söylemiyor.
+              nextMain.status === "Rejected"
+                ? moderationReasonText(
+                    nextMain.status,
+                    nextMain.reasonCode,
+                    nextMain.reasonText,
+                  )
+                : t("profile.photoModeration.reorderMainBlockedMessage"),
+            );
             return; // finally bloğu setSavingProfile(false) yapıyor
           }
           // Ana foto değişimi doğrulama rozetini düşürüyor — kaydetmeden önce
@@ -2043,6 +1727,36 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       // gönderilmediyse `photos: []` gelir; polimorfik zarf ve onu çözen
       // sarmalayıcı kaldırıldı.
       const savedProfile = saved?.profile;
+
+      // Ana foto talebi SESSİZCE DÜŞMÜŞ olabilir. Ana fotoğraf kuralı ihlali
+      // normalde isteği 400'e düşürüyor (bkz. photoModeration.ts) ama sunucu
+      // sıralamayı kabul edip uygun olmayan `NewMainPhotoId`i yok sayarsa istek
+      // 200 döner: modal kapanır, kullanıcı ana fotoğrafın neden değişmediğini
+      // hiç öğrenemez. Yanıt foto listesi taşıyorsa doğruluyoruz; TAŞIMIYORSA
+      // sessizce geçiyoruz — bilinmeyeni ihlal saymak yanlış alarm olurdu.
+      const requestedMainId = updates.NewMainPhotoId;
+      const savedPhotos = savedProfile?.photosList;
+      if (requestedMainId != null && Array.isArray(savedPhotos) && savedPhotos.length > 0) {
+        const appliedMain = savedPhotos.find((p: any) => p?.isMainPhoto);
+        if (
+          appliedMain &&
+          String(appliedMain.photoId) !== String(requestedMainId)
+        ) {
+          const refused = savedPhotos.find(
+            (p: any) => String(p?.photoId) === String(requestedMainId),
+          );
+          const m = refused ? normalizePhotoModeration(refused) : null;
+          showPhotoError(
+            m && m.status === "Rejected"
+              ? moderationReasonText(m.status, m.reasonCode, m.reasonText)
+              : t("profile.photoModeration.reorderMainBlockedMessage"),
+          );
+          // Modal AÇIK kalıyor: diğer alanlar kaydedildi ama kullanıcının asıl
+          // yapmak istediği şey olmadı; kapatmak "oldu" demek olurdu.
+          // `photoOrderDirty` de duruyor, tekrar kaydette sıra yeniden gider.
+          return; // finally bloğu setSavingProfile(false) yapıyor
+        }
+      }
 
       // Optimistic patch — parent myProfile cache'ini günceller
       const idToEnum = {};
@@ -2208,12 +1922,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         e?.response?.data?.code ?? e?.response?.data?.errorCode ?? null;
       const photoKey = photoModerationCodeKey(photoCode);
 
-      const message = photoKey
-        ? t(photoKey, {
+      if (photoKey) {
+        // Foto reddi SATIR İÇİNDE: toast bu modalın altında kalıyor
+        // (bkz. photoSubmitError). Sebebi göremeyen kullanıcı kaydete tekrar
+        // tekrar basıyordu.
+        showPhotoError(
+          t(photoKey, {
             max: MAX_PROFILE_PHOTOS,
             min: resolveRequiredPhotoCount(profileVisibility),
-          })
-        : status === 400
+          }),
+        );
+        return; // finally bloğu setSavingProfile(false) yapıyor
+      }
+
+      const message =
+        status === 400
           ? t("profile.edit.validationError")
           : status === 429
             ? t("profile.edit.rateLimitError")
@@ -2236,6 +1959,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     // Foto kodu metnindeki `min` bundan türüyor; bayat kalırsa UT-6304 yanlış
     // sayı gösterir.
     profileVisibility,
+    showPhotoError,
   ]);
 
   useImperativeHandle(ref, () => ({ submit }), [submit]);
@@ -2425,103 +2149,62 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           </View>
         </View>
 
-        <View
-          style={{
-            position: "relative",
-            width: "100%",
-            height: getContainerHeight(draftPhotoOrder.length),
-          }}
-        >
-          {[0, 1, 2, 3, 4, 5].map((idx) => {
-            const isAddBtn = idx === draftPhotoOrder.length;
-            const isGhost = idx > draftPhotoOrder.length;
-            const pos = getPosition(idx);
+        {/* Izgara AYRI BİLEŞENDE (ProfilePhotoGrid): mod başına fotoğrafla
+            birlikte mod kurulum sheet'i de aynı ızgarayı çizecek. Sıra,
+            kaydetme ve sunucu senkronu BURADA kalıyor — bileşen yalnız jesti
+            bildiriyor (gerekçe o dosyanın başında). */}
+        <ProfilePhotoGrid
+          photos={draftPhotoOrder}
+          positions={positions}
+          onDragEnd={handleDragEnd}
+          onAddPhoto={onAddPhoto}
+          onPhotoPress={onPhotoPress}
+          saving={savingPhoto}
+          highlightPhotoId={highlightPhotoId}
+        />
 
-            if (isAddBtn) {
-              return (
-                <View
-                  key="add-btn"
-                  style={{
-                    position: "absolute",
-                    left: pos.x,
-                    top: pos.y,
-                    width: ITEM_WIDTH,
-                    height: ITEM_HEIGHT,
-                  }}
-                >
-                  <TouchableOpacity
-                    testID="profile-btn-add-photo"
-                    activeOpacity={1}
-                    onPress={onAddPhoto}
-                    disabled={savingPhoto}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      borderRadius: 28,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      backgroundColor: colors.surface,
-                      borderWidth: 0.5,
-                      borderColor: colors.hairline,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <View className="flex justify-center items-center pointer-events-none">
-                      <SFIcon
-                        name="plus"
-                        fallback={Plus}
-                        size={40}
-                        strokeWidth={2}
-                        color={colors.textMuted}
-                        weight="semibold"
-                      />
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              );
-            }
-
-            if (isGhost) {
-              return (
-                <View
-                  key={`ghost-${idx}`}
-                  style={{
-                    position: "absolute",
-                    left: pos.x,
-                    top: pos.y,
-                    width: ITEM_WIDTH,
-                    height: ITEM_HEIGHT,
-                  }}
-                />
-              );
-            }
-            return null;
-          })}
-
-          {draftPhotoOrder.map((photo, index) => (
-            <SortablePhoto
-              key={`${photo.photoId}-${photo.photoImageUrl}`}
-              id={photo.photoId}
-              index={index}
-              positions={positions}
-              maxIndex={draftPhotoOrder.length - 1}
-              onDragEnd={handleDragEnd}
+        {/* Kaydetmeyi DURDURAN foto reddi — ızgaranın hemen altında, kırmızı.
+            Görünürlük şeridinin nötr tonundan bilerek ayrı: o "durum
+            bildirimi", bu ise kullanıcının AZ ÖNCE yaptığı hamlenin reddi.
+            Toast kullanılamıyor (bkz. photoSubmitError). */}
+        {photoSubmitError && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-start",
+              gap: 10,
+              marginTop: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              borderRadius: 16,
+              borderCurve: "continuous",
+              borderWidth: 0.5,
+              borderColor: withAlpha(colors.errorStrong, 0.45),
+              backgroundColor: withAlpha(colors.errorStrong, 0.12),
+            }}
+          >
+            <SFIcon
+              name="exclamationmark.triangle.fill"
+              fallback={AlertTriangle}
+              size={17}
+              color={colors.errorStrong}
+              strokeWidth={2}
+              weight="semibold"
+              style={{ marginTop: 1, pointerEvents: "none" }}
+            />
+            <Text
+              style={{
+                flex: 1,
+                color: colors.errorStrong,
+                fontSize: 13,
+                lineHeight: 18,
+                fontWeight: "500",
+              }}
             >
-              <PhotoItem
-                photo={photo}
-                onPress={onPhotoPress}
-                savingPhoto={savingPhoto}
-                // Karşılaştırma STRING üzerinden: photoId backend'de sayı,
-                // bildirimin `relatedEntityId`i ise metin geliyor.
-                highlighted={
-                  highlightPhotoId != null &&
-                  String(photo.photoId) === String(highlightPhotoId)
-                }
-              />
-            </SortablePhoto>
-          ))}
-        </View>
+              {photoSubmitError}
+            </Text>
+          </View>
+        )}
 
         {/* Görünürlük şeridi: grid'in ALTINDA. Sebep (keşifte yokum) ile çözüm
             (fotoğraf kutuları) yan yana kalsın diye bu bölümde duruyor; kutuların
