@@ -1055,9 +1055,19 @@ function SwipeWrapper({
    * BURADA YAYLANARAK sıfırlanıyor, `resetAfterExit`daki gibi ham atamayla
    * değil: bu bir KARAR DEĞİL, iptal — kartın yerine geri oturduğunun
    * görünmesi gerekiyor.
+   *
+   * ⚠️ KARAR VERİLDİKTEN SONRA İPTAL YOK (`exitPending`). Jestin `onUpdate` ve
+   * `onEnd` dalları bu bayrağı zaten okuyor, ama pinch reaction'ı PARMAKTAN
+   * BAĞIMSIZ tetikleniyor — kart uçarken (120-180 ms) başlayan bir pinch
+   * buraya düşüp `tx`e yay yazardı. Sonucu KALICI BİR KİLİT olurdu: ham atama
+   * uçuşu iptal eder, `withTiming` callback'i `finished: false` ile gelir
+   * (bkz. flyOut), yani `onSwipe` hiç çağrılmaz — kart ekranın ortasına geri
+   * döner, `exitPending` de o kart için bir daha inmez. Ne jest ne buton
+   * çalışır; kullanıcı o karta kilitlenir.
    */
   const cancelDragForPinch = () => {
     "worklet";
+    if (exitPending.value) return;
     const cfg = { damping: 16, stiffness: 380, mass: 1 };
     tx.value = withSpring(0, cfg);
     overlayDragX.value = withSpring(0, cfg);
