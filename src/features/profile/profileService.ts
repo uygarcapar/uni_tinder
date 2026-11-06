@@ -13,6 +13,17 @@ interface PhotoOrder {
   newOrder: number;
 }
 
+/**
+ * Mod açılışındaki foto seçimi — iki yol ALTERNATİF, karma yok (tasarım:
+ * karma düzenleme editörün işi):
+ *  • `existing` — kaynak modun slotları id listesiyle devralınır (dosya
+ *    taşınmaz, moderasyon tekrarlanmaz).
+ *  • `new` — kurulumda çekilen/seçilen kareler aynı istekte yüklenir.
+ */
+export type OpenModePhotos =
+  | { kind: "existing"; photoIds: string[]; mainPhotoId: string }
+  | { kind: "new"; files: Array<{ uri: string; name: string; type: string }> };
+
 interface ProfileUpdate {
   NewPhotos?: Array<{ uri: string; name: string; type: string }>;
   PhotoOrders?: PhotoOrder[];
@@ -167,11 +178,23 @@ class ProfileService {
   }
 
   /**
-   * Bir modun profilini aç (Dating/Friends) — niyet + prompt'lar.
+   * Bir modun profilini aç (Dating/Friends) — niyet + prompt'lar + FOTO seçimi.
+   *
+   * Gövde HER ZAMAN multipart (kanonik content-type, BE sözleşmesi §4):
+   * kurulumda yepyeni kare `NewPhotos` ile AYNI istekte gidebiliyor, iki
+   * isteğe bölmek görünürlük penceresi açardı. JSON yolu eski istemci şimi
+   * olarak sunucuda duruyor; biz artık kullanmıyoruz. Alan adları sözleşme
+   * örneğinden: `PhotoIds[i]` (sıra = dizi sırası), `MainPhotoId`,
+   * `FriendshipIntents[i]`, `InterestedIn[i]`, `RelationshipIntent`,
+   * `Prompts[i].PromptKey/.Answer`, `NewPhotos` (tekrarlı dosya alanı).
    *
    * Niyet alanı MODA GÖRE ayrışıyor ve asla ikisi birden gitmiyor: Flört tek
-   * seçimli `relationshipIntent`, Arkadaş çoklu seçimli `friendshipIntents`
+   * seçimli `RelationshipIntent`, Arkadaş çoklu seçimli `FriendshipIntents`
    * (sunucuda bitmask). Yanlış modun alanını göndermek sunucuda reddedilir.
+   *
+   * ⚠️ `photos` verilmemişse ne `PhotoIds` ne `NewPhotos` eklenir —
+   * havuz-güncelleme yolu (profil zaten açık) fotoğraflara DOKUNMAZ
+   * ("gönderilmeyen alana dokunulmaz", uç idempotent).
    *
    * ⚠️ Profil cache'i bust ediliyor: `modes` haritası ve yeni prompt'lar
    * `getMyProfile`ın TTL'li kopyasında bayat kalırdı ve seçici satırı
@@ -191,32 +214,49 @@ class ProfileService {
        * gelir ve gövdeye hiç girmez (bkz. backend_friends_same_gender).
        */
       interestedIn?: string[];
+      photos?: OpenModePhotos;
     },
   ): Promise<{ dating?: boolean; friends?: boolean } | undefined> {
-    const body: Record<string, any> =
-      mode === "Friends"
-        ? {
-            friendshipIntents: payload.intents,
-            // Boş dizi ile alanın hiç olmaması sunucu için AYNI ŞEY DEĞİL:
-            // kilitli (ikili kategori) kullanıcıda boş dizi ölü yük, üstelik
-            // "kullanıcı hiçbirini seçmedi" gibi okunabilir. Yalnız dolu
-            // geldiğinde gönderiliyor.
-            ...(payload.interestedIn?.length
-              ? { interestedIn: payload.interestedIn }
-              : {}),
-          }
-        : {
-            // Dating açılışında İKİ alan birden gidiyor: `interestedIn` (en az
-            // 1 ZORUNLU — sunucu UT-2308 ile reddediyor) ve `relationshipIntent`
-            // (opsiyonel). Niyet listesi tek seçimli olduğu için ilk eleman.
-            interestedIn: payload.interestedIn ?? [],
-            relationshipIntent: payload.intents[0] ?? null,
-          };
-    body.prompts = payload.prompts.map((p) => ({
-      promptKey: p.promptKey,
-      answer: p.answer,
-    }));
-    const response = await api.post(API_ENDPOINTS.OPEN_PROFILE_MODE(mode), body);
+    const form = new FormData();
+    if (mode === "Friends") {
+      payload.intents.forEach((v, i) =>
+        form.append(`FriendshipIntents[${i}]`, v),
+      );
+      // Boş dizi ile alanın hiç olmaması sunucu için AYNI ŞEY DEĞİL: kilitli
+      // (ikili kategori) kullanıcıda boş alan ölü yük, üstelik "kullanıcı
+      // hiçbirini seçmedi" gibi okunabilir. Yalnız dolu geldiğinde gidiyor.
+      payload.interestedIn?.forEach((v, i) =>
+        form.append(`InterestedIn[${i}]`, v),
+      );
+    } else {
+      // Dating açılışında İKİ alan birden gidiyor: `InterestedIn` (en az 1
+      // ZORUNLU — sunucu UT-2308 ile reddediyor) ve `RelationshipIntent`
+      // (opsiyonel; niyet listesi tek seçimli olduğu için ilk eleman —
+      // multipart'ta "null alan" diye bir şey olmadığından yokken eklenmiyor).
+      (payload.interestedIn ?? []).forEach((v, i) =>
+        form.append(`InterestedIn[${i}]`, v),
+      );
+      if (payload.intents[0] != null) {
+        form.append("RelationshipIntent", payload.intents[0]);
+      }
+    }
+    payload.prompts.forEach((p, i) => {
+      form.append(`Prompts[${i}].PromptKey`, p.promptKey);
+      form.append(`Prompts[${i}].Answer`, p.answer);
+    });
+    if (payload.photos?.kind === "existing") {
+      payload.photos.photoIds.forEach((id, i) =>
+        form.append(`PhotoIds[${i}]`, String(id)),
+      );
+      form.append("MainPhotoId", String(payload.photos.mainPhotoId));
+    } else if (payload.photos?.kind === "new") {
+      // Sıra = append sırası; ana foto ataması sunucu tarafında (ilk kare
+      // varsayımı canlıda doğrulanacak — tasarım dokümanındaki açık madde).
+      payload.photos.files.forEach((f) => form.append("NewPhotos", f as any));
+    }
+    const response = await api.post(API_ENDPOINTS.OPEN_PROFILE_MODE(mode), form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
     this.bustProfileCache();
     // Yanıt açık mod haritasını döndürüyor (`{dating, friends}`) — çağıran
     // mod seçicisini bununla güncelliyor, ayrı bir profil turu atmıyor.
