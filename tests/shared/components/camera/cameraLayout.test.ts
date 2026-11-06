@@ -62,22 +62,28 @@ describe('previewWindow', () => {
 
 describe('cameraChrome', () => {
   it('galeri yolunda deklanşör/flaş/çevir/yeniden-çek YOK', () => {
-    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true }))
-      .toEqual({ shutter: false, flash: false, flip: false, retake: false, crop: true, confirm: true });
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: false, reset: false, crop: true, confirm: true, hint: false });
   });
 
   it('canlı akışta deklanşör ve flaş var, onay yok', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: false, allowCrop: true }))
-      .toEqual({ shutter: true, flash: true, flip: true, retake: false, crop: false, confirm: false });
+    expect(cameraChrome({ previewOnly: false, frozen: false, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: true, flash: true, flip: true, retake: false, reset: false, crop: false, confirm: false, hint: false });
   });
 
   it('kare donunca yeniden-çek ve onay gelir, deklanşör gider', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true }))
-      .toEqual({ shutter: false, flash: false, flip: false, retake: true, crop: true, confirm: true });
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true, cropping: false }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: true, reset: false, crop: true, confirm: true, hint: false });
   });
 
   it('kırpma kancası yoksa kırpma butonu HİÇ çizilmez (kampüs)', () => {
-    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: false }).crop).toBe(false);
-    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: false }).crop).toBe(false);
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: false, cropping: false }).crop).toBe(false);
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: false, cropping: false }).crop).toBe(false);
+  });
+
+  it('kırpma kipinde yeniden-çek gider, sıfırla + ipucu gelir, kırp ve onay kalır', () => {
+    expect(cameraChrome({ previewOnly: false, frozen: true, allowCrop: true, cropping: true }))
+      .toEqual({ shutter: false, flash: false, flip: false, retake: false, reset: true, crop: true, confirm: true, hint: true });
+    expect(cameraChrome({ previewOnly: true, frozen: true, allowCrop: true, cropping: true }).reset).toBe(true);
   });
 });

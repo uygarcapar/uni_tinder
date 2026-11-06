@@ -63,34 +63,46 @@ export function previewWindow(a: {
 /**
  * Önizleme anındaki düğmeler. `previewOnly` = galeri/kamera fotoğrafı (canlı
  * akış yok); `frozen` = bir kare ekranda donmuş ve onay bekliyor; `allowCrop`
- * = çağıranın kırpma kancası var mı.
+ * = çağıranın kırpma kancası var mı; `cropping` = kırpma kipi açık (çerçeve
+ * donmuş karenin üstünde).
  *
  * Kırpma düğmesi yalnız kanca varsa çizilir — kampüs akışında kırpıcı yok ve
  * boş bir düğme kullanıcıyı yanıltır.
+ *
+ * NEDEN kırpma kipinde `retake` gider: kipteyken "yeniden çek" kadrajı değil
+ * tüm kareyi atar; kullanıcı yanlışlıkla kareyi kaybetmesin diye yerine
+ * `reset` (kadrajı sıfırla) gelir. `reset` ve `hint` yalnız donmuş + kırpma
+ * kancası varken anlamlı; dışında kip zaten kapalı sayılır.
  */
 export function cameraChrome(a: {
   previewOnly: boolean;
   frozen: boolean;
   allowCrop: boolean;
+  cropping: boolean;
 }): {
   shutter: boolean;
   flash: boolean;
   flip: boolean;
   retake: boolean;
+  reset: boolean;
   crop: boolean;
   confirm: boolean;
+  hint: boolean;
 } {
-  const { previewOnly, frozen, allowCrop } = a;
+  const { previewOnly, frozen, allowCrop, cropping } = a;
   // Canlı akış: deklanşör, flaş, kamera çevirme. Yalnız kare canlıyken.
   const live = !previewOnly && !frozen;
+  const cropMode = cropping && frozen && allowCrop;
   return {
     shutter: live,
     flash: live,
     flip: live,
     // Yeniden çekim yalnız canlı kameradan donmuş kareye özgü; galeri
-    // fotoğrafının "yeniden çek"i yok.
-    retake: !previewOnly && frozen,
+    // fotoğrafının "yeniden çek"i yok. Kırpma kipinde yerini `reset` alır.
+    retake: !previewOnly && frozen && !cropping,
+    reset: cropMode,
     crop: allowCrop && frozen,
     confirm: frozen,
+    hint: cropMode,
   };
 }

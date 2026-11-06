@@ -831,6 +831,7 @@ export default function CameraCaptureOverlay() {
     previewOnly,
     frozen,
     allowCrop: !!session?.request.crop,
+    cropping: false,
   });
 
   /**
