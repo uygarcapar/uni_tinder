@@ -1727,11 +1727,11 @@ export default function DiscoverScreen() {
    * İKİ KAPI:
    *   • Örtünün altında gerçekten bir devir bekliyor olmalı (`pendingRelease`).
    *   • Yeni üst kartın kapağı decode edilmiş olmalı (`warmCovers`).
-   * Kalıbı `tryCommitRewind`/`rewindCovered` ikizinden alıyor: hangi kapı sonra
-   * kapanırsa salıvermeyi o tetikliyor, sıra önemli değil.
+   * Hangi kapı sonra kapanırsa salıvermeyi o tetikliyor, sıra önemli değil.
    *
-   * ⚠️ BURADA, DESTEYİ SÜREN HER ŞEYDEN ÖNCE tanımlı: `commitRewind`,
-   * `advanceDeck` ve `dropProfileFromDeck` üçü de bu bayrakları yazıyor.
+   * ⚠️ BURADA, DESTEYİ SÜREN HER ŞEYDEN ÖNCE tanımlı: `advanceDeck` ve
+   * `dropProfileFromDeck` bu bayrakları yazıyor. (`commitRewind` ARTIK
+   * YAZMIYOR — geri al alevsiz, bkz. oradaki not.)
    */
   const warmCovers = useRef(new Set<string>());
   const pendingRelease = useRef(false);
@@ -1932,14 +1932,15 @@ export default function DiscoverScreen() {
     // geçtiği ilk karede zaten yanda duruyor, yolunu ondan sonra alıyor.
     cardEntryX.value = -CARD_ENTRY_DISTANCE;
     pendingEntryKick.current = true;
-    // Dalga bu devrin de boyanmasını bekliyor (bkz. tryReleaseFlame).
+    // `pendingRelease` BURADA YAZILMIYOR (2026-11-06): geri al artık alevsiz,
+    // yani park eden bir dalga yok — salıverilecek bir şey de yok. İleri yön
+    // (Fire · not) bayrağı yazmaya devam ediyor.
     //
-    // `deckSettled` BURADA KULLANILMIYOR, ileri yönün aksine: geri alırken
-    // taze mount eden kart ARKADAKİ değil YUVADAKİ (idx-2); `nextProfile`
-    // (idx) ise bir kare önce üstte duran, çoktan kurulu kart. Onu çizimden
-    // çıkarmak bir mount kazandırmıyor, kurulu bir kartı söküp bir kare sonra
-    // geri getiriyor olurdu.
-    pendingRelease.current = true;
+    // `deckSettled` de kullanılmıyor, ileri yönün aksine: geri alırken taze
+    // mount eden kart ARKADAKİ değil YUVADAKİ (idx-2); `nextProfile` (idx) ise
+    // bir kare önce üstte duran, çoktan kurulu kart. Onu çizimden çıkarmak bir
+    // mount kazandırmıyor, kurulu bir kartı söküp bir kare sonra geri
+    // getiriyor olurdu.
     setCurrentIndex((i) => Math.max(0, i - 1));
   }, [cardEntryX]);
 
@@ -1961,9 +1962,9 @@ export default function DiscoverScreen() {
       setRewindWarmup(userId);
       clearRewindTimeout();
       // Güvenlik ağı: ölçüm haberi hiç gelmezse kart hiç gelmemiş olurdu —
-      // haklar düşmüş, geri alma isteği gitmiş ama ekran değişmemiş. ALEV
-      // KAPISINI ATLATIYOR (commitRewind, tryCommitRewind değil): ağın işi
-      // kilitlenmeyi açmak.
+      // haklar düşmüş, geri alma isteği gitmiş ama ekran değişmemiş. Tavan
+      // dolunca kart ölçülmemiş olsa bile üste alınıyor; sıçramalı bir giriş,
+      // hiç gelmeyen karttan iyidir.
       rewindTimeout.current = setTimeout(
         commitRewind,
         STACK_ENTRY_SETTLE_TIMEOUT_MS,
@@ -1973,62 +1974,35 @@ export default function DiscoverScreen() {
   );
 
   /**
-   * ── GERİ AL DA ALEVİN ALTINDA DEVREDİYOR (istek, 2026-10-13) ──────────────
+   * ── GERİ AL ALEVSİZ: KART SOLDAN KAYARAK GELİYOR (istek, 2026-11-06) ──────
    *
-   * "Rewind atınca da aynı alev gelsin, kart o sırada değişsin." Yani üç çıkış
-   * yönüyle (geç · beğen · Fire, bkz. SwipeWrapper > commitExit) tek dil:
-   * kullanıcı ne giden kartı ne gelenini görüyor, yalnız alevi.
+   * 2026-10-13'te geri al da alevin altına alınmıştı ("rewind atınca da aynı
+   * alev gelsin, kart o sırada değişsin") — o gün dört çıkış yönüyle tek dil
+   * kurulmuştu. Bugün alev yalnız kullanıcının bir şey HARCADIĞI eylemlerde
+   * (Fire/Spark · not); geri al da beğen/geç gibi kendi hareketine döndü.
    *
-   * İKİ SİNYAL BİRLİKTE: alev ekranı kapattı VE geri gelecek kart ölçüldü.
-   *   • Yuva yolunda (normal hâl) ikincisi zaten sağlanmış — kart destenin
-   *     altında kurulu ve ölçülü duruyor, yani tek bekleyen alev.
+   * TEK KAPI KALDI: geri gelecek kart ÖLÇÜLDÜ mü?
+   *   • Yuva yolunda (normal hâl) zaten sağlanmış — kart destenin altında
+   *     kurulu ve ölçülü duruyor, yani basış anında devir yapılabilir.
    *   • `warmRewind` yolunda (destenin sonu / taze deste) kart şimdi mount
-   *     oluyor: hangisi sonra gelirse devri o tetikliyor. Bu yüzden ölçüm
-   *     haberi `commitRewind`i DOĞRUDAN değil `tryCommitRewind` üzerinden
-   *     çağırıyor — yoksa kart alev henüz yarı yoldayken açıkta değişirdi.
+   *     oluyor: devri ölçüm haberi (`handleRewindSlotReady`) ya da tavan
+   *     (STACK_ENTRY_SETTLE_TIMEOUT_MS) tetikliyor.
    *
-   * `commitRewind` bekleyen basış yoksa no-op, o yüzden iki kapının da
-   * kapanmasını beklemek güvenli; sıra önemli değil.
+   * Kartın GİRİŞİ zaten vardı ve değişmedi — alevin altında görünmüyordu,
+   * şimdi görünüyor: `commitRewind`, `cardEntryX`i ekran dışına yazıp kaymayı
+   * commit sonrasına bırakıyor (bkz. pendingEntryKick). Kart soldan, çapraz ve
+   * hafif eğimli geliyor; hareket reddetme atışının geri sarımı.
    */
-  const rewindFlameUnsub = useRef<(() => void) | null>(null);
-  const rewindCovered = useRef(false);
   /**
-   * Eşleşme perdesinin örtme aboneliği (bkz. handleSwipe > `matching`). Ayrı
-   * ref, çünkü geri al alevinden FARKLI bir olayı bekliyor: biri Keşif'in
-   * kendi süpürmesi, öteki MatchModal'ın perdesi.
+   * Eşleşme perdesinin örtme aboneliği (bkz. handleSwipe > `matching`).
+   * Yalnız Fire dalı kullanıyor.
    */
   const matchCurtainUnsub = useRef<(() => void) | null>(null);
 
-  const tryCommitRewind = useCallback(() => {
-    if (!rewindCovered.current) return;
-    commitRewind();
-  }, [commitRewind]);
-
-  const startRewindUnderCover = useCallback(() => {
-    rewindCovered.current = false;
-    // Bir önceki alev hâlâ bekliyorsa dinleyicisi bırakılıyor: her basış kendi
-    // örtmesini bekler.
-    rewindFlameUnsub.current?.();
-    // `hold`: üçüncü kapı. İlk ikisi (alev örttü + kart ölçüldü) devrin NE ZAMAN
-    // olacağını söylüyor; bu da dalgaya "devir ekrana boyanana kadar bekle"
-    // diyor — ölçüm haberi geciktiğinde (taze deste · destenin sonu) devir
-    // dalganın arka kenarına kayabiliyordu.
-    rewindFlameUnsub.current = runFlameSweep(
-      () => {
-        rewindFlameUnsub.current = null;
-        rewindCovered.current = true;
-        tryCommitRewind();
-      },
-      { hold: true, mode },
-    );
-  }, [tryCommitRewind, mode]);
-
-  // Ekran ağaçtan düşerse (sekme değişti, tema remount'u) örtme dinleyicileri
+  // Ekran ağaçtan düşerse (sekme değişti, tema remount'u) örtme dinleyicisi
   // arkada kalmasın — sözleşme flameSweep'te.
   useEffect(
     () => () => {
-      rewindFlameUnsub.current?.();
-      rewindFlameUnsub.current = null;
       matchCurtainUnsub.current?.();
       matchCurtainUnsub.current = null;
       // Tutma bayrağı ekranla birlikte gitsin: ekran yeniden mount olduğunda
@@ -2071,9 +2045,9 @@ export default function DiscoverScreen() {
   // kuruluyken kart çoktan ölçülmüş oluyor ve haber (tek atımlık, bkz. SwipeCard
   // > coverReadyNotifiedRef) bir daha gelmiyor. Bekleyen basış yoksa no-op.
   const handleRewindSlotReady = useEvent(() => {
-    // `tryCommitRewind`: ölçüm geldi ama alev henüz örtmediyse devir bekliyor
-    // (bkz. startRewindUnderCover).
-    if (pendingRewind.current) tryCommitRewind();
+    // Tek kapı ölçüm: haber geldiğine göre devir yapılabilir (bkz.
+    // commitRewind'in üstündeki not — alev kapısı 2026-11-06'da kalktı).
+    if (pendingRewind.current) commitRewind();
   });
 
   // Ekran ağaçtan düşerse bekleyen tavanlar arkada kalmasın.
@@ -2617,11 +2591,11 @@ export default function DiscoverScreen() {
     }
     if (currentIndex === 0) return;
     if (!lastSwipeWasPass) return;
-    // Bir geri alma zaten alevin altında bekliyor: ikinci basış aynı kartı bir
-    // kez daha geri almaya çalışırdı (index henüz kaymadı). `lastSwipeWasPass`
-    // bunu pratikte zaten tutuyor — bu, pencerenin açık kaldığı ~800 ms için
-    // açık güvence.
-    if (rewindFlameUnsub.current) return;
+    // Bir geri alma zaten ölçüm bekliyor: ikinci basış aynı kartı bir kez daha
+    // geri almaya çalışırdı (index henüz kaymadı). `lastSwipeWasPass` bunu
+    // pratikte zaten tutuyor — bu, `warmRewind` penceresi için açık güvence.
+    // (Yuva yolunda pencere yok: devir basışla aynı karede oluyor.)
+    if (pendingRewind.current) return;
     if (remainingUndos === 0) {
       // Buraya yalnız premium + kalan hak 0 düşer (free zaten undoLocked'ta
       // yakalandı). openPremiumPaywall entitlement'ı tazeleyip premium çıkarsa
@@ -2643,15 +2617,14 @@ export default function DiscoverScreen() {
     // Index'i burada kaydırmak kartı yarı ölçülmüş hâlde ekrana koymak, yana
     // park etmek ise altındaki sayfa zeminini açmak demekti.
     setLastSwipeWasPass(false);
-    // ALEV ÖNCE BAŞLIYOR, devir onun örtüsü altında (bkz.
-    // startRewindUnderCover): kullanıcı kartın değiştiğini görmüyor — geç,
-    // beğen ve Fire'da olduğu gibi.
-    startRewindUnderCover();
     if (rewindSlotIdRef.current === undoneUserId) {
       // Kart yuvada duruyor — kurulmuş, ölçülmüş, ekranın ardında bekliyor
-      // (bkz. rewindSlotIdRef). Ölçüm beklenmiyor; tek kapı alevin örtmesi.
+      // (bkz. rewindSlotIdRef). Beklenecek bir şey yok, devir bu karede.
+      //
+      // ⚠️ SIRA: `commitRewind` bekleyen basış yoksa sessizce no-op, yani
+      // `pendingRewind` ÖNCE yazılmalı — ters sırada basış hiçbir şey yapmaz.
       pendingRewind.current = undoneUserId;
-      tryCommitRewind();
+      commitRewind();
     } else {
       // Yuva yok (destenin sonu, taze deste): eski yol — kart canlı kartın
       // ardında mount edilip ölçülüyor, devir iki sinyalin sonuncusuyla.
