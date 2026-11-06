@@ -100,7 +100,13 @@ const cropSequentially = async (assets: ImagePickerAsset[]): Promise<PickedPhoto
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
     const size = await resolveDimensions(asset);
-    if (!size) continue;
+    if (!size) {
+      // `measure` kendi hata dalını logluyor ama BOYUTSUZ asset sessizce
+      // atlanıyordu: altı fotoğraf seçilip hiçbiri eklenmezse sebebi burası
+      // olabilir ve dışarıdan "galeri çalışmıyor" diye görünür.
+      devLog('📷 [photoPicker] boyut yok, fotoğraf atlandı', asset.uri);
+      continue;
+    }
 
     const outcome = await presentCropper({
       uri: asset.uri,
@@ -117,7 +123,13 @@ const cropSequentially = async (assets: ImagePickerAsset[]): Promise<PickedPhoto
       cropped.push(outcome.photo);
       continue;
     }
-    if (outcome.status === 'aborted') break;
+    if (outcome.status === 'aborted') {
+      // TEK bir `aborted` TÜM partiyi düşürüyor (kırpma ekranı yok demek).
+      // Kayıt akışı altı fotoğrafı buradan geçiriyor, yani bu dal "galeriden
+      // seçtim ama hiçbiri eklenmedi"nin en sessiz hâli.
+      devLog('📷 [photoPicker] kırpıcı yok (aborted) — parti düşürüldü');
+      break;
+    }
     if (outcome.status === 'failed') {
       devLog('📷 [photoPicker] kırpma başarısız, fotoğraf atlandı', outcome.error);
     }
@@ -128,6 +140,13 @@ const cropSequentially = async (assets: ImagePickerAsset[]): Promise<PickedPhoto
 
 export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]> => {
   const limit = Math.max(1, maxFiles);
+
+  // ⚠️ TEŞHİS KANCALARI (galeri "hiçbir şey yapmıyor" raporu, kayıt akışı).
+  // Bu yolun HER SESSİZ ÇIKIŞI bir log bırakıyor, çünkü üçü de kullanıcıya
+  // birebir aynı görünüyor: picker hiç açılmadı / açıldı ama iptal edildi /
+  // seçildi ama kırpıcı devralmadı. Log'suz hâlde hangisinin olduğunu
+  // ayırmanın yolu yok — çağıran `catch`i de `devLog`a yutuyor.
+  devLog('📷 [photoPicker] galeri açılıyor', { limit, multi: limit > 1 });
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
@@ -149,8 +168,18 @@ export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]
     // tetikliyor — çıktısını zaten kırpıp atıyoruz.
   });
 
+  devLog('📷 [photoPicker] galeri kapandı', {
+    canceled: result.canceled,
+    assets: result.assets?.length ?? 0,
+  });
+
   if (result.canceled || !result.assets?.length) return [];
-  return cropSequentially(result.assets.slice(0, limit));
+  const picked = await cropSequentially(result.assets.slice(0, limit));
+  devLog('📷 [photoPicker] kırpmadan dönen', {
+    secilen: result.assets.length,
+    kirpilan: picked.length,
+  });
+  return picked;
 };
 
 /**

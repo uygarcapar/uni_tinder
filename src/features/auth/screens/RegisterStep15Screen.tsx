@@ -399,7 +399,17 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const addFromGallery = async (remainingSlots: number) => {
     // iCloud'dan indirme + sıralı kırpma uzun sürebiliyor; bu arada ekle
     // butonuna tekrar basılırsa slot hesabı bayat kalırdı.
-    if (pickingRef.current) return;
+    //
+    // ⚠️ TEŞHİS KANCASI (galeri "hiçbir şey yapmıyor" raporu): bu mandal
+    // KAMERAYLA PAYLAŞILIYOR ve sessizce dönüyor. Kamera akışı bir kez
+    // sonuçlanmadan kalırsa (çekim promise'i askıda) mandal açık kalıyor ve
+    // ondan SONRAKİ her galeri dokunuşu ölü oluyor — ekranda hiçbir iz
+    // bırakmadan. ProfileScreen'de böyle bir mandal yok; "profilde çalışıyor,
+    // kayıtta çalışmıyor" ayrımının açıklayabileceği tek fark bu.
+    if (pickingRef.current) {
+      devLog('📷 [RegisterStep15] galeri YUTULDU — mandal hâlâ açık');
+      return;
+    }
     pickingRef.current = true;
     try {
       const newCroppedPhotos = await pickAndCropPhotos(remainingSlots);
