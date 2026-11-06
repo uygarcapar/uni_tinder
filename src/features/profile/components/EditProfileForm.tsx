@@ -98,10 +98,13 @@ import ProfilePhotoGrid from "@/features/profile/components/ProfilePhotoGrid";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
 import {
-  APP_MODES,
-  DEFAULT_APP_MODE,
+  modeAccent,
   type AppMode,
 } from "@/features/discover/modeTheme";
+// Ekranlarla aynı tek kaynak (ProfileScreen da böyle okuyor) — editör kendi
+// mod kopyasını tutmuyor, segment de yok (bkz. resolveEditMode).
+import { useAppMode } from "@/features/discover/useAppMode";
+import { resolveEditMode } from "@/features/profile/editMode";
 import { useFriendshipIntents } from "@/shared/queries/commonQueries";
 import { sanitizePrompts } from "@/features/profile/promptPayload";
 import {
@@ -377,208 +380,11 @@ function OptionPill({
 // filtresindeki CheckRow ile birebir (bkz. FilterModal).
 const CHECKBOX_SIZE = 22;
 
-/**
- * Kapalı modun yerine çizilen bilgi satırı.
- *
- * Profil AÇMA akışı burada DEĞİL (Keşif'teki mod seçicisinin mini kurulumunda):
- * o akış niyet + prompt'u TEK ATOMİK istekte gönderiyor, buradaki form ise
- * partial-update semantiğinde. İkisini birleştirmek "yarım açılmış profil"
- * durumu üretirdi — niyet yazılıp prompt yazılmazsa kullanıcı o modun
- * destesinde görünür ama kartı boş olurdu.
- */
-const ModeClosedNotice = React.memo(function ModeClosedNotice({
-  mode,
-}: {
-  mode: AppMode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <View style={{ paddingVertical: 20 }}>
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: 17,
-          fontWeight: "600",
-          marginBottom: 6,
-        }}
-      >
-        {t(`discover.mode.lockedTitle.${mode}`)}
-      </Text>
-      <Text
-        style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20 }}
-      >
-        {t("discover.mode.lockedMessage")}
-      </Text>
-    </View>
-  );
-});
-
-/**
- * Şeridin iç payı — kayan dolgu bu payın İÇİNDE hareket ediyor. Kapsülün
- * ölçüsünden çıkarılacak miktar da bu (iki yandan, yani 2×).
- */
-const MODE_STRIP_PADDING = 4;
-
-/**
- * Mod anahtarı — formun hangi modun profilini düzenlediğini seçen segmented
- * kontrol.
- *
- * MODÜL SEVİYESİNDE (bu dosyanın diğer alt bileşenleri gibi): render içinde
- * tanımlanan bir bileşen her tuşta yeni bir tip olur, React onu yeni bir ağaç
- * sayıp altındaki input'ları remount eder ve klavye düşer.
- *
- * ── Kabuk: Plus sayfasının PERİYOT ŞERİDİ ──────────────────────────────────
- * Düzen `PurchaseSections > PlanPeriodPills` ile aynı sözleşmede (hairline
- * kapsül + `overflow: hidden` + bölme başına eşit genişlik + `translateX` ile
- * KAYAN TEK DOLGU). Önceden iki ayrı kutu vardı ve seçim kutunun zemininin
- * dolup boşalmasıyla anlatılıyordu — iki mod arasında geçiş "bir şey
- * söndü, öteki yandı" gibi okunuyordu, oysa burada yapılan şey TEK bir
- * seçimi taşımak.
- *
- * Dolgu UI thread'inde: yalnız `translateX`, layout commit'i yok.
- *
- * ── Dolgu POLARİTE ÇEVİRİYOR, mod rengi DEĞİL ──────────────────────────────
- * `inverseSurface` + `onInverseSurface`: açık modda siyah dolgu/beyaz etiket,
- * koyu modda beyaz dolgu/siyah etiket.
- *
- * Bir tur mod renkleriyle (Dating turuncu / Friends yeşil) denendi ve GERİ
- * ALINDI: şerit o hâlde bir seçim kontrolünden çok bir durum rozetine
- * benziyordu, üstelik dolgu kayarken renk de geçtiği için gözü seçimden çok
- * geçişin kendisi tutuyordu. Mod rengini şeritte aramak gerekmiyor — kullanıcı
- * onu Keşif başlığında ve sohbet listesindeki halkada zaten görüyor; buradaki
- * işi yalnız "hangi profili düzenliyorum" sorusunu cevaplamak.
- *
- * Tek renk olduğu için `interpolateColor` da GİTTİ: dolgunun zemini düz bir
- * stil, animasyonlu olan yalnız konumu.
- *
- * ── Noktalar KALDIRILDI ────────────────────────────────────────────────────
- * Etiketlerin önünde modun vurgu renginde birer nokta vardı; kapalı modda sönük
- * çiziliyordu ("bölüm var ama profil açılmamış"). Üçü birden kalktı: kapsül ve
- * polarite çeviren dolgu şeridin bütün işini zaten yapıyordu, nokta sadece
- * etiketi merkezden kaydırıyordu.
- *
- * Kapalı mod sinyali KAYBOLMADI, yer değiştirdi: segment seçilince editörün
- * yerine `ModeClosedNotice` + "Profili aç" CTA'sı çıkıyor — kapalı modu
- * keşfetmenin yolu buydu, nokta yalnız ön habercisiydi. Geri isteyen önce
- * etiketi merkezde tutmanın yolunu çözsün.
- */
-const ModeSwitch = React.memo(function ModeSwitch({
-  value,
-  onChange,
-}: {
-  value: AppMode;
-  onChange: (mode: AppMode) => void;
-}) {
-  const { t } = useTranslation();
-  // Kapsülün İÇ genişliği (payın içi). Ölçüm gelmeden dolgu çizilmiyor: ilk
-  // karede bölme genişliği bilinmiyor ve "%50"lik bir kutu kayma hedefini
-  // ıskalardı.
-  const [stripWidth, setStripWidth] = useState(0);
-  const slotWidth = stripWidth > 0 ? stripWidth / APP_MODES.length : 0;
-  const activeIndex = Math.max(0, APP_MODES.indexOf(value));
-
-  // Dolgunun konumu — bölme indeksi cinsinden (0 veya 1), piksel değil.
-  // Pikselle tutulsaydı `slotWidth` ölçümü geldiğinde değer bayat kalırdı.
-  const slide = useSharedValue(activeIndex);
-
-  useEffect(() => {
-    // ÜSTÜ AŞMAYAN yay (kritik sönümlü): kapsül `overflow: hidden` olduğu için
-    // taşan bir dolgu uçta kırpılır ve kayma "duvara çarpma" gibi görünür —
-    // periyot şeridindeki aynı gerekçe.
-    slide.value = withSpring(activeIndex, {
-      damping: 22,
-      stiffness: 200,
-      mass: 0.6,
-    });
-  }, [activeIndex, slide]);
-
-  // ⚠️ WORKLET'TE YALNIZ KONUM VAR, RENK YOK — ve renk buraya geri konmamalı:
-  // `colors` okumaları düz JS; UI thread'inden çağrılan bir palet getter'ı
-  // uygulamayı ÖLÜMCÜL hatayla düşürüyor ("Tried to synchronously call a
-  // non-worklet function"). Renk gerekirse önce render'da bir string'e çözülüp
-  // closure'a öyle girmeli.
-  const fillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: slide.value * slotWidth }],
-  }));
-
-  return (
-    <View
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout.width - MODE_STRIP_PADDING * 2;
-        setStripWidth((prev) => (Math.abs(prev - w) > 0.5 ? w : prev));
-      }}
-      style={{
-        flexDirection: "row",
-        padding: MODE_STRIP_PADDING,
-        marginTop: 8,
-        marginBottom: 4,
-        borderRadius: 999,
-        borderCurve: "continuous",
-        borderWidth: 0.5,
-        borderColor: colors.hairline,
-        // Kayan dolguyu kapsül şekline kırpan şey bu — olmadan dolgu
-        // köşelerden taşar.
-        overflow: "hidden",
-      }}
-    >
-      {slotWidth > 0 && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: "absolute",
-              top: MODE_STRIP_PADDING,
-              bottom: MODE_STRIP_PADDING,
-              left: MODE_STRIP_PADDING,
-              width: slotWidth,
-              borderRadius: 999,
-              borderCurve: "continuous",
-              // Polarite çeviren dolgu — açıkta siyah, koyuda beyaz. Palet
-              // mutable olduğu için render'da okunuyor; tema değişiminde kök
-              // remount olduğundan bu yeterli (bkz. shared/theme/colors.ts).
-              backgroundColor: colors.inverseSurface,
-            },
-            fillStyle,
-          ]}
-        />
-      )}
-      {APP_MODES.map((mode) => {
-        const active = value === mode;
-        return (
-          <TouchableOpacity
-            key={mode}
-            activeOpacity={0.8}
-            onPress={() => onChange(mode)}
-            style={{
-              flex: 1,
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: 9,
-            }}
-          >
-            <Text
-              // Ağırlık ve punto SABİT: seçilince kalınlaşan etiket genişler ve
-              // altındaki dolgu hedefini ıskalardı (periyot şeridindeki aynı
-              // gerekçe).
-              numberOfLines={1}
-              style={{
-                // Dolgu polarite çevirdiği için etiket de çeviriyor: siyah
-                // dolgunun üstünde beyaz, beyaz dolgunun üstünde siyah.
-                // `onMedia` DEĞİL — o her iki temada beyaz ve koyu modun beyaz
-                // dolgusunda etiket görünmez olurdu.
-                color: active ? colors.onInverseSurface : colors.textSecondary,
-                fontSize: 14,
-                fontWeight: "600",
-              }}
-            >
-              {t(`discover.mode.title.${mode}`)}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-});
+// `ModeSwitch` (segmented mod anahtarı) ve `ModeClosedNotice` SÖKÜLDÜ
+// (2026-11-06): editör artık AKTİF uygulama modunun profilini düzenliyor
+// (resolveEditMode — aktif mod kapalıysa açık olana düşer, yani kapalı-mod
+// ekranının çizileceği bir hâl kalmadı). Öbür modu düzenlemek = modu
+// değiştirmek; profil açma girişi Keşif'teki mod seçicisinde.
 
 const OptionListItem = React.memo(function OptionListItem({
   option,
@@ -1097,30 +903,28 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   );
 
   /**
-   * ── DÜZENLEME MODU (Flört / Arkadaş) ──────────────────────────────────────
-   *
-   * Formun hangi modun profilini düzenlediği. Ortak alanlar (isim, fotoğraf,
-   * boy, yaşam tarzı) MODA GÖRE DEĞİŞMİYOR — tek kopya, iki modda da aynı.
-   * Takaslanan yalnız iki bölüm: PROMPT'LAR ve NİYET.
-   *
-   * ⚠️ RHF DIŞINDA (plain state): `prompts` ve `friendsPrompts` iki AYRI form
-   * alanı ve ikisi de kaydedilirken flush ediliyor — hangisinin GÖRÜNDÜĞÜ bir
-   * form değeri değil, bir görünüm durumu. RHF'ye sokulsaydı mod değiştirmek
-   * formu "kirli" sayar ve kaydetmeden çıkış uyarısı yanlış tetiklenirdi.
-   */
-  const [editMode, setEditMode] = useState<AppMode>(DEFAULT_APP_MODE);
-
-  /**
    * Hangi modların profili AÇIK — sunucudan (`/api/profile` → `modes`).
-   * Kapalı modun sekmesi editör yerine "Profili aç" CTA'sı gösteriyor:
-   * açılmamış bir modun prompt'unu kaydetmek sunucuda reddedilir.
    *
    * Bilinmiyorsa (alan gelmedi) İKİSİ DE AÇIK sayılıyor — olmayan bir kısıt
    * uydurup kullanıcıyı kendi profilinden kilitlemek yanlış taraf.
    */
   const friendsOpen = (myProfile as any)?.modes?.friends !== false;
   const datingOpen = (myProfile as any)?.modes?.dating !== false;
-  const activeModeOpen = editMode === "Friends" ? friendsOpen : datingOpen;
+
+  /**
+   * ── DÜZENLEME MODU (Flört / Arkadaş) ──────────────────────────────────────
+   *
+   * Segment KALKTI (2026-11-06): form AKTİF uygulama modunun profilini
+   * düzenliyor — kullanıcı hangi moddaysa o. Ortak alanlar (isim, boy, yaşam
+   * tarzı) moda göre değişmiyor; moda göre takaslanan bölümler prompt'lar,
+   * niyet ve FOTOĞRAFLAR (mod başına fotoğraf, bkz. modePhotoFields).
+   *
+   * Aktif mod kapalıysa AÇIK olana düşülüyor (resolveEditMode'un doc'u) —
+   * kapalı-mod ekranı (`ModeClosedNotice`) bu yüzden söküldü: çizileceği hâl
+   * kalmadı. Öbür modu düzenlemek = Keşif'ten modu değiştirmek.
+   */
+  const { mode: activeAppMode } = useAppMode();
+  const editMode = resolveEditMode(activeAppMode, datingOpen, friendsOpen);
 
   /** Arkadaşlık niyetleri (çoklu seçim) — Flört'ün `relationshipIntent` eşi. */
   const friendshipIntentsQuery = useFriendshipIntents();
@@ -2011,21 +1815,43 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* ── MOD ANAHTARI ───────────────────────────────────────────────────
-          SCROLL İÇERİĞİNİN İLK ÇOCUĞU, header'da DEĞİL: AppModal'ın başlık
-          satırı dolu (X · başlık · ✓) ve ortadaki başlık scroll'a bağlı
-          beliriyor — oraya üçüncü bir öğe koymak ikisini çakıştırır.
-          Emsali ProfileScreen'in `centerSlot`'u (orada başlık YOK, o yüzden
-          yer vardı).
+      {/* ── MOD ROZETİ ─────────────────────────────────────────────────────
+          Segment'in yerinde SALT-OKUNUR bir rozet: form aktif modun profilini
+          düzenliyor ve kullanıcı moddan habersiz editöre girmiş olabilir —
+          hangi profilin düzenlendiği yazıyla söylenmeli (eski segment'in tek
+          kalan görevi). Mod RENGİ bilerek kullanılıyor: ModeSwitch'in "durum
+          rozeti gibi okunur" itirazı bir SEÇİM kontrolü içindi; bu zaten bir
+          durum rozeti.
 
-          `stage` kapısı YOK: mod seçimi kademeli mount'un en başında görünmeli
-          — kullanıcı hangi profili düzenlediğini bilmeden ada/fotoğrafa
+          `stage` kapısı YOK: kademeli mount'un en başında görünmeli —
+          kullanıcı hangi profili düzenlediğini bilmeden ada/fotoğrafa
           bakmaya başlamamalı. */}
-      {/* `friendsOpen`/`datingOpen` ARTIK GEÇİLMİYOR: şerit kapalı modu
-          işaretleyen sönük noktayı taşımıyor (gerekçe ModeSwitch'in başında).
-          İki bayrak hâlâ canlı — editörün yerine `ModeClosedNotice` çizen
-          `activeModeOpen` onlardan türüyor. */}
-      <ModeSwitch value={editMode} onChange={setEditMode} />
+      <View
+        style={{
+          alignSelf: "flex-start",
+          marginTop: 8,
+          marginBottom: 4,
+          paddingHorizontal: 12,
+          paddingVertical: 5,
+          borderRadius: 999,
+          borderCurve: "continuous",
+          borderWidth: 0.5,
+          borderColor: withAlpha(modeAccent(editMode), 0.45),
+          backgroundColor: withAlpha(modeAccent(editMode), 0.12),
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 13,
+            fontWeight: "600",
+            color: modeAccent(editMode),
+          }}
+        >
+          {t("profile.edit.editingMode", {
+            mode: t(`discover.mode.title.${editMode}`),
+          })}
+        </Text>
+      </View>
 
       {/* ⚠️ "İnsanlar beni nasıl görüyor?" BUTONU KALDIRILDI (ürün kararı).
           Mod anahtarının hemen altında, formun ilk alanından önce duruyordu.
@@ -2260,14 +2086,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             yapışık duruyordu — nefes payı burada, PromptsEditor'de DEĞİL
             (aynı bileşeni kayıt adımı da kullanıyor). */}
         <View ref={promptsAnchorRef} collapsable={false} style={{ marginTop: 12 }}>
-          {/* KAPALI MODDA EDİTÖR YERİNE CTA: açılmamış bir modun prompt'unu
-              kaydetmek sunucuda reddediliyor, yani editör çizmek kullanıcıya
-              dolduracağı ama gönderemeyeceği bir form göstermek olurdu.
-              Profil açma akışı Keşif'teki mod seçicisinde (mini kurulum) —
-              buradan oraya yönlendiriliyor. */}
-          {!activeModeOpen ? (
-            <ModeClosedNotice mode={editMode} />
-          ) : (
+          {/* Kapalı-mod dalı SÖKÜLDÜ: `editMode` her zaman açık bir moda
+              çözülüyor (resolveEditMode), editör yerine CTA çizilecek hâl
+              kalmadı. */}
           <>
           {/* ⚠️ İKİ AYRI FORM ALANI, tek alanın iki değeri DEĞİL: `prompts`
               (flört) ve `friendsPrompts` (arkadaş). Tek alan olup mod
@@ -2304,7 +2125,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             )}
           />
           </>
-          )}
         </View>
       </View>
       )}
@@ -2322,7 +2142,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           listenin çizildiği ve seçimin tek mi çok mu olduğu. İki ayrı bölüm
           yapılmadı: başlık/açıklama/satır düzeni birebir aynıydı ve kopya
           bakım demekti. */}
-      {stage >= 1 && activeModeOpen && intentOptions.length > 0 && (
+      {/* `activeModeOpen` kapısı kalktı: editMode her zaman açık bir mod. */}
+      {stage >= 1 && intentOptions.length > 0 && (
         <View
           style={{ marginTop: 28 }}
           onLayout={sectionLayout.relationshipIntent}

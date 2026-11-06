@@ -2271,6 +2271,9 @@ const tr = {
       validationError: 'Girdiğin bilgilerden biri geçersiz. İsim ve sınıf alanlarını kontrol et.',
       // 429: `photo` rate limit'i, fotoğraf yüklemeyle ORTAK kota.
       rateLimitError: 'Çok fazla değişiklik gönderdin. Biraz bekleyip tekrar dene.',
+      // Editörün tepesindeki salt-okunur mod rozeti — segment kalktı, form
+      // aktif modun profilini düzenliyor; hangisi olduğu yazıyla söyleniyor.
+      editingMode: '{{mode}} profili',
       nameTitle: 'İsim',
       nameDesc: 'Kartında ve mesajlarda görünen isim. Değiştirdiğinde her yerde güncellenir.',
       namePlaceholder: 'İsmin',

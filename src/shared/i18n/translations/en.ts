@@ -2214,6 +2214,8 @@ const en = {
       validationError: 'One of the values is invalid. Check your name and year of study.',
       // 429: the `photo` rate limit, SHARED with photo uploads.
       rateLimitError: 'Too many changes sent. Wait a moment and try again.',
+      // Editörün tepesindeki salt-okunur mod rozeti — gerekçe tr.ts'te.
+      editingMode: '{{mode}} profile',
       nameTitle: 'Name',
       nameDesc: 'The name shown on your card and in messages. Changing it updates it everywhere.',
       namePlaceholder: 'Your name',
