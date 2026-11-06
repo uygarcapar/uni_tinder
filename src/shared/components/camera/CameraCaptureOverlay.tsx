@@ -303,12 +303,39 @@ export default function CameraCaptureOverlay() {
    *
    * `cropSrc` kipe GİRERKEN ölçülen kaynak (`resolveShotSize`): giriş ölçeği
    * ona bağlı ve yanlış bir ölçü fotoğrafın kipe girerken sıçraması demek.
-   * Her girişte YENİDEN ölçülüyor — kırpılmış kare yeni bir kaynak.
+   * Her girişte YENİDEN ölçülüyor — kırpılmış kare yeni bir kaynak. `uri`
+   * kipin ÇİZDİĞİ dosya: ✓'den sonra `shot` yeni kareye geçtiğinde kip katmanı
+   * bir süre daha eski kareyi çizmeye devam ediyor (bkz. `cropLayerHeld`).
    */
   const [cropping, setCropping] = useState(false);
-  const [cropSrc, setCropSrc] = useState<{ w: number; h: number } | null>(
-    null,
-  );
+  const [cropSrc, setCropSrc] = useState<{
+    w: number;
+    h: number;
+    uri: string;
+  } | null>(null);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * DEVİR TESLİM — iki katmandan biri EKRANDA OLMADAN diğeri kaldırılmıyor.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Kipe giriş `cover` görüntünün (ya da iOS kamera yolunda DURAKLATILMIŞ canlı
+   * katmanın) yerine YENİ bir `Image` koyuyor. O dosya iOS'ta daha hiç decode
+   * edilmemiş olabiliyor (12MP JPEG) ve eskisini hemen kaldırmak, yenisi
+   * gelene kadar pencereyi SİYAH bırakırdı — "fotoğraf yerinden oynamasın"
+   * kararının tam tersi.
+   *
+   * Bu iki değer expo-image'in `onDisplay`inden yazılıyor (dosya GERÇEKTEN
+   * çizildi) ve hangi uri'nin çizildiğini tutuyor — bayrak değil uri, çünkü
+   * aynı native görüntü kaynak değiştirdiğinde eski uri'nin olayı yeni
+   * kaynağı "hazır" saymamalı.
+   *   • `cropShownUri`: kip görüntüsü çizildi mi. Çizilene kadar kip katmanı
+   *     ŞEFFAF zeminle alttakinin ÜSTÜNDE duruyor; çizilince siyah zemine
+   *     geçiyor. Geometri `startScale`de piksel piksel aynı → devir görünmez.
+   *   • `coverShownUri`: önizlemenin `cover` görüntüsü çizildi mi. Kipten
+   *     çıkışta kip katmanı, `cover` görüntü O ANKİ kareyi çizene kadar
+   *     kalıyor (bkz. `cropLayerHeld`).
+   */
+  const [cropShownUri, setCropShownUri] = useState<string | null>(null);
+  const [coverShownUri, setCoverShownUri] = useState<string | null>(null);
 
   /**
    * ══════════════════════════════════════════════════════════════════════════
@@ -386,6 +413,8 @@ export default function CameraCaptureOverlay() {
     setCapturing(false);
     setCropping(false);
     setCropSrc(null);
+    setCropShownUri(null);
+    setCoverShownUri(null);
     setClosing(false);
   }, []);
 
@@ -446,6 +475,8 @@ export default function CameraCaptureOverlay() {
       setCapturing(false);
       setCropping(false);
       setCropSrc(null);
+      setCropShownUri(null);
+      setCoverShownUri(null);
       captureGenRef.current += 1;
       pendingCommitRef.current = false;
       setLens(undefined);
@@ -994,6 +1025,8 @@ export default function CameraCaptureOverlay() {
     // Kip zaten kapalı (düğme kipte çizilmiyor); ölçü atılan kareye aitti.
     setCropping(false);
     setCropSrc(null);
+    setCropShownUri(null);
+    setCoverShownUri(null);
     // Bir sonraki çekim yine donmuş kareyle kalacak (gerekçe `showStill`de);
     // arka plandan dönüş gibi bir sebeple açılmışsa burada kapanıyor.
     setShowStill(Platform.OS !== "ios");
@@ -1077,7 +1110,12 @@ export default function CameraCaptureOverlay() {
       frameH: cropFrame.height,
       outW: OUTPUT_W,
     });
-    setCropSrc({ w: size.width, h: size.height });
+    setCropSrc({ w: size.width, h: size.height, uri: shot.uri });
+    // Devir yeniden başlıyor: önceki girişin `onDisplay`i bu girişin yeni
+    // native görüntüsünü "çizildi" saymamalı (gerekçe `cropShownUri`de).
+    setCropShownUri(null);
+    // `cover` görüntü iOS kamera yolunda BURADA mount oluyor ve kip
+    // katmanının ALTINDA decode ediliyor — ✕'te hazır bekliyor.
     setShowStill(true);
     resetCropGestureFlags();
     resetCropTransform(false, { s: startScale, tx: 0, ty: 0 });
@@ -1243,6 +1281,26 @@ export default function CameraCaptureOverlay() {
     commitShot(shot);
   }, [busy, capturing, commitShot, shot]);
 
+  /**
+   * KİP KATMANI NE ZAMAN ÇİZİLİYOR — devrin iki yönü (gerekçe `cropShownUri`).
+   *
+   * Kip açıkken her zaman. Kip KAPANDIKTAN sonra da, `cover` görüntü o anki
+   * kareyi henüz çizmediyse ve kip görüntüsü çizilmiş durumdaysa: ✕'te `cover`
+   * zaten kip boyunca altta çizili olduğu için katman hemen düşüyor; ✓'den
+   * sonra ise `shot` yeni kare — `cover` onu decode edene kadar kip katmanı
+   * (jestleri ölü, eski kareyle) yerinde kalıyor, yoksa arada iOS'ta
+   * duraklatılmış KIRPILMAMIŞ kare ya da siyah görünürdü. `cover` hata verirse
+   * de `coverShownUri` yazılıyor — katman asılı kalmasın.
+   */
+  const cropImageShown = !!cropSrc && cropShownUri === cropSrc.uri;
+  const cropLayerHeld =
+    !cropping &&
+    cropImageShown &&
+    !!shot &&
+    showStill &&
+    coverShownUri !== shot.uri;
+  const cropLayer = (cropping || cropLayerHeld) && cropSrc && cropScales;
+
   if (!session) return null;
 
   return (
@@ -1388,21 +1446,41 @@ export default function CameraCaptureOverlay() {
             durumlarda bir zıplama olarak okunurdu.
             ⚠️ `transition` YOK: sönümlenerek gelen bir kopya iki görüntüyü üst
             üste bindirip titreme gibi okunuyor. */}
-        {cropping && cropSrc && cropScales && shot ? (
-          /* KIRPMA KİPİ: `cover` görüntünün YERİNE kaynak oranında
-             boyutlanmış, pencere merkezine oturtulmuş ve jestlerle dönüştürülen
-             bir görüntü (kırpıcının çizimiyle aynı). Girişte ölçek
-             `startScale` — yani önizlemedekiyle birebir (gerekçe `cropFrame`
-             notunda).
-             ⚠️ SİYAH ZEMİN ŞART: kullanıcı 1'e kadar uzaklaşınca fotoğraf
-             çerçevenin üstünde/altında pencereyi doldurmayabiliyor; zeminsiz
-             o bantlarda duraklatılmış kamera katmanı görünürdü.
+        {/* ÖNİZLEME KATMANI — kip açıkken de MOUNT KALIYOR: kip görüntüsü
+            çizilene kadar ekranda görünen şey bu (ya da iOS'ta duraklatılmış
+            canlı katman), çizildikten sonra kip katmanının siyah zemini
+            altında hazır bekliyor ve ✕'te tek karelik boşluk olmuyor (gerekçe
+            `cropShownUri`de). */}
+        {shot && showStill ? (
+          <Image
+            source={{ uri: shot.uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory"
+            onDisplay={() => setCoverShownUri(shot.uri)}
+            onError={() => setCoverShownUri(shot.uri)}
+          />
+        ) : null}
+
+        {cropLayer ? (
+          /* KIRPMA KİPİ: önizlemenin ÜSTÜNE kaynak oranında boyutlanmış,
+             pencere merkezine oturtulmuş ve jestlerle dönüştürülen bir
+             görüntü (kırpıcının çizimiyle aynı). Girişte ölçek `startScale` —
+             yani önizlemedekiyle birebir (gerekçe `cropFrame` notunda).
+             ⚠️ ZEMİN ŞEFFAF BAŞLIYOR, kip görüntüsü ÇİZİLİNCE siyaha dönüyor:
+             baştan siyah olsaydı dosya decode edilene kadar pencere kararırdı
+             (devir, `cropShownUri`de). Siyah ise ŞART: kullanıcı 1'e kadar
+             uzaklaşınca fotoğraf çerçevenin üstünde/altında pencereyi
+             doldurmayabiliyor; zeminsiz o bantlarda önizleme görünürdü.
              ⚠️ Dönüşüm YALNIZ bu görüntüde — pencerenin kendisinde opaklık ya
              da transform yok (başlıktaki cam butonlar ata zincirinde
              transform/opaklık görürse sessizce çizilmiyor). */
           <GestureDetector gesture={cropGesture}>
             <Animated.View
-              style={[StyleSheet.absoluteFill, { backgroundColor: "#000" }]}
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: cropImageShown ? "#000" : "transparent" },
+              ]}
               collapsable={false}
             >
               <Animated.View
@@ -1420,23 +1498,18 @@ export default function CameraCaptureOverlay() {
                 ]}
               >
                 {/* Kutu zaten kaynağın TAM oranında; `cover` burada sessizce
-                    ikinci bir kırpma yapardı. */}
+                    ikinci bir kırpma yapardı. Kaynak `cropSrc.uri` — `shot`
+                    DEĞİL: ✓'den sonraki tutma anında `shot` çoktan yeni kare. */}
                 <Image
-                  source={{ uri: shot.uri }}
+                  source={{ uri: cropSrc.uri }}
                   style={{ width: "100%", height: "100%" }}
                   contentFit="fill"
                   cachePolicy="memory"
+                  onDisplay={() => setCropShownUri(cropSrc.uri)}
                 />
               </Animated.View>
             </Animated.View>
           </GestureDetector>
-        ) : shot && showStill ? (
-          <Image
-            source={{ uri: shot.uri }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory"
-          />
         ) : null}
 
         {/* Karartma + ızgara + köşe tırnakları — pencerenin İÇİNDE, `area`
