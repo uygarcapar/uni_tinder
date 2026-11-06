@@ -16,10 +16,14 @@ import type {
   CameraOutcome,
   CameraRequest,
 } from '@/shared/components/camera/cameraBridge';
+import { applyCrop } from '@/shared/components/cropper/applyCrop';
 import { forgetPhoto } from '@/shared/utils/photoStore';
 
 jest.mock('@/shared/components/cropper/cropperBridge', () => ({
   presentCropper: jest.fn(),
+}));
+jest.mock('@/shared/components/cropper/applyCrop', () => ({
+  applyCrop: jest.fn(),
 }));
 jest.mock('@/shared/components/camera/cameraBridge', () => ({
   presentCameraCapture: jest.fn(),
@@ -35,6 +39,8 @@ const mockPresent = presentCropper as jest.MockedFunction<typeof presentCropper>
 const mockShoot = presentCameraCapture as jest.MockedFunction<
   typeof presentCameraCapture
 >;
+const mockApply = applyCrop as jest.MockedFunction<typeof applyCrop>;
+const RECT = { originX: 300, originY: 400, width: 2400, height: 3200 };
 const mockForget = forgetPhoto as jest.MockedFunction<typeof forgetPhoto>;
 const mockDownload = File.downloadFileAsync as jest.Mock;
 const mockLibrary = ImagePicker.launchImageLibraryAsync as jest.Mock;
@@ -498,43 +504,36 @@ describe('önizleme kırpma kancası', () => {
     await captureAndPreviewPhoto({ failedMessage: 'x' });
   };
 
-  it('kırpılan kareyi OUTPUT ölçüleriyle döner', async () => {
-    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+  it('seçilen dikdörtgeni keser, önceki dosyayı unutur, yeni kareyi döner', async () => {
+    mockApply.mockResolvedValue({ uri: 'file:///crop1.jpg', width: 2400, height: 3200 });
     await withHooks(async (req) => {
-      await expect(req.crop!(shot('file:///raw.jpg'))).resolves.toEqual({
-        uri: 'file:///cropped.jpg',
-        width: 900,
-        height: 1200,
+      await expect(req.crop!(shot('file:///raw.jpg'), RECT)).resolves.toEqual({
+        uri: 'file:///crop1.jpg',
+        width: 2400,
+        height: 3200,
       });
     });
+    expect(mockApply).toHaveBeenCalledWith('file:///raw.jpg', RECT);
+    expect(mockForget).toHaveBeenCalledWith('file:///raw.jpg');
+    // Kırpıcı ekranı artık önizleme yolunda açılmıyor — kırpma overlay'in içinde.
+    expect(mockPresent).not.toHaveBeenCalled();
   });
 
-  it('native boyut 0 ise ölçüyü kendisi okur', async () => {
-    (Image.getSize as jest.Mock).mockImplementation((_uri, ok) => ok(1200, 1600));
-    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+  it('kesim patlarsa null döner ve hiçbir dosya unutulmaz', async () => {
+    mockApply.mockRejectedValue(new Error('disk dolu'));
     await withHooks(async (req) => {
-      await req.crop!(shot('file:///raw.jpg', 0, 0));
-    });
-    expect(mockPresent).toHaveBeenCalledWith(
-      expect.objectContaining({ srcWidth: 1200, srcHeight: 1600 }),
-    );
-  });
-
-  it('kırpma iptal edilirse null döner ve HİÇBİR dosya unutulmaz', async () => {
-    mockPresent.mockResolvedValue({ status: 'skipped' });
-    await withHooks(async (req) => {
-      await expect(req.crop!(shot('file:///raw.jpg'))).resolves.toBeNull();
+      await expect(req.crop!(shot('file:///raw.jpg'), RECT)).resolves.toBeNull();
     });
     expect(mockForget).not.toHaveBeenCalled();
   });
 
-  it('üst üste iki kırpmada bir öncekinin dosyası unutulur', async () => {
-    mockPresent
-      .mockResolvedValueOnce(done('file:///crop1.jpg'))
-      .mockResolvedValueOnce(done('file:///crop2.jpg'));
+  it('üst üste iki kırpmada önceki ara dosya unutulur, sonuncusu kalır', async () => {
+    mockApply
+      .mockResolvedValueOnce({ uri: 'file:///crop1.jpg', width: 2400, height: 3200 })
+      .mockResolvedValueOnce({ uri: 'file:///crop2.jpg', width: 1200, height: 1600 });
     await withHooks(async (req) => {
-      const first = await req.crop!(shot('file:///raw.jpg'));
-      await req.crop!(first!);
+      const first = await req.crop!(shot('file:///raw.jpg'), RECT);
+      await req.crop!(first!, RECT);
     });
     expect(mockForget).toHaveBeenCalledWith('file:///raw.jpg');
     expect(mockForget).toHaveBeenCalledWith('file:///crop1.jpg');
@@ -543,23 +542,24 @@ describe('önizleme kırpma kancası', () => {
     expect(mockForget).toHaveBeenCalledTimes(2);
   });
 
-  it('kırpılmış kare onaylanırsa fitPhotoForUpload ÇALIŞMAZ', async () => {
-    mockPresent.mockResolvedValue(done('file:///cropped.jpg'));
+  it("kırpılmış kare onaylanınca fitPhotoForUpload'dan geçer ve ara kare sonra unutulur", async () => {
+    mockApply.mockResolvedValue({ uri: 'file:///crop1.jpg', width: 2400, height: 3200 });
     runSession(async (req) => {
-      const cropped = await req.crop!(shot('file:///raw.jpg'));
+      const cropped = await req.crop!(shot('file:///raw.jpg'), RECT);
+      mockForget.mockClear();
       await expect(req.commit!(cropped!)).resolves.toBeNull();
       return { status: 'committed' };
     });
     const photo = await captureAndPreviewPhoto({ failedMessage: 'x' });
-    // Kırpıcının çıktısı OLDUĞU GİBİ dönüyor — yeni bir photo_*.jpg yazılmadı.
+    // 3:4 ara kare 900x1200'e ölçekleniyor: yeni bir photo_*.jpg yazıldı.
+    expect(ImageManipulator.manipulate).toHaveBeenCalledWith('file:///crop1.jpg');
     expect(photo).toEqual({
-      uri: 'file:///cropped.jpg',
+      uri: expect.stringContaining('photo_'),
       mime: 'image/jpeg',
-      fileName: 'photo.jpg',
+      fileName: expect.stringMatching(/^photo_/),
     });
-    // Manipülatör mock'u da aynı uri'yi döner; uri tek başına ayırt etmez.
-    expect(ImageManipulator.manipulate).not.toHaveBeenCalled();
-    // Nihai dosya asla unutulmaz.
-    expect(mockForget).not.toHaveBeenCalledWith('file:///cropped.jpg');
+    // Ara kare yeni dosya yazıldıktan sonra unutulur; yeni dosya asla.
+    expect(mockForget).toHaveBeenCalledTimes(1);
+    expect(mockForget).toHaveBeenCalledWith('file:///crop1.jpg');
   });
 });
