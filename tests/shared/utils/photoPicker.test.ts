@@ -413,6 +413,9 @@ describe('captureAndPreviewPhoto', () => {
     mockCamera.mockResolvedValue({ canceled: true, assets: null });
     await expect(captureAndPreviewPhoto({ failedMessage: 'x' })).resolves.toBeNull();
     expect(mockCamera).toHaveBeenCalled();
+    // Uygulama içi kamera ikinci kez AÇILMAMALI: `unavailable` zaten onun
+    // başarısızlığı (hazır-zaman aşımı / mount hatası); doğrudan sistem kamerası.
+    expect(mockShoot).toHaveBeenCalledTimes(1);
   });
 
   it('iptal → null, hiçbir dosya burada unutulmaz (overlay unutuyor)', async () => {

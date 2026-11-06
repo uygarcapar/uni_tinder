@@ -663,7 +663,13 @@ export const captureAndPreviewPhoto = async (options: {
   });
 
   if (outcome.status === 'unavailable') {
-    return captureAndCropPhoto({ facing: options.facing });
+    // Doğrudan sistem kamerası — `captureAndCropPhoto`ya DEVRETMİYORUZ: o,
+    // izni ve `presentCameraCapture()`ı bir kez daha çalıştırır; `unavailable`
+    // overlay'in hazır-zaman aşımından / mount hatasından geliyorsa (overlay
+    // hâlâ bağlı) kullanıcı uygulama içi kamerayı ikinci kez yukarı kayıp 3,5
+    // sn karanlıkta kalıp inerken görürdü. `captureWithSystemCamera` kırpmayı
+    // (`cropSequentially`) zaten kendisi yapıyor.
+    return captureWithSystemCamera();
   }
   if (outcome.status === 'cancelled') return null;
   if (outcome.status === 'failed') {
@@ -730,7 +736,11 @@ export const pickAndPreviewPhotos = async (
     if (outcome.status === 'failed') {
       devLog('📷 [photoPicker] önizleme başarısız, fotoğraf atlandı', outcome.error);
     }
-    // `cancelled`/`failed`: dosyayı overlay zaten unuttu.
+    // `cancelled`: overlay o anki `shot`ı (galeri `source` kopyası ya da
+    // çağıranın son kırpma çıktısı) kendisi unuttu, burada unutulacak bir şey
+    // yok. `failed` ise overlay'den HİÇ gelmiyor (overlay `failed` üretmez);
+    // bu dal savunmacı — gelseydi dosyayı kimsenin unutmayacağını bilerek
+    // yalnızca atlıyoruz.
   }
 
   devLog('📷 [photoPicker] önizlemeden dönen', {
