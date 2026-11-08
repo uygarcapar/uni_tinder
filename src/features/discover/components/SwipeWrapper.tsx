@@ -1,9 +1,9 @@
 import React, { useEffect } from "react";
-import { Dimensions, StyleSheet, View } from "react-native";
+import { Dimensions, View } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
-  // Easing, // uçuş park edildi (bkz. runCoveredExit)
+  Easing,
   useAnimatedRef,
   useSharedValue,
   useAnimatedStyle,
@@ -11,46 +11,29 @@ import Animated, {
   withTiming,
   runOnJS,
   interpolate,
-  Extrapolate,
   useAnimatedReaction,
-  useDerivedValue,
 } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import type { AppMode } from "../modeTheme";
 import { runFlameSweep } from "@/features/discover/flameSweep";
-// Uçuş park edildi (bkz. runCoveredExit) — geri alırken bu importu aç.
-// import { flyOutDurationMs } from "@/features/discover/exitFlight";
+import { flyOutDurationMs, SWIPE_COOLDOWN_MS } from "@/features/discover/exitFlight";
 import uiBus, {
-  // `cardChromeAnim` ARTIK OKUNMUYOR: tek kullanıcısı `unwindForExit`ti
-  // (çıkış uçuşunda kromu oranlı geri sarmak) ve uçuşla birlikte kalktı.
-  // Kanalı artık yalnız scroll konumu sürüyor (bkz. SwipeCard > krom devri),
-  // çıkışta ise `resetCardExpandState` örtünün altında sıfırlıyor.
   cardExpandAnim,
   cardPullProgress,
+  discoverRailLift,
+  discoverSwipeLockedUntil,
+  flamePullPeek,
   resetCardExpandState,
   FIRE_PULL_THRESHOLD,
 } from "@/shared/services/uiBus";
 import { DISCOVER_CARD_EXPAND_LIFT } from "@/features/discover/components/discoverHeaderMetrics";
 import { photoPinchActive } from "@/shared/components/pinchZoom";
-import { colors } from "@/shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
 const { width, height } = Dimensions.get("window");
-
-/**
- * Destenin ALTINDAKİ kartın üstüne serilen tülün alfası — kart jest başlamadan
- * ne kadar sönük duruyor.
- *
- * ESKİ OPAKLIĞIN TÜMLEYENİ (1 − 0.8), yani görüntü birebir aynı: tül sayfa
- * zemininin renginde (bkz. `underDimStyle`), kartın da altındaki tek şey o
- * zemin. Ata opaklığından tüle geçişin gerekçesi animatedStyle'da.
- */
-const UNDER_CARD_DIM = 0.2;
-
-
 
 /**
  * ── AÇ/KAPA DİYE BİR ŞEY YOK: KART HEP AÇIK ────────────────────────────────
@@ -174,9 +157,11 @@ const FADE_IN_DURATION = 100;
  */
 const SWIPE_THRESHOLD = 85;
 
-/** Keşif kartında sağa/sola sürükleme jesti. 2026-11-06'dan beri KAPALI —
- * beğen/geç yalnız butonlardan, alev banner'ı altında (bkz. horizontalPan). */
-const HORIZONTAL_SWIPE_ENABLED = false;
+/** Çekişten vazgeçince alevin aşağı inişi. */
+const FLAME_PEEK_RECEDE = { duration: 220 };
+
+/** Keşif kartında sağa/sola sürükleme jesti (bkz. horizontalPan). */
+const HORIZONTAL_SWIPE_ENABLED = true;
 
 /*
  * ── ÇIKIŞIN İKİ MODELİ: UÇUŞ (beğen/geç) · ALEV (Fire) ─────────────────────
@@ -200,10 +185,12 @@ const HORIZONTAL_SWIPE_ENABLED = false;
  *    yorum satırı olarak duruyor (bkz. runCoveredExit · flyOut), geri alma
  *    tarifi: docs/superpowers/specs/2026-11-06-discover-exit-flight-PARKED.md
  *
- * BUGÜNKÜ HÂL (4. adımdan sonra):
- *   • `left` / `right` / `up` → `runFlameSweep({ hold })`. Değişim örtünün
- *     altında; beğenide eşleşme geliyorsa MatchModal perdesi örtüyor.
- *   • (park) `left` / `right` → `flyOut` — yorumda.
+ * 5. 2026-11-08 — UÇUŞ VE YATAY JEST YENİDEN AÇILDI. Cam buton kolonu kartın
+ *    dışına, ekran katına taşındı (bkz. DiscoverActionRail).
+ *
+ * BUGÜNKÜ HÂL:
+ *   • `left` / `right` → `flyOut`.
+ *   • `up` → `runFlameSweep({ hold })`; eşleşme varsa MatchModal perdesi.
  *
  * UÇUŞLA BİRLİKTE GERİ GELMEYENLER (hepsi 2026-10-13'te düşmüştü, bilerek
  * dışarıda bırakıldı):
@@ -300,22 +287,6 @@ const CARD_ENTRY_RISE = CARD_ENTRY_DISTANCE * 0.22;
  * başında ekranın içinde kalırdı.
  */
 const CARD_ENTRY_TILT = EXIT_TILT;
-
-/**
- * ── ALT KARTIN KARŞI SALINIMI ───────────────────────────────────────────────
- *
- * Üst kart sürüklenirken arkadaki kart TERS yöne ufak bir yay çiziyor: yatayda
- * karşıya kayıyor, kayarken hafifçe aşağı iniyor (karesel → yay) ve karşı yöne
- * azıcık yatıyor. Üst kartın hareketinin çok küçük bir yankısı — derinlik hissi.
- *
- * Sürücü `overlayDragX` (rozet kanalı; jest de buton da yazıyor), ±UNDER_SWAY_RANGE
- * aralığında normalize ediliyor. Değerler bilerek küçük: kart tam ekran, büyük
- * kayma kenardan zemin sızdırır.
- */
-const UNDER_SWAY_RANGE = 150;
-const UNDER_SWAY_X = 12;
-const UNDER_SWAY_DROP = 5;
-const UNDER_SWAY_TILT = 1.2;
 
 /**
  * ── ÖRTÜLÜ KARTIN RASTER SARMALAYICISI ──────────────────────────────────────
@@ -567,19 +538,6 @@ function SwipeWrapper({
    */
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
-  /**
-   * Alt kartın karşı salınımı (-1…1, bkz. UNDER_SWAY_*). YAYLI türev, ham değil:
-   * rozet kanalı deste ilerlemeden hemen önce 0'a SIÇRIYOR (bkz. resetAfterExit)
-   * ve bu kart o anda üste geçiyor — ham okunsaydı kart bir karede yerine
-   * zıplardı. Yay hem o sıçramayı hem üste geçişi (hedef 0) yumuşatıyor.
-   * Sürüklemede gecikme de istenen şey: arkadaki kart bir tık geriden geliyor.
-   */
-  const underSway = useDerivedValue(() => {
-    const target = isTopCard
-      ? 0
-      : Math.max(-1, Math.min(1, overlayDragX.value / UNDER_SWAY_RANGE));
-    return withSpring(target, { damping: 20, stiffness: 220, mass: 1 });
-  }, [isTopCard]);
   const scrollY = useSharedValue(0);
   // Scroll bitip rubber-band'in başladığı andaki translationY baseline'ı.
   // Sürekli gesture'da scroll → rubber-band geçişi yumuşak olsun diye.
@@ -810,6 +768,8 @@ function SwipeWrapper({
   const resetAfterExit = (opts?: { keepTx?: boolean }) => {
     resetCardExpandState();
     scrollY.value = 0;
+    // Sürükleme payından ÖNCE: sıra tersi olursa kolon bir kare eski yerine sıçrar.
+    discoverRailLift.value = 0;
     overlayDragX.value = 0;
     overlayOpacity.value = 1;
     // Alev dalında sürükleme payı burada siliniyor, rozetle aynı gerekçeyle:
@@ -839,24 +799,16 @@ function SwipeWrapper({
    * `onSwipe` (isteği atan taraf) önce çağrılmak zorunda.
    */
   const runCoveredExit = (direction: SwipeDirection, _velocityX = 0) => {
-    // ── UÇUŞ DALI YORUMA ALINDI (istek, 2026-11-06 öğleden sonra) ──────────
-    // "Swipe'la sağ sola atma animasyonunu kaldır ama silme, comment'e al;
-    // like'ta da dislike'ta da alev banner'ı geri gelsin." Beğen/geç yine
-    // Fire'ın yolundan gidiyor: kart yerinde, alev örtüyor, deste örtünün
-    // altında ilerliyor. Geri almak için: aşağıdaki üç satırı aç, eşleşme
-    // kapısını `direction === "up"`a geri çevir, flyOut/finishFlight'ı ve
-    // dosya başındaki iki importu yorumdan çıkar, DiscoverScreen'de
-    // SWIPE_BUTTON_LOCK_MS'i 250'ye döndür. Tam tarif:
-    // docs/superpowers/specs/2026-11-06-discover-exit-flight-PARKED.md
-    //
-    // if (direction !== "up") {
-    //   flyOut(direction, _velocityX);
-    //   return;
-    // }
+    // Beğen/geç kartı yana uçuruyor; alev yalnız Fire'da kalıyor.
+    if (direction !== "up") {
+      flyOut(direction, _velocityX);
+      return;
+    }
     if (flameCoverUnsub.current) return;
-    // Eşleşme dalı yine beğeniyi de kapsıyor (2026-10-13 kuralı geri geldi):
-    // "önce alev modalı gelsin, kart arkasında değişsin".
-    if (direction !== "left" && willMatch?.(profile)) {
+    // Buraya yalnız Fire geliyor: eşleşmeli beğeni uçuyor, perde arkadan açılıyor.
+    if (willMatch?.(profile)) {
+      // Kutlamayı perde yapıyor, çekiş alevi geri çekilsin.
+      flamePullPeek.value = withTiming(0, FLAME_PEEK_RECEDE);
       // resetAfterExit: açık panel burada animasyonla kapanmıyor, çünkü
       // kart bu karede desteden düşüyor — asıl iş expand shared value'larını
       // deste ilerlemeden ÖNCE sıfırlamak (yoksa yeni top kart donmuş bir
@@ -881,68 +833,66 @@ function SwipeWrapper({
     );
   };
 
-  // ── PARK EDİLDİ (2026-11-06): beğen/geç uçuşu. Geri almak için yorumdan
-  // çıkar — tarif runCoveredExit'in başında ve PARKED dokümanında.
-  // /**
-  //  * ── BEĞEN/GEÇ: KART YİNE YANA UÇUYOR (istek, 2026-11-06) ──────────────────
-  //  *
-  //  * "Alev banner'ı yalnız not veya Fire/Spark atınca çıksın; diğerlerinde sağa
-  //  * sola swipe edince kart eskisi gibi sağa sola uçsun." Yani alev bir KUTLAMA
-  //  * oldu, bir devir mekanizması değil: kullanıcının bir şey HARCADIĞI iki
-  //  * eylemde (Fire/Spark · not) kalıyor, destede saniyede bir yapılan beğen/geç
-  //  * ise kendi hareketine döndü.
-  //  *
-  //  * ⚠️ 2026-10-13'teki "değişim hiçbir dalda örtüsüz olmaz" kuralı BU DALDA
-  //  * BİLEREK DELİNDİ. Kullanıcı gelen kartı görüyor — zaten görmesi isteniyor.
-  //  * Kural Fire ve notta aynen duruyor.
-  //  *
-  //  * ESKİ UÇUŞ TAKIMI GERİ GELMEDİ, yalnız uçuşun kendisi geldi:
-  //  *   • `EXIT_OVERSHOOT` (1.35) YOK. O fazlalık devri eğrinin erkenine çekmek
-  //  *     içindi; devir artık uçuşun SONUNDA, çekilecek bir an yok.
-  //  *   • `exitHandoff` kanalı ve "deste uçuşun 65. ms'sinde ilerler" YOK. Deste
-  //  *     uçuşun ortasında ilerleseydi giden kart aynı karede geri al yuvasına
-  //  *     düşer, `!isTopCard` effect'i `tx`i sıfırlar ve kart ekranın ortasına
-  //  *     geri yapışırdı — eski kurgunun klasik belirtisi. Kart uçuş boyunca üst
-  //  *     kart kalıyor.
-  //  *   • `unwindForExit` YOK: kaydırılmış/açık kart olduğu gibi uçuyor,
-  //  *     temizliği ekran dışındayken oluyor (bkz. resetAfterExit).
-  //  *
-  //  * ROZET UÇUŞLA BİRLİKTE SÖNÜYOR: büyük tik/X kartın içinde değil EKRAN
-  //  * KATINDA (bkz. DiscoverScreen > SwipeOverlay), yani kartla gitmiyor.
-  //  * Söndürülmeseydi kart ekrandan çıktıktan sonra ortada asılı kalırdı.
-  //  *
-  //  * Süre hızdan geliyor (bkz. exitFlight > flyOutDurationMs); eğim bedava —
-  //  * `dragRotate` zaten `tx`ten türüyor, kart uçarken kendiliğinden EXIT_TILT'e
-  //  * yatıyor (bkz. animatedStyle).
-  //  */
-  // const flyOut = (direction: SwipeDirection, velocityX: number) => {
-  //   const duration = flyOutDurationMs(velocityX);
-  //   const target =
-  //     direction === "right" ? EXIT_CLEAR_DISTANCE : -EXIT_CLEAR_DISTANCE;
-  //   overlayOpacity.value = withTiming(0, { duration });
-  //   tx.value = withTiming(
-  //     target,
-  //     { duration, easing: Easing.out(Easing.cubic) },
-  //     (finished) => {
-  //       // ⚠️ `finished` KAPISI: animasyon iptal edildiyse (kart örtme anından
-  //       // önce ağaçtan düştü — deste tazelendi, sekme değişti, tema remount'u)
-  //       // burada deste ilerletilmemeli; sökülmüş bir ağaçtan `onSwipe`
-  //       // çağırmak desteyi sahipsiz bir kare ileri sürerdi.
-  //       if (finished) runOnJS(finishFlight)(direction);
-  //     },
-  //   );
-  // };
+  /**
+   * ── BEĞEN/GEÇ: KART YİNE YANA UÇUYOR (istek, 2026-11-06) ──────────────────
+   *
+   * "Alev banner'ı yalnız not veya Fire/Spark atınca çıksın; diğerlerinde sağa
+   * sola swipe edince kart eskisi gibi sağa sola uçsun." Yani alev bir KUTLAMA
+   * oldu, bir devir mekanizması değil: kullanıcının bir şey HARCADIĞI iki
+   * eylemde (Fire/Spark · not) kalıyor, destede saniyede bir yapılan beğen/geç
+   * ise kendi hareketine döndü.
+   *
+   * ⚠️ 2026-10-13'teki "değişim hiçbir dalda örtüsüz olmaz" kuralı BU DALDA
+   * BİLEREK DELİNDİ. Kullanıcı gelen kartı görüyor — zaten görmesi isteniyor.
+   * Kural Fire ve notta aynen duruyor.
+   *
+   * ESKİ UÇUŞ TAKIMI GERİ GELMEDİ, yalnız uçuşun kendisi geldi:
+   *   • `EXIT_OVERSHOOT` (1.35) YOK. O fazlalık devri eğrinin erkenine çekmek
+   *     içindi; devir artık uçuşun SONUNDA, çekilecek bir an yok.
+   *   • `exitHandoff` kanalı ve "deste uçuşun 65. ms'sinde ilerler" YOK. Deste
+   *     uçuşun ortasında ilerleseydi giden kart aynı karede geri al yuvasına
+   *     düşer, `!isTopCard` effect'i `tx`i sıfırlar ve kart ekranın ortasına
+   *     geri yapışırdı — eski kurgunun klasik belirtisi. Kart uçuş boyunca üst
+   *     kart kalıyor.
+   *   • `unwindForExit` YOK: kaydırılmış/açık kart olduğu gibi uçuyor,
+   *     temizliği ekran dışındayken oluyor (bkz. resetAfterExit).
+   *
+   * ROZET UÇUŞLA BİRLİKTE SÖNÜYOR: büyük tik/X kartın içinde değil EKRAN
+   * KATINDA (bkz. DiscoverScreen > SwipeOverlay), yani kartla gitmiyor.
+   * Söndürülmeseydi kart ekrandan çıktıktan sonra ortada asılı kalırdı.
+   *
+   * Süre hızdan geliyor (bkz. exitFlight > flyOutDurationMs); eğim bedava —
+   * `dragRotate` zaten `tx`ten türüyor, kart uçarken kendiliğinden EXIT_TILT'e
+   * yatıyor (bkz. animatedStyle).
+   */
+  const flyOut = (direction: SwipeDirection, velocityX: number) => {
+    const duration = flyOutDurationMs(velocityX);
+    const target =
+      direction === "right" ? EXIT_CLEAR_DISTANCE : -EXIT_CLEAR_DISTANCE;
+    overlayOpacity.value = withTiming(0, { duration });
+    tx.value = withTiming(
+      target,
+      { duration, easing: Easing.out(Easing.cubic) },
+      (finished) => {
+        // ⚠️ `finished` KAPISI: animasyon iptal edildiyse (kart örtme anından
+        // önce ağaçtan düştü — deste tazelendi, sekme değişti, tema remount'u)
+        // burada deste ilerletilmemeli; sökülmüş bir ağaçtan `onSwipe`
+        // çağırmak desteyi sahipsiz bir kare ileri sürerdi.
+        if (finished) runOnJS(finishFlight)(direction);
+      },
+    );
+  };
 
-  // /**
-  //  * Uçuş bitti: kart ekran dışında, temizlik ve devir aynı karede.
-  //  *
-  //  * SIRA ZORUNLU — önce sıfırlama, sonra `onSwipe`: `overlayDragX`in deste
-  //  * ilerlemeden önce dinlenmeye dönmesi gerekiyor (gerekçe resetAfterExit'te).
-  //  */
-  // const finishFlight = (direction: SwipeDirection) => {
-  //   resetAfterExit({ keepTx: true });
-  //   onSwipe(direction, profile.userId);
-  // };
+  /**
+   * Uçuş bitti: kart ekran dışında, temizlik ve devir aynı karede.
+   *
+   * SIRA ZORUNLU — önce sıfırlama, sonra `onSwipe`: `overlayDragX`in deste
+   * ilerlemeden önce dinlenmeye dönmesi gerekiyor (gerekçe resetAfterExit'te).
+   */
+  const finishFlight = (direction: SwipeDirection) => {
+    resetAfterExit({ keepTx: true });
+    onSwipe(direction, profile.userId);
+  };
   // Kart örtme anından ÖNCE ağaçtan düşerse (deste tazelendi, sekme değişti,
   // tema remount'u) dinleyici arkada kalmasın.
   useEffect(
@@ -959,6 +909,8 @@ function SwipeWrapper({
   // (jest ve buton tetiklemeleri). Aksi halde aynı profile art arda iki swipe
   // gidebilirdi.
   const exitPending = useSharedValue(false);
+  const dragBlocked = useSharedValue(false);
+  const flamePeekAnnounced = useSharedValue(false);
 
   // Worklet'ten okumak için mirror — runOnJS'siz quota check. İkisi de jestin
   // `onEnd`inde okunuyor: beğeni kotası sağa kaydırmada, Fire kotası aşağı
@@ -1035,6 +987,8 @@ function SwipeWrapper({
     "worklet";
     if (exitPending.value) return;
     exitPending.value = true;
+    // Art arda swipe'ı kesen süre; bir sonraki kartın jesti buna bakıyor.
+    discoverSwipeLockedUntil.value = Date.now() + SWIPE_COOLDOWN_MS;
     const cfg = { damping: 16, stiffness: 380, mass: 1 };
     ty.value = withSpring(0, cfg);
     fireProgress.value = withSpring(0);
@@ -1141,6 +1095,18 @@ function SwipeWrapper({
    * döner, `exitPending` de o kart için bir daha inmez. Ne jest ne buton
    * çalışır; kullanıcı o karta kilitlenir.
    */
+  const recedeFlamePeek = () => {
+    "worklet";
+    flamePeekAnnounced.value = false;
+    flamePullPeek.value = withTiming(0, FLAME_PEEK_RECEDE);
+  };
+  const clearFlamePeek = () => {
+    "worklet";
+    flamePeekAnnounced.value = false;
+    flamePullPeek.value = 0;
+  };
+  const announceFlamePull = () => uiBus.emit("flamePull", { mode });
+
   const cancelDragForPinch = () => {
     "worklet";
     if (exitPending.value) return;
@@ -1152,6 +1118,7 @@ function SwipeWrapper({
     ty.value = withSpring(0, cfg);
     fireProgress.value = withSpring(0);
     cardPullProgress.value = withSpring(0);
+    recedeFlamePeek();
     fireReady.value = false;
     // KROMA DOKUNULMUYOR: onu scroll konumu sürüyor (bkz. SwipeCard >
     // chrome devri) ve pinch scroll'u oynatmıyor. Bir dönem burada aç/kapa
@@ -1191,14 +1158,15 @@ function SwipeWrapper({
    * titriyor ya da Fire çekişi hiç aktive olmuyor.
    */
   const horizontalPan = Gesture.Pan()
-    // YATAY JEST KAPALI (istek 2026-11-06, uçuşun park edilmesiyle aynı gün):
-    // sağa/sola kaydırma yok, beğen/geç YALNIZ tik/X butonlarından ve alev
-    // banner'ı altında devrediyor. Kod yerinde duruyor — geri açmak için
-    // `HORIZONTAL_SWIPE_ENABLED`ı true yap.
     .enabled(HORIZONTAL_SWIPE_ENABLED && isTopCard)
     .activeOffsetX([-10, 10])
     .failOffsetY([-15, 15])
+    .onStart(() => {
+      // Karar jestin başında: bekleme ortasında biterse kart zıplamasın.
+      dragBlocked.value = Date.now() < discoverSwipeLockedUntil.value;
+    })
     .onUpdate((event) => {
+      if (dragBlocked.value) return;
       // Foto büyütülüyor → kart kıpırdamasın (bkz. cancelDragForPinch).
       if (photoPinchActive.value) return;
       // Karar verildi, alevin örtmesi bekleniyor: kart artık kilitli.
@@ -1230,6 +1198,7 @@ function SwipeWrapper({
     })
     .onEnd((event) => {
       hasVibrated.value = false;
+      if (dragBlocked.value) return;
       if (exitPending.value) return;
       // Parmaklar kalktı ama büyütme kapanışı sürüyor: bu jest pinch'in
       // parçasıydı, swipe olarak yorumlanmamalı.
@@ -1322,6 +1291,7 @@ function SwipeWrapper({
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
+        clearFlamePeek();
         disarmSuperHaptics();
         return;
       }
@@ -1338,6 +1308,11 @@ function SwipeWrapper({
         const progress = Math.min(ty.value / FIRE_PULL_THRESHOLD, 1);
         fireProgress.value = progress;
         cardPullProgress.value = progress;
+        flamePullPeek.value = progress;
+        if (progress > 0 && !flamePeekAnnounced.value) {
+          flamePeekAnnounced.value = true;
+          runOnJS(announceFlamePull)();
+        }
         // KROM KANALINA BURADA DOKUNULMUYOR. Eskiden 0'a yazılıyordu (aynı
         // jestte önce yukarı çekilip kart kısmen açılmış olabiliyordu); açılış
         // diye bir şey kalmadı. Yazmak artık düzeltmiyor, YALNIZCA KIRIYOR:
@@ -1364,6 +1339,7 @@ function SwipeWrapper({
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
+        clearFlamePeek();
         fireReady.value = false;
         disarmSuperHaptics();
       } else {
@@ -1372,6 +1348,7 @@ function SwipeWrapper({
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
+        clearFlamePeek();
         disarmSuperHaptics();
       }
     })
@@ -1415,6 +1392,8 @@ function SwipeWrapper({
     // her bitişte çalışıyor — "parmak gitti"nin tek güvenli yeri.
     .onFinalize(() => {
       pullActive.value = 0;
+      // Karar verildiyse alev dalgaya devrediliyor; değilse geri çekiliyor.
+      if (!exitPending.value) recedeFlamePeek();
     });
 
   // İki jest aynı parmağı paylaşıyor (yatay karar · aşağı çekişte Fire), o
@@ -1516,7 +1495,7 @@ function SwipeWrapper({
         // Dördüncü terim alt kartın karşı salınımı (üst kartta yay 0'da).
         {
           translateX:
-            entry + (isTopCard ? tx.value : 0) - underSway.value * UNDER_SWAY_X,
+            entry + (isTopCard ? tx.value : 0),
         },
         // ty: geçici çekiş payı (Fire peek'i).
         // İkinci terim kalıcı lift — açık kartta kutu bu kadar yukarıda.
@@ -1528,8 +1507,7 @@ function SwipeWrapper({
             (isTopCard
               ? HEADER_COVER * Math.max(0, Math.min(1, cardExpandAnim.value))
               : 0) +
-            entryT * CARD_ENTRY_RISE +
-            underSway.value * underSway.value * UNDER_SWAY_DROP,
+            entryT * CARD_ENTRY_RISE,
         },
         // İKİ EĞİM TOPLANIYOR (translateX'teki toplamın karşılığı):
         //   • Sürüklemenin eğimi — kart parmağın altında yana deviriliyor.
@@ -1539,8 +1517,8 @@ function SwipeWrapper({
         //     sarımı.
         {
           rotate: isTopCard
-            ? `${dragRotate - entryT * CARD_ENTRY_TILT - underSway.value * UNDER_SWAY_TILT}deg`
-            : `${-underSway.value * UNDER_SWAY_TILT}deg`,
+            ? `${dragRotate - entryT * CARD_ENTRY_TILT}deg`
+            : "0deg",
         },
         // ── ÖLÇEK KALDIRILDI (`scale`) ─────────────────────────────────────
         // Alt kart 0.92'de duruyor, yeni üst kart da 0.92→1 yayıyla büyüyordu
@@ -1578,52 +1556,6 @@ function SwipeWrapper({
       // zeminin üstüne koymakla birebir aynı pikseli üretiyor — kartın
       // kırpılmayan köşelerinde bile (orada zemin zaten o renk).
       zIndex: isTopCard ? 10 : 1,
-    };
-  });
-
-  /**
-   * ALT KARTIN TÜLÜ — kartın ATASINDAKİ opaklığın yerini alan katman
-   * (gerekçesi animatedStyle'da, opaklığın kaldırıldığı yerde).
-   *
-   * KARTIN ÇOCUĞU DEĞİL KARDEŞİ ve kartın ÜSTÜNDE: ata zincirine alfa
-   * sokmadığı için kartın içindeki blur bantları ve cam yüzeyler alt karttayken
-   * de normal çiziliyor — kart üste geçtiğinde gölgesi çoktan yerinde oluyor.
-   *
-   * Oran eski opaklığın tümleyeni (1 − 0.8). Üç sürücü OR'lanıyor: yatay
-   * sürükleme, Fire çekişi ve gelen kartın giriş yolu — üçünde de arkadaki kart
-   * önden açılıyor, yani "0.8 → 1 zıplaması" olmuyor.
-   *
-   * YATAY TERİM GERİ GELDİ (jestle birlikte) ama PAYDASI DEĞİŞTİ: eskiden
-   * kartlar arasında paylaşılan `dragX` vardı, bugün rozet kanalı
-   * (`overlayDragX`) okunuyor. Aynı sayıyı veriyor — jest sürüklemeyi oraya da
-   * yazıyor — ve bir kanal fazla tutmaktan kurtarıyor. BUTON YOLUNDA DA
-   * ÇALIŞIYOR, eskisi gibi: rozet ±150'ye koşarken arkadaki kart açılıyor.
-   */
-  const underDimStyle = useAnimatedStyle(() => {
-    if (isTopCard) return { opacity: 0 };
-    const combined = Math.min(
-      1,
-      Math.max(
-        Math.abs(overlayDragX.value) / SWIPE_THRESHOLD,
-        cardPullProgress.value,
-        // GİRİŞ DE AÇIYOR: gelen kart yoldayken alttaki kart (yani bir önceki
-        // üst kart) sönükleşmemiş olmalı — ekranda görünen o. Gelen kart
-        // yaklaştıkça sönüklük geri geliyor ve tam örtüldüğü an tamamlanıyor.
-        // Sert geçiş YOK, bilerek: gelen kartın yuvarlak köşelerinden alttaki
-        // kart görünüyor, orada bir anda koyulaşma "arkadaki kart değişti" gibi
-        // okunuyordu.
-        entryX
-          ? Math.min(1, Math.abs(entryX.value) / CARD_ENTRY_DISTANCE)
-          : 0,
-      ),
-    );
-    return {
-      opacity: interpolate(
-        combined,
-        [0, 1],
-        [UNDER_CARD_DIM, 0],
-        Extrapolate.CLAMP,
-      ),
     };
   });
 
@@ -1684,17 +1616,6 @@ function SwipeWrapper({
             panelWarmup={!rewindSlot}
           />
         </RasterizeWhenCovered>
-        {/* Tül — KARTIN ÜSTÜNDE ve dokunma almıyor. Üst kartta opaklığı 0;
-            yine de çiziliyor (koşulsuz) ki kart üste geçerken bir katman
-            mount/unmount edilmesin — swap karesi destenin en dar yeri. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: colors.bg },
-            underDimStyle,
-          ]}
-        />
       </Animated.View>
     </GestureDetector>
   );

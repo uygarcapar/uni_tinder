@@ -74,6 +74,15 @@ export const FIRE_PULL_THRESHOLD = 50;
  */
 export const cardChromeAnim = makeMutable(0);
 
+/** Keşif'in ekran katındaki buton kolonunun tabanı (bkz. DiscoverActionRail). */
+export const discoverRailBottom = makeMutable(0);
+/** Üst kart kaydırıldıkça kolonun kapakla birlikte yukarı gittiği pay (px). */
+export const discoverRailLift = makeMutable(0);
+/** Fire/Spark çekişinde alevin görünen oranı (0-1, bkz. FlamePullCanvas). */
+export const flamePullPeek = makeMutable(0);
+/** Bu ana kadar yeni swipe başlamıyor (Date.now, bkz. SWIPE_COOLDOWN_MS). */
+export const discoverSwipeLockedUntil = makeMutable(0);
+
 // Card stack container'ının expand/collapse durumu.
 export const containerExpand = makeMutable(0);
 

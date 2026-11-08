@@ -137,7 +137,7 @@ const initialState: AuthState = {
     email: '',
     referralCode: null,
     referralCodeToasted: null,
-    mode: '',
+    mode: 'Friends',
     // Arkadaş modunda "kimleri görmek istersin" havuz sorusu sorulacak mı —
     // yani kullanıcının cinsiyeti YALNIZ Non-Binary kategorisinde mi.
     //
@@ -231,9 +231,8 @@ const authSlice = createSlice({
           // kalan turda ise bir sonraki kayıt kendi kodunu sormalı.
           referralCode: null,
           referralCodeToasted: null,
-          // Mod da sıfırlanıyor: yeni tur kendi modunu sormalı. Kalsaydı
-          // ilerleme çubuğu ilk adımda bile kısalmış paydayla açılırdı.
-          mode: '',
+          // Kayıt hep Arkadaş modunda.
+          mode: 'Friends',
           // Moda bağlı türetme de gidiyor — mod sıfırlanıp bu kalsaydı yeni
           // turun barı yanlış paydayla açılırdı.
           asksFriendsPool: false,

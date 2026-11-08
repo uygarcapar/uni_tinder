@@ -1092,6 +1092,10 @@ const tr = {
     // birebir — modeTheme.ts anahtarı `discover.mode.*.${mode}` diye kuruyor,
     // yani buradaki adlar wire değerleridir, çevrilmez.
     mode: {
+      coach: {
+        title: 'Flört profili açmak için buraya dokun',
+        dismiss: 'Şimdi değil',
+      },
       title: {
         Dating: 'Flört',
         Friends: 'Arkadaş',

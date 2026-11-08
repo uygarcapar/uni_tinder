@@ -12,6 +12,8 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
+import { updateRegistrationField } from "@/features/auth/authSlice";
+import { useAsksFriendsPool } from "@/features/auth/useAsksFriendsPool";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import * as Haptics from "expo-haptics";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
@@ -35,6 +37,7 @@ const RULER_INSET = 20;
 export default function RegisterStep12Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep12'>) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const asksFriendsPool = useAsksFriendsPool();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
   const initialHeight =
@@ -121,7 +124,16 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
   const handleNext = handleSubmit(({ height: h }) => {
     Keyboard.dismiss();
     dispatch(updateMultipleFields({ height: h, bio: "" }));
-    navigation.navigate("RegisterStepMode");
+    // Kayıt hep Arkadaş modunda; yarım kalmış eski turların boş değerini de düzeltiyor.
+    dispatch(updateRegistrationField({ field: "mode", value: "Friends" }));
+    dispatch(
+      updateRegistrationField({
+        field: "asksFriendsPool",
+        value: asksFriendsPool,
+      }),
+    );
+    // InterestedIn adımı Arkadaş'ta yalnız Non-Binary kullanıcıya soruluyor.
+    navigation.navigate(asksFriendsPool ? "RegisterStep10" : "RegisterStep13");
   });
 
   return (

@@ -21,11 +21,8 @@ export const REGISTRATION_FLOW = [
   'RegisterStep8',
   'RegisterStep9',
   'RegisterStep12',
-  // Mod seçimi (Flört / Arkadaş) — TEMEL adımlardan (ad, doğum tarihi,
-  // cinsiyet, boy) hemen SONRA, kendinden sonraki üç adımı dallandırdığı için
-  // tam burada: InterestedIn yalnız flörte ait, prompt'lar ve niyet ise seçilen
-  // modun profilini doldurur.
-  'RegisterStepMode',
+  // Mod adımı yok: kayıt hep Arkadaş modunda, Flört profili uygulamadan açılıyor
+  // (bkz. DiscoverModeCoach).
   // Kiminle ilgilendiğin — flörtte HER ZAMAN, arkadaşta YALNIZ Non-Binary
   // kullanıcıda (orada soru "arkadaş modunda kimleri görmek istersin" hâline
   // geliyor). Arkadaşta ikili kategorilerde adım atlanıyor ve değeri sunucu
@@ -60,9 +57,6 @@ export const FIRST_REGISTRATION_STEP: RegistrationStepRoute = REGISTRATION_FLOW[
  * ya da geri tuşu ona ait olmayan bir soruya düşer.
  */
 export const DATING_ONLY_STEPS: ReadonlySet<string> = new Set(['RegisterStep10']);
-
-/** Mod seçiminden ÖNCEKİ adımlar — mod daha bilinmiyor, eleme uygulanamaz. */
-const MODE_STEP_INDEX = REGISTRATION_FLOW.indexOf('RegisterStepMode');
 
 /**
  * Seçilen moda göre gerçekten gösterilecek adımlar.

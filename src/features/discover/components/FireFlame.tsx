@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { InteractionManager, useWindowDimensions } from "react-native";
-import uiBus from "@/shared/services/uiBus";
+import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
+import uiBus, { flamePullPeek } from "@/shared/services/uiBus";
 import LazyChunkBoundary from "@/shared/components/LazyChunkBoundary";
 // Süre canvas ile PAYLAŞILAN modülden geliyor: elle kopyalanan iki sabit olarak
 // tutulduğunda biri güncellenip diğeri bayat kalmıştı.
@@ -30,6 +31,7 @@ import {
  * çıkan hata (Skia path'i kurulamadı) — kutlama atlanır, ekran gitmez.
  */
 import FlameCanvas, {
+  FlamePullCanvas,
   FlameWarmCanvas,
   prewarmFlameWave,
 } from "@/features/discover/components/FireFlameCanvas";
@@ -88,6 +90,21 @@ export default function FireFlame() {
     mode?: AppMode;
   } | null>(null);
   const seq = useRef(0);
+  const [pull, setPull] = useState<{ mode?: AppMode } | null>(null);
+
+  useEffect(
+    () =>
+      uiBus.on("flamePull", (payload?: { mode?: AppMode }) => {
+        setPull({ mode: isAppMode(payload?.mode) ? payload.mode : undefined });
+      }),
+    [],
+  );
+  useAnimatedReaction(
+    () => flamePullPeek.value > 0.001,
+    (on, was) => {
+      if (was && !on) runOnJS(setPull)(null);
+    },
+  );
 
   /**
    * ── İLK KUTLAMANIN BEDELİ BOŞTA ÖDENİYOR (2026-11-06) ──────────────────
@@ -186,17 +203,31 @@ export default function FireFlame() {
     };
   }, []);
 
+  const pullLayer = pull ? (
+    <LazyChunkBoundary resetKey="pull">
+      <FlamePullCanvas mode={pull.mode} />
+    </LazyChunkBoundary>
+  ) : null;
+
   if (run === null) {
-    return shaderWarm ? (
-      <LazyChunkBoundary resetKey="warm">
-        <FlameWarmCanvas />
-      </LazyChunkBoundary>
-    ) : null;
+    return (
+      <>
+        {pullLayer}
+        {shaderWarm && !pull ? (
+          <LazyChunkBoundary resetKey="warm">
+            <FlameWarmCanvas />
+          </LazyChunkBoundary>
+        ) : null}
+      </>
+    );
   }
 
   return (
-    <LazyChunkBoundary resetKey={run.id}>
-      <FlameCanvas key={run.id} hold={run.hold} mode={run.mode} />
-    </LazyChunkBoundary>
+    <>
+      {pullLayer}
+      <LazyChunkBoundary resetKey={run.id}>
+        <FlameCanvas key={run.id} hold={run.hold} mode={run.mode} />
+      </LazyChunkBoundary>
+    </>
   );
 }

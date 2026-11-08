@@ -16,6 +16,7 @@ import Animated, {
   Easing,
   runOnJS,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -28,7 +29,7 @@ import {
   modeFlameOutline,
   type AppMode,
 } from "../modeTheme";
-import uiBus from "@/shared/services/uiBus";
+import uiBus, { flamePullPeek } from "@/shared/services/uiBus";
 import {
   buildFlameWave,
   flameCanvasBox,
@@ -371,10 +372,16 @@ export default function FireFlameCanvas({
   // seferinde sıfırlanıyordu. Dalga alttan birkaç piksel çıkıp geri sıçrıyor,
   // hiç ilerlemiyordu. withTiming UI thread'inde kendi başına dönüyor;
   // React'in kaç kez render olduğu onu ilgilendirmiyor.
-  const progress = useSharedValue(0);
+  // Fire çekişinden geliyorsa dalga alevin durduğu yerden devam ediyor.
+  const [startProgress] = useState(
+    () => flamePullPeek.value * flamePullPeakProgress(wave, height),
+  );
+  const progress = useSharedValue(startProgress);
   /** Parkın nefesi, 0..1 — ayrı kanal (gerekçe FlameWaveLayer'ın prop'unda). */
   const breathe = useSharedValue(0);
-  const { coverMs, coverProgress, holdCeilProgress } = wave;
+  const { coverProgress, holdCeilProgress } = wave;
+  // Yol kısaldı: örtme de hızı değişmeden o kadar erken geliyor.
+  const coverMs = Math.round(wave.coverMs - startProgress * FLAME_WAVE_MS);
   const breatheSpan = holdCeilProgress - coverProgress;
   /** Park sürüyor mu — titreşimi duraklatan bayrak (bkz. FlameWaveLayer). */
   const [parked, setParked] = useState(false);
@@ -395,7 +402,7 @@ export default function FireFlameCanvas({
       // salıverilince (aşağıdaki effect) tamamlanıyor.
       hold ? coverProgress : 1,
       {
-        duration: hold ? coverMs : FLAME_WAVE_MS,
+        duration: hold ? coverMs : FLAME_WAVE_MS * (1 - startProgress),
         // Süpürme hissi için ivmelenmeye gerek yok: giriş ve çıkış zaten ekran
         // dışında oluyor, ease sadece ortadaki geçişi yavaşlatırdı. Doğrusal
         // olması parkın da şartı: iki fazın ekleme yerinde hız değişmiyor.
@@ -417,7 +424,16 @@ export default function FireFlameCanvas({
     // yarısındayken açıkta yapılırdı.
     const cover = setTimeout(() => uiBus.emit("flameSweepCover"), coverMs);
     return () => clearTimeout(cover);
-  }, [progress, coverMs, coverProgress, hold]);
+  }, [progress, coverMs, coverProgress, hold, startProgress]);
+
+  // Çekiş alevi, dalga ilk karesini çizene kadar altta kalıyor; boşluk olmasın.
+  useEffect(() => {
+    if (startProgress <= 0) return;
+    const clear = setTimeout(() => {
+      flamePullPeek.value = 0;
+    }, PULL_HANDOFF_MS);
+    return () => clearTimeout(clear);
+  }, [startProgress]);
 
   /**
    * ── İKİNCİ FAZ: PARKTAN ÇIKIŞ ─────────────────────────────────────────────
@@ -565,6 +581,25 @@ export default function FireFlameCanvas({
  * Yerleşim ve süreler Skia'sız modülde (flameCurtainGeometry): modal, bu chunk
  * hiç yüklenemese bile aynı sayılarla kendi içeriğini zamanlıyor.
  */
+/** Çekişte alevin ekranda çıkabildiği en yüksek pay (ekran boyunun oranı). */
+const FLAME_PULL_PEAK = 0.35;
+const PULL_HANDOFF_MS = 120;
+
+function flamePullPeakProgress(wave: Wave, height: number): number {
+  return (FLAME_PULL_PEAK * height) / (wave.startY - wave.endY);
+}
+
+/** Fire/Spark çekişinde alttan yükselen alev; oranını jest sürüyor. */
+export function FlamePullCanvas({ mode }: { mode?: AppMode }) {
+  const { width, height } = useWindowDimensions();
+  const wave = useMemo(() => getWave(width, height), [width, height]);
+  const peak = flamePullPeakProgress(wave, height);
+  const progress = useDerivedValue(() => flamePullPeek.value * peak, [peak]);
+  return (
+    <FlameWaveLayer wave={wave} width={width} progress={progress} mode={mode} />
+  );
+}
+
 export function FlameCurtainCanvas({
   closing,
   mode,

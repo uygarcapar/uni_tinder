@@ -174,6 +174,8 @@ function BounceScrollView({
 import uiBus, {
   cardChromeAnim,
   resetCardExpandState,
+  discoverRailBottom,
+  discoverRailLift,
 } from "@/shared/services/uiBus";
 import CardMenuGlassButton from "@/features/discover/components/CardMenuGlassButton";
 import CardGlyphGlassButton from "@/features/discover/components/CardGlyphGlassButton";
@@ -411,7 +413,7 @@ export const COVER_NAME_BOTTOM = 12;
  * diğerinin yerini aldığı için bir tanesi bile ayrışırsa daireler büyüyüp
  * küçülüyor.
  */
-const COVER_ACTION_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
+export const COVER_ACTION_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
 /**
  * Kolondaki butonların arası. 12 → 18 (istek): 12'de üç daire tek bir dikey
  * şerit gibi okunuyordu, 18 onları ayrı ayrı butonlar olarak ayırıyor.
@@ -419,7 +421,7 @@ const COVER_ACTION_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
  * Kolonun TOPLAM boyu buna bağlı (3 × çap + 2 × boşluk) ve yukarı doğru
  * büyüyor; fazla açmak üst butonu kapağın orta bandına taşır.
  */
-const COVER_ACTION_GAP = 18;
+export const COVER_ACTION_GAP = 18;
 
 /**
  * ⚠️ KARAR İKİLİSİNİN (tik · X) GLİF PUNTOSU İÇİN AYRI SABİT YOK (istek,
@@ -507,7 +509,7 @@ const COVER_ACTION_PILLS_GAP = COVER_UNI_PILLS_GAP + COVER_UNI_ROW_PAD;
  * kayarlardı. Fark yarı yarıya geri alınıyor — kutuları değil merkezleri
  * çakıştıran, uygulamada başka yerlerde de kullanılan kalıp.
  */
-const COVER_ACTION_RIGHT =
+export const COVER_ACTION_RIGHT =
   CHROME_EDGE_INSET + (DISCOVER_GLASS_BUTTON_SIZE - COVER_ACTION_SIZE) / 2;
 
 /**
@@ -1234,7 +1236,7 @@ const PROMPT_ANSWER_LINE_HEIGHT = 32;
  */
 const PROMPT_QUOTE_SIZE = 26;
 
-function NoteBox({
+export function NoteBox({
   onPress,
   onPhoto = false,
 }: {
@@ -3260,6 +3262,28 @@ export default function SwipeCard({
     0,
     COVER_NAME_BOTTOM + coverBottomInset - COVER_STICKY_EDGE_GAP,
   );
+  // Ekran katındaki buton kolonu üst kartın ölçülerini buradan okuyor.
+  const railBottom =
+    COVER_NAME_BOTTOM +
+    coverBottomInset +
+    coverPillsHeight +
+    (coverPillsHeight > 0 ? COVER_ACTION_PILLS_GAP : 0);
+  useEffect(() => {
+    if (previewMode || !isTopCard || !coverReady) return;
+    discoverRailBottom.value =
+      discoverRailBottom.value === 0
+        ? railBottom
+        : withTiming(railBottom, { duration: 180 });
+  }, [previewMode, isTopCard, coverReady, railBottom]);
+  useAnimatedReaction(
+    () => Math.max(0, (scrollY?.value ?? 0) - coverStickyMax),
+    (lift) => {
+      if (previewMode || !isTopCard) return;
+      discoverRailLift.value = lift;
+    },
+    [previewMode, isTopCard, coverStickyMax],
+  );
+
   const coverStickyStyle = useAnimatedStyle(() => {
     if (previewMode) return { transform: [{ translateY: 0 }] as const };
     const y = Math.max(0, scrollY?.value ?? 0);
@@ -4406,186 +4430,7 @@ export default function SwipeCard({
                   dibinde keskin bir çizgi olarak duruyor — erime maskesi
                   fotoğrafı söndürse bile o dikdörtgen sönmüyordu. */}
 
-              {/* Fire Button — COLLAPSED duruş. Uygulamaya özel ALEV
-                  glyph'i (bkz. FireGlyph); SF/lucide flame değil ve artık
-                  kalp de değil.
-
-                  Kapak fotoğrafının İÇİNDE, scroll içeriğinin parçası ve
-                  zeminsiz: fotoğrafın üstünde alevin kendi gradyanı ile ince
-                  kenarı okunurluk için yetiyor.
-
-                  ÇİZİMİ SKIA YAPIYOR (bkz. FireBurnCanvas), çünkü çekme
-                  sırasında silüetin kendisi oynuyor — RN tarafında bu, maskeyi
-                  her karede yeniden kurmak demekti. Canvas ikonun kutusundan
-                  TAŞIYOR (uçlar + ışıma); kutuyu buradaki View veriyor, taşma
-                  payını canvas kendi içinde hesaplıyor.
-
-                  KROM DEVRİNDE yerini şeritteki cam butona bırakır (aşağıda,
-                  ScrollWrapper'ın DIŞINDA) — sönerek. Sticky duruşta alev panel
-                  zemininin üstüne de binebildiği için orada zemin şart; onu
-                  liquid glass kabuk taşıyor.
-
-                  ── KONUM: SAĞ ALT AKSİYON KOLONU (istek) ────────────────────
-                  Kapağın SAĞ ÜST köşesindeydi (`top/right: FIRE_INSET`), sonra
-                  bir tur isim satırının sağ ucuna taşındı. Şimdi Instagram'ın
-                  sağ alt kolonu gibi: AŞAĞIDAN YUKARI üç nokta · not · Fire,
-                  üçü de aynı çaptaki yuvarlak cam butonlar (bkz.
-                  COVER_ACTION_SIZE).
-
-                  KOLON YAZI BLOĞUNUN KARDEŞİ, çocuğu değil: yazı bloğu
-                  `pointerEvents="none"` (metin dokunma almamalı) ve bu üç buton
-                  ALMALI. Tabanı aynı çizgiden (COVER_NAME_BOTTOM +
-                  coverBottomInset) başlıyor, yani kolonun dibi ile ismin dibi
-                  hizalı.
-
-                  KOLON `Animated.View` DEĞİL ve olmamalı: cam yüzeyler ata
-                  zincirinde 1'in altında bir opacity ya da kimliksel olmayan bir
-                  transform gördüğü anda efektlerini hiç render etmiyor. Her
-                  butonun kendi basma animasyonu var, kolonun yok. */}
-              {(!!onMenu || (!!onNote && !previewMode && allPhotos.length > 0) ||
-                (!hideActions && !hideFire) ||
-                (!hideActions && !!(onPass || onLike))) &&
-                measuredCardHeight > 0 && (
-              <Animated.View
-                style={[
-                  {
-                    position: "absolute",
-                    // TABANI PİLLERİN ÜSTÜNDE (istek): ortak nokta satırı
-                    // kolonun altından geçip sağa doğru uzayabilsin. Kolon
-                    // böylece üniversite satırının hizasında bitiyor.
-                    bottom:
-                      COVER_NAME_BOTTOM +
-                      coverBottomInset +
-                      coverPillsHeight +
-                      // Pillere değmesin (bkz. COVER_ACTION_PILLS_GAP). Yalnız
-                      // ölçüm geldiyse: piller yoksa eklenecek bir ayrım da yok.
-                      (coverPillsHeight > 0 ? COVER_ACTION_PILLS_GAP : 0),
-                    right: COVER_ACTION_RIGHT,
-                    alignItems: "center",
-                    gap: COVER_ACTION_GAP,
-                    zIndex: 55,
-                  },
-                  coverStickyStyle,
-                ]}
-                pointerEvents="box-none"
-              >
-              {/* FIRE — kolonun TEPESİ. Şeridin sağ ucundaki butonla AYNI
-                  bileşen ve aynı varyant (istek: "basınca davranışı
-                  headerdaki gibi liquid glass olsun"): berrak cam daire, basma
-                  geri bildirimi camın kendi morph'undan (`interactive: true`).
-
-                  ── ALEV CANVAS'I VE BASMA YANMASI KALDIRILDI (istek) ────────
-                  Burada `FireBurnCanvas` vardı: Skia ile çizilen, silüeti her
-                  karede oynayan bir alev. İki şey sürüyordu —
-                    • `firePressAnim` / `firePressHeld`: basılı tutunca ikon
-                      YANIYORDU (dalga hızlanıp kızışıyor, BURN_SCALE ile
-                      büyüyor). İstenmedi: "ateş çıkmasın icondan".
-                    • `fireProgress`: aşağı çekişte aynı yanma eşiğe doğru
-                      ilerliyordu. O sinyal kayboluyor ama jest sessiz
-                      kalmıyor — haptic rampası, kartın kendi hareketi ve
-                      FirePullHint'in yazısı duruyor.
-
-                  Geri istenirse `flameBurn` / `FireBurnCanvas` dosyaları
-                  yerinde; dönecek yer bu blok. Dikkat: canvas'ı cam diskin
-                  İÇİNE koymak kabuğu büyütmeden taşıyordu (bkz.
-                  COVER_FIRE_GLYPH_SIZE) ve basma ölçeği camın atasına
-                  konulamaz. */}
-              {/* TİK (beğen) ve X (geç) — KOLONUN TEPESİ.
-                  Jest kaldırıldığı için (bkz. SwipeWrapper > "YATAY SWIPE
-                  JESTİ KALDIRILDI") beğen/geç'in kapakta bir girişi olmak
-                  ZORUNDA: panelin dibindeki büyük X/tik satırı bir ekran boyu
-                  aşağıda, oraya inmek her kart için kaydırmak demekti.
-
-                  Kabuk üç noktayla AYNI (CardChromeGlassButton, `onMedia`):
-                  kolonun beş dairesi tek malzeme, tek çap. Sıra yukarıdan
-                  aşağı tik · X · Fire · not · üç nokta — ilk ikisi istek
-                  üzerine bu sırada.
-
-                  `onPress` doğrudan ekranın buton yoluna gidiyor (onLike /
-                  onPass): kota kapısı, kilit ve kartın uçuşu orada tek
-                  elden sürülüyor (bkz. DiscoverScreen > handleLikeButton).
-
-                  BU DAL YALNIZ KEŞİF: bütün blok tam ekran kapağın içinde ve
-                  kapak önizlemede hiç render edilmiyor, o yüzden buradaki
-                  gereksiz `!previewMode` kapıları kaldırıldı. Önizlemenin
-                  (Beğeniler · Sohbet · Akış) kendi tik/X kolonu AYRI ve ana
-                  fotoğrafın üstünde — bkz. "ÖNİZLEMENİN AKSİYON KOLONU". */}
-              {!hideActions && onLike && (
-                <CardChromeGlassButton
-                  testID="discover-btn-like"
-                  onPress={onLike}
-                  label={t("likes.likeButton")}
-                  systemName="checkmark"
-                  fallback={Check}
-                  size={COVER_ACTION_SIZE}
-                  onMedia
-                  // TİK ARTIK BOYALI (istek: "aynı Beğeniler'deki kırmızı tik
-                  // gibi"): kabuk modun aksiyon rengine boyanıyor, glif beyaz.
-                  // X bilerek berrak kalıyor — ayrımın gerekçesi
-                  // CardActionGlassButton > `variant` notunda: iki buton da
-                  // renkli olsaydı kolon iki lekeye dönüp olumlu aksiyon öne
-                  // çıkmıyordu.
-                  //
-                  // Renk MODLA dönüyor (Flört kırmızı / Arkadaş yeşil), tıpkı
-                  // Beğeniler'in kart köşesindeki tik gibi — sabit kırmızı
-                  // bırakmak Arkadaş modunda aynı kolonu iki renge bölerdi.
-                  //
-                  // GLİF PUNTOSU GEÇİLMİYOR: şeridin sağ ucundaki beğen
-                  // butonuyla aynı sayı olmalı (bkz. yukarıdaki sabit notu).
-                  surfaceTint={modeFireTint(mode ?? DEFAULT_APP_MODE)}
-                />
-              )}
-              {!hideActions && onPass && (
-                <CardChromeGlassButton
-                  testID="discover-btn-pass"
-                  onPress={onPass}
-                  label={t("likes.passButton")}
-                  systemName="xmark"
-                  fallback={X}
-                  size={COVER_ACTION_SIZE}
-                  onMedia
-                  // Kabuk berrak (yukarıdaki not); glif tikle AYNI puntoda —
-                  // ikisi de ortak sayıda, ikili tek iriliğte okunmalı.
-                />
-              )}
-
-              {!hideActions && !hideFire && onFire && (
-                <FireGlassButton
-                  testID="discover-btn-fire"
-                  onPress={onFire}
-                  // Etiket moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
-                  label={t(modeFireNameKey(mode))}
-                  mode={mode}
-                  variant="clear"
-                  size={COVER_ACTION_SIZE}
-                />
-              )}
-
-              {/* NOT — kolonun ORTASI. Eskiden kapağın dibinde, panelin üst
-                  kenarının yukarısında ayrı bir mutlak katmandı (sağa yaslı
-                  geniş bir kutu) ve `coverNoteAnimStyle` ile sönerek geliyordu.
-                  O sönme CAM İLE BAĞDAŞMIYOR (ata opaklığı) ve kartın kapalı
-                  hâli kalkınca gerekçesi de kalmadı: not kutusu hep orada. */}
-              {!!onNote && !previewMode && allPhotos.length > 0 && (
-                <NoteBox onPress={noteHandler(photoNoteTarget(0))} onPhoto />
-              )}
-
-              {/* ÜÇ NOKTA — kolonun DİBİ. Kapaktaki tek "seçenekler" girişi;
-                  şikayet/engelle panelin dibindeki satırda da duruyor ama orası
-                  bir ekran boyu aşağıda. Sheet'i çağıran taraf açıyor (bkz.
-                  `onMenu`), kart onu bilmiyor. */}
-              {!!onMenu && (
-                <CardMenuGlassButton
-                  onPress={onMenu}
-                  label={t("common.menu")}
-                  size={COVER_ACTION_SIZE}
-                  // Kolon kapaktan hiç taşmıyor → glif foto üstü mürekkepte
-                  // (açık modda da beyaz, bkz. glassOnMediaInk).
-                  onMedia
-                />
-              )}
-              </Animated.View>
-              )}
+              {/* Sağdaki cam buton kolonu kartın dışında: bkz. DiscoverActionRail. */}
 
               {/* Name and Age on Photo — sadece measuredCardHeight set olduktan
                   sonra render. Aksi halde photoHeight fallback (CARD_BOX_FALLBACK_HEIGHT)

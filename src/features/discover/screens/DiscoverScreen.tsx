@@ -47,6 +47,11 @@ import SwipeWrapper, {
 } from "@/features/discover/components/SwipeWrapper";
 import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
+import DiscoverActionRail from "@/features/discover/components/DiscoverActionRail";
+import DiscoverModeCoach from "@/features/discover/components/DiscoverModeCoach";
+import { appPrefs } from "@/shared/utils/appPrefs";
+import { photoNoteTarget } from "@/features/discover/noteTarget";
+import { SWIPE_COOLDOWN_MS } from "@/features/discover/exitFlight";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { Image as ExpoImage } from "expo-image";
@@ -260,10 +265,8 @@ const DECK_SETTLE_BUDGET_MS = 2500;
  * bu yalnız butonun görünür durumu.
  */
 const FIRE_BUTTON_LOCK_MS = 1300;
-// Uçuş park edildi (2026-11-06): beğen/geç yine alevi bekliyor, kilit Fire'la
-// aynı. Uçuşu geri açarken 250'ye döndür (gerekçe yukarıda).
-// const SWIPE_BUTTON_LOCK_MS = 250;
-const SWIPE_BUTTON_LOCK_MS = FIRE_BUTTON_LOCK_MS;
+// Butonlar da jestle aynı beklemede: art arda karar yok.
+const SWIPE_BUTTON_LOCK_MS = SWIPE_COOLDOWN_MS;
 
 // NOT — kart açılırken tab bar'ı `display:"none"` ile gizlemek DENENDİ ve
 // vazgeçildi: bu gizleme animasyona açılmıyor. react-native-screens
@@ -1585,6 +1588,15 @@ export default function DiscoverScreen() {
   const [filterVisible, setFilterVisible] = useState(false);
 
   const [modePickerVisible, setModePickerVisible] = useState(false);
+  const isFocused = useIsFocused();
+  const modeCoachKey = `discoverModeCoachSeen:${currentUserId}`;
+  const [modeCoachSeen, setModeCoachSeen] = useState(
+    () => !currentUserId || appPrefs.getBoolean(modeCoachKey) === true,
+  );
+  const finishModeCoach = useEvent(() => {
+    if (currentUserId) appPrefs.set(modeCoachKey, true);
+    setModeCoachSeen(true);
+  });
   // Hangi modun kurulumu açık; `null` = sheet kapalı.
   const [setupMode, setSetupMode] = useState<AppMode | null>(null);
   const [setupSubmitting, setSetupSubmitting] = useState(false);
@@ -2791,9 +2803,6 @@ export default function DiscoverScreen() {
       setDeckSettled(false);
       setCurrentIndex((i) => i + 1);
     };
-    // ⚠️ 2026-11-06 (sonra): uçuş park edildi, BEĞENİ BU DALA YİNE GİRİYOR —
-    // SwipeWrapper eşleşmeli beğeniyi de `matching` ile yolluyor, yani
-    // yukarıdaki "artık yalnız Fire'dan" notu park süresince geçersiz.
     if (matching) {
       matchCurtainUnsub.current?.();
       // Kart gönderildi ama ekranda: süzgeç onu kuyruktan ELEMESİN (bkz.
@@ -2973,6 +2982,18 @@ export default function DiscoverScreen() {
     setIsSwiping(true);
     programmaticSwipe.value = 2;
     setTimeout(() => setIsSwiping(false), SWIPE_BUTTON_LOCK_MS);
+  });
+
+  // Ekran katındaki buton kolonu her zaman o anki üst karta konuşuyor.
+  const railNote = useEvent(() => {
+    const top = potentialMatches[currentIndex];
+    if (top && (top.photos?.length ?? 0) > 0) {
+      handleNoteRequest(top, photoNoteTarget(0));
+    }
+  });
+  const railMenu = useEvent(() => {
+    const top = potentialMatches[currentIndex];
+    if (top) setOptionsProfile(top);
   });
 
   const handleFireButton = useEvent(() => {
@@ -3298,6 +3319,15 @@ export default function DiscoverScreen() {
     awaitingFreshDeck ||
     (potentialMatches.length > currentIndex && !coverSettled);
 
+  // Yalnız Flört profili kapalı kullanıcıya, kapak yerine oturduktan sonra.
+  const showModeCoach =
+    isFocused &&
+    !modeCoachSeen &&
+    openModes?.Friends === true &&
+    openModes?.Dating === false &&
+    !deckSkeletonOnly &&
+    !deckSkeletonOverlay;
+
   /**
    * Yüzen üst chrome'un (başlık + iki cam buton) ARDINDA fotoğraf OLMADIĞI her
    * hâl. Üçü var ve zeminleri birebir aynı (`colors.surface`):
@@ -3546,6 +3576,15 @@ export default function DiscoverScreen() {
                 durum çubuğunun altında kalmalı (bkz. oradaki prop notu). */}
             <FirePullHint topInset={insets.top} mode={mode} />
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
+            <DiscoverActionRail
+              dragX={overlayDragX}
+              mode={mode}
+              onLike={handleLikeButton}
+              onPass={handlePassButton}
+              onFire={handleFireButton}
+              onNote={railNote}
+              onMenu={railMenu}
+            />
           </View>
         ) : (
           /* BOŞ KART DA TAM EKRAN: ayrı sarmalayıcı yok, payları kendi içinde
@@ -3581,6 +3620,18 @@ export default function DiscoverScreen() {
           coverBottomInset={coverBottomInset}
         />
       </View>
+
+      {/* Perde üst şeritten ÖNCE: mod başlığı üstünde parlak ve dokunulabilir kalıyor. */}
+      {showModeCoach && (
+        <DiscoverModeCoach
+          top={
+            insets.top +
+            Math.max(DISCOVER_HEADER_HEIGHT, DISCOVER_GLASS_BUTTON_SIZE) +
+            4
+          }
+          onDismiss={finishModeCoach}
+        />
+      )}
 
       {/* ── YÜZEN ÜST CHROME ────────────────────────────────────────────────
           Kendi zemini olan bir header şeridi YOK (istek): solda geri al,
@@ -3629,7 +3680,10 @@ export default function DiscoverScreen() {
         <ModeTitle
           testID="discover-btn-mode"
           mode={mode}
-          onPress={() => setModePickerVisible(true)}
+          onPress={() => {
+            finishModeCoach();
+            setModePickerVisible(true);
+          }}
           onSurface={headerOnSurface}
         />
 

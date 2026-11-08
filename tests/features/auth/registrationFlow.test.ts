@@ -32,10 +32,8 @@ describe('REGISTRATION_FLOW', () => {
   it('akış sırasında tutulur — Step17 hobilerden sonra, Step16 fotoğraflardan önce', () => {
     // Baştaki 0 davet kodu adımı: rota adı numarasız olduğu için progress bar'a
     // açık bir sayı veriliyor (bkz. REFERRAL_STEP_NUMBER).
-    // Mod adımı (18) boydan (12) SONRA, InterestedIn (10) ise mod adımından
-    // sonraya taşındı — flörte özel olduğu için (bkz. DATING_ONLY_STEPS).
     expect(REGISTRATION_STEP_NUMBERS).toEqual([
-      0, 3, 5, 6, 7, 8, 9, 12, 18, 10, 13, 17, 14, 16, 15,
+      0, 3, 5, 6, 7, 8, 9, 12, 10, 13, 17, 14, 16, 15,
     ]);
   });
 
@@ -83,7 +81,6 @@ describe('registrationResumeStack', () => {
       'RegisterStep8',
       'RegisterStep9',
       'RegisterStep12',
-      'RegisterStepMode',
       'RegisterStep10',
       'RegisterStep13',
     ]);
@@ -131,7 +128,6 @@ describe('registrationResumeStack', () => {
       'RegisterStep8',
       'RegisterStep9',
       'RegisterStep12',
-      'RegisterStepMode',
       'RegisterStep13',
     ]);
   });
@@ -157,8 +153,8 @@ describe('stepsForMode / stepNumbersForMode', () => {
     const friends = stepsForMode('Friends');
     expect(friends).toHaveLength(REGISTRATION_FLOW.length - DATING_ONLY_STEPS.size);
     expect(friends).not.toContain('RegisterStep10');
-    // Mod adımının kendisi İKİ modda da var — eleme yalnız flörte özel adımlara.
-    expect(friends).toContain('RegisterStepMode');
+    // Mod adımı kalktı: kayıt hep Arkadaş modunda.
+    expect(friends).not.toContain('RegisterStepMode');
   });
 
   /**
@@ -167,7 +163,7 @@ describe('stepsForMode / stepNumbersForMode', () => {
    */
   it('bar paydası moda göre', () => {
     expect(stepNumbersForMode('Friends')).not.toContain(10);
-    expect(stepNumbersForMode('Friends')).toContain(MODE_STEP_NUMBER);
+    expect(stepNumbersForMode('Friends')).not.toContain(MODE_STEP_NUMBER);
     expect(stepNumbersForMode('Dating').length).toBeGreaterThan(
       stepNumbersForMode('Friends').length,
     );

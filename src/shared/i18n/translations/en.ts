@@ -1082,6 +1082,10 @@ const en = {
     // values exactly — modeTheme.ts builds `discover.mode.*.${mode}`, so these
     // names are wire values and are not translated.
     mode: {
+      coach: {
+        title: 'Tap here to open a dating profile',
+        dismiss: 'Not now',
+      },
       title: {
         Dating: 'Dating',
         Friends: 'Friends',

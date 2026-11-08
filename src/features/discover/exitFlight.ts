@@ -46,3 +46,6 @@ export function flyOutDurationMs(velocityX: number): number {
     : Math.min(1, speed / FLY_OUT_VELOCITY_FULL);
   return FLY_OUT_MS_SLOW + (FLY_OUT_MS_FAST - FLY_OUT_MS_SLOW) * t;
 }
+
+/** Bir kart gittikten sonra yeni swipe'a izin verilene kadarki süre (ms). */
+export const SWIPE_COOLDOWN_MS = 700;
