@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": false,
       "requireFullScreen": true,
-      "buildNumber": "52",
+      "buildNumber": "55",
       "bundleIdentifier": "com.uygarcapar.lit",
       "associatedDomains": [
         "applinks:lit.4ourstack.com",

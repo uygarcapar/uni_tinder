@@ -90,7 +90,7 @@ it('latch "on" ise Akış sekmesi çizilir — dev kancası kapalıyken de', () 
   expect(getByTestId('tab-Feed')).toBeTruthy();
 });
 
-it('Akış sekmesi yerinde: Beğeniler ile Mesajlar arasında', () => {
+it('Akış ilk sekme, Keşif ortada', () => {
   // Canlı ekleme sekmenin SONDA olmasını gerektirmiyor: TabRouter route listesi
   // değişince odaklı sekmeyi İSMİYLE yeniden çözüyor, native taraf da seçimi
   // pozisyonla değil route KEY'iyle taşıyor (NativeBottomTabView >
@@ -99,9 +99,9 @@ it('Akış sekmesi yerinde: Beğeniler ile Mesajlar arasında', () => {
   initFeedFlag(USER);
   const { toJSON } = render(<TabNavigator />);
   expect(tabOrder(toJSON)).toEqual([
-    'tab-Discover',
-    'tab-Likes',
     'tab-Feed',
+    'tab-Likes',
+    'tab-Discover',
     'tab-Messages',
     'tab-Profile',
   ]);
@@ -144,8 +144,8 @@ it('Flört modunda diğer sekmeler olduğu gibi duruyor', () => {
   initFeedFlag(USER);
   const { toJSON } = render(<TabNavigator />);
   expect(tabOrder(toJSON)).toEqual([
-    'tab-Discover',
     'tab-Likes',
+    'tab-Discover',
     'tab-Messages',
     'tab-Profile',
   ]);

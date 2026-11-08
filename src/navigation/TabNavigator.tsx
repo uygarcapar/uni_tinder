@@ -162,6 +162,11 @@ export default function TabNavigator() {
     feedEnabledForSession,
   );
 
+  // Akış sekmesi varsa uygulama orada açılıyor. Açıkça verilmeli: Akış yokken
+  // varsayılan ilk sekme Beğeniler olurdu.
+  const initialTab =
+    feedEnabled && feedAllowedInMode(selectedMode) ? "Feed" : "Discover";
+
   const messagesBadge =
     unreadTotal > 0 ? (unreadTotal > 99 ? "99+" : String(unreadTotal)) : undefined;
   const likesBadge = likesBadgeCount > 0 ? String(likesBadgeCount) : undefined;
@@ -177,8 +182,9 @@ export default function TabNavigator() {
   return (
     <Tab.Navigator
       id="MainTabs"
+      initialRouteName={initialTab}
       screenOptions={{
-        // lazy:true → açılışta sadece Discover mount olur; Messages/Profile (ve
+        // lazy:true → açılışta sadece açılış sekmesi mount olur; Messages/Profile (ve
         // onların fetch'leri: 10× history prefetch, tüm common/* option listeleri,
         // GetMyProfile) ilk kez sekmeye girilince mount olur. ÖNCESİ lazy:false idi
         // (WaveFillLogo'nun mask decode timing'i için); WaveFillLogo statiğe
@@ -222,29 +228,6 @@ export default function TabNavigator() {
         tabBarStyle: { backgroundColor: colors.tabBarBg },
       } as any}
     >
-      <Tab.Screen
-        name="Discover"
-        component={DiscoverScreen}
-        options={{
-          title: t('discover.tabTitle'),
-          tabBarIcon: ({ focused }: TabIconArgs) =>
-            focused ? CARDS_TAB_FILLED : CARDS_TAB_OUTLINE,
-        }}
-      />
-      <Tab.Screen
-        name="Likes"
-        component={LikesScreen}
-        options={{
-          title: t('likes.tabTitle'),
-          // SF `heart`/`heart.fill` DEĞİL: beğeniler sekmesi de ürünün kendi
-          // kalbini taşıyor (SwipeCard'ın fire butonu, Likes kartları,
-          // paket sheet'i hep aynı glyph). Discover'ın alevi gibi rasterize
-          // PNG çifti — idle outline, focused dolu.
-          tabBarIcon: ({ focused }: TabIconArgs) =>
-            focused ? HEART_TAB_FILLED : HEART_TAB_OUTLINE,
-          tabBarBadge: likesBadge,
-        }}
-      />
       {/* Lit Akışı — İKİ KAPI: backend bayrağı VE mod. Akış ARKADAŞ'ın yüzeyi,
           Flört'te sekme hiç yok (2026-11-05). Ayrımın gerekçesi feedMode'da:
           mod seçimi latch'in disk değerine YAZILMAMALI, yoksa Flört'te geçen
@@ -253,7 +236,7 @@ export default function TabNavigator() {
           Profil avatarında — kullanıcı modu değiştirirken Akış'ta durmuyor,
           yani kaldırılan route odakta değil.
           Bayrak kapalıyken sekme HİÇ render edilmiyor — çizilip her
-          uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. ORTADA
+          uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. BAŞTA
           durması canlı eklemeye ENGEL DEĞİL: TabRouter route listesi değişince
           odaklı sekmeyi İSMİYLE yeniden çözüyor (getStateForRouteNamesChange)
           ve native taraf seçimi pozisyonla değil route KEY'iyle taşıyor
@@ -272,6 +255,29 @@ export default function TabNavigator() {
           }}
         />
       ) : null}
+      <Tab.Screen
+        name="Likes"
+        component={LikesScreen}
+        options={{
+          title: t('likes.tabTitle'),
+          // SF `heart`/`heart.fill` DEĞİL: beğeniler sekmesi de ürünün kendi
+          // kalbini taşıyor (SwipeCard'ın fire butonu, Likes kartları,
+          // paket sheet'i hep aynı glyph). Discover'ın alevi gibi rasterize
+          // PNG çifti — idle outline, focused dolu.
+          tabBarIcon: ({ focused }: TabIconArgs) =>
+            focused ? HEART_TAB_FILLED : HEART_TAB_OUTLINE,
+          tabBarBadge: likesBadge,
+        }}
+      />
+      <Tab.Screen
+        name="Discover"
+        component={DiscoverScreen}
+        options={{
+          title: t('discover.tabTitle'),
+          tabBarIcon: ({ focused }: TabIconArgs) =>
+            focused ? CARDS_TAB_FILLED : CARDS_TAB_OUTLINE,
+        }}
+      />
       <Tab.Screen
         name="Messages"
         component={MessagesScreen}
