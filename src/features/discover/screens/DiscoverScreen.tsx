@@ -49,6 +49,7 @@ import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import DiscoverActionRail from "@/features/discover/components/DiscoverActionRail";
 import DiscoverModeCoach from "@/features/discover/components/DiscoverModeCoach";
+import DiscoverSwipeDemo from "@/features/discover/components/DiscoverSwipeDemo";
 import { appPrefs } from "@/shared/utils/appPrefs";
 import { photoNoteTarget } from "@/features/discover/noteTarget";
 import { SWIPE_COOLDOWN_MS } from "@/features/discover/exitFlight";
@@ -1593,6 +1594,8 @@ export default function DiscoverScreen() {
   const [modeCoachSeen, setModeCoachSeen] = useState(
     () => !currentUserId || appPrefs.getBoolean(modeCoachKey) === true,
   );
+  const [swipeDemoDone, setSwipeDemoDone] = useState(false);
+  const finishSwipeDemo = useEvent(() => setSwipeDemoDone(true));
   const finishModeCoach = useEvent(() => {
     if (currentUserId) appPrefs.set(modeCoachKey, true);
     setModeCoachSeen(true);
@@ -3622,7 +3625,10 @@ export default function DiscoverScreen() {
       </View>
 
       {/* Perde üst şeritten ÖNCE: mod başlığı üstünde parlak ve dokunulabilir kalıyor. */}
-      {showModeCoach && (
+      {showModeCoach && !swipeDemoDone && potentialMatches.length > currentIndex && (
+        <DiscoverSwipeDemo onDone={finishSwipeDemo} />
+      )}
+      {showModeCoach && (swipeDemoDone || potentialMatches.length <= currentIndex) && (
         <DiscoverModeCoach
           top={
             insets.top +

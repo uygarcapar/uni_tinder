@@ -44,6 +44,7 @@ import { Plus, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { saveLastLoginEmail } from "@/features/auth/lastEmail";
 import { saveAppMode } from "@/features/discover/modePrefs";
+import { recordFeedFlag } from "@/features/feed/feedFlag";
 import { isAppMode } from "@/features/discover/modeTheme";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyFooter from "@/features/auth/components/RegisterStickyFooter";
@@ -597,6 +598,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         if (isAppMode(registeredMode)) {
           saveAppMode(response.result.user?.id, registeredMode);
         }
+        // Yeni hesap ilk açılışta Akış'ta başlasın: bayrak bilinmiyorsa sekme
+        // yok sayılıp uygulama Keşif'te açılırdı. Sunucu kapalı derse Akış'ın
+        // kendi kapısı bayrağı kapatıyor.
+        const newUserId =
+          response.result.user?.userId || response.result.user?.id;
+        if (newUserId) recordFeedFlag(String(newUserId), true);
         dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
         // Kayıt da bir "giriş": çıkış yapıp dönen yeni kullanıcı adresini
         // login ekranında önden dolu bulsun. Cevaptaki adres kanonik (backend

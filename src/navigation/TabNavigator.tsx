@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import { useTranslation } from 'react-i18next';
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
@@ -9,6 +9,7 @@ import MessagesScreen from "@/features/chat/screens/MessagesScreen";
 import FeedScreen from "@/features/feed/screens/FeedScreen";
 import {
   feedEnabledForSession,
+  readFeedFlag,
   subscribeFeedFlag,
 } from "@/features/feed/feedFlag";
 import { feedAllowedInMode } from "@/features/feed/feedMode";
@@ -157,10 +158,19 @@ export default function TabNavigator() {
   // yalnız kapalı → açık yönünde değişir (kapanma cold start'ta uygulanır,
   // bkz. features/feed/feedFlag.ts geçiş kuralı) — yani liste asla küçülmez,
   // kullanıcının üstünde durduğu sekme altından çekilmez.
-  const feedEnabled = useSyncExternalStore(
+  const sessionFeedEnabled = useSyncExternalStore(
     subscribeFeedFlag,
     feedEnabledForSession,
   );
+  // İlk render'da diskten: oturum değeri AppNavigator'ın effect'inde kuruluyor,
+  // yani bu sekmeler mount olduktan SONRA. Açılış sekmesi bu kareye bağlı.
+  const userId = useAppSelector(
+    (s) => (s as any).auth?.user?.userId || (s as any).auth?.user?.id,
+  );
+  const [feedOnAtBoot] = useState(
+    () => readFeedFlag(userId ? String(userId) : null) === "on",
+  );
+  const feedEnabled = sessionFeedEnabled || feedOnAtBoot;
 
   // Akış sekmesi varsa uygulama orada açılıyor. Açıkça verilmeli: Akış yokken
   // varsayılan ilk sekme Beğeniler olurdu.

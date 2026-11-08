@@ -23,6 +23,7 @@ import uiBus, {
   cardExpandAnim,
   cardPullProgress,
   discoverRailLift,
+  discoverSwipeDemoX,
   discoverSwipeLockedUntil,
   flamePullPeek,
   resetCardExpandState,
@@ -1450,7 +1451,11 @@ function SwipeWrapper({
     // yatma — kart parmağın altında yana "deviriliyor". Girişin eğimiyle aynı
     // tavanı paylaşıyor, çünkü ikisi de aynı hareketin iki ucu.
     const dragRotate = isTopCard
-      ? interpolate(tx.value, [-width, 0, width], [-EXIT_TILT, 0, EXIT_TILT])
+      ? interpolate(
+          tx.value + discoverSwipeDemoX.value,
+          [-width, 0, width],
+          [-EXIT_TILT, 0, EXIT_TILT],
+        )
       : 0;
 
     return {
@@ -1495,7 +1500,7 @@ function SwipeWrapper({
         // Dördüncü terim alt kartın karşı salınımı (üst kartta yay 0'da).
         {
           translateX:
-            entry + (isTopCard ? tx.value : 0),
+            entry + (isTopCard ? tx.value + discoverSwipeDemoX.value : 0),
         },
         // ty: geçici çekiş payı (Fire peek'i).
         // İkinci terim kalıcı lift — açık kartta kutu bu kadar yukarıda.

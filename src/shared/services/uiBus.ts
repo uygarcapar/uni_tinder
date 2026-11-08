@@ -80,6 +80,8 @@ export const discoverRailBottom = makeMutable(0);
 export const discoverRailLift = makeMutable(0);
 /** Fire/Spark çekişinde alevin görünen oranı (0-1, bkz. FlamePullCanvas). */
 export const flamePullPeek = makeMutable(0);
+/** Kaydırma tanıtımının üst karta verdiği yatay pay (px). */
+export const discoverSwipeDemoX = makeMutable(0);
 /** Bu ana kadar yeni swipe başlamıyor (Date.now, bkz. SWIPE_COOLDOWN_MS). */
 export const discoverSwipeLockedUntil = makeMutable(0);
 

@@ -1078,6 +1078,9 @@ const en = {
   },
   discover: {
     tabTitle: 'Discover',
+    swipeDemo: {
+      title: 'Swipe right to like, left to pass',
+    },
     // Two-mode structure (Dating/Friends). Keys mirror the PascalCase enum
     // values exactly — modeTheme.ts builds `discover.mode.*.${mode}`, so these
     // names are wire values and are not translated.

@@ -1088,6 +1088,9 @@ const tr = {
   },
   discover: {
     tabTitle: 'Keşfet',
+    swipeDemo: {
+      title: 'Beğenmek için sağa, geçmek için sola kaydır',
+    },
     // İki modlu yapı (Dating/Friends). Anahtarlar PascalCase enum değeriyle
     // birebir — modeTheme.ts anahtarı `discover.mode.*.${mode}` diye kuruyor,
     // yani buradaki adlar wire değerleridir, çevrilmez.
