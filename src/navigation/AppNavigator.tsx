@@ -94,10 +94,10 @@ import ProfileHiddenGate from '@/features/profile/components/ProfileHiddenGate';
 import LocationAccessGate from '@/features/profile/components/LocationAccessGate';
 import { SELFIE_OPEN_EVENT } from '@/features/profile/selfie/selfieEvents';
 import {
-  hasPhotosAwaitingReview,
-  normalizeProfileVisibility,
-  type ProfileVisibility,
-} from '@/features/profile/photoModeration';
+  modeAwaitingReviewOf,
+  modePhotoFields,
+  modeVisibilityOf,
+} from '@/features/profile/modePhotoFields';
 import { ProfileVisibilityProvider } from '@/features/profile/profileVisibilityContext';
 import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
 import notificationsService from '@/features/notifications/notificationsService';
@@ -107,6 +107,7 @@ import { swipeKeys } from '@/features/discover/swipeQueries';
 import {
   APP_MODE_EVENT,
   readAppModeFor,
+  useAppMode,
   writeAppMode,
 } from '@/features/discover/useAppMode';
 import { isAppMode } from '@/features/discover/modeTheme';
@@ -456,16 +457,26 @@ export default function AppNavigator() {
   );
   const [matchGateOpen, setMatchGateOpen] = useState(false);
   const [myPhoto, setMyPhoto] = useState<string | null>(null);
-  // Profil keşif havuzunda mı. `null` = BİLİNMİYOR (alanı göndermeyen sunucu
-  // ya da henüz cevap gelmedi) — kapı yalnız açıkça "Visible değil" denince
-  // açılır, aksi halde deploy öncesi herkesi engellerdik.
-  const [profileVisibility, setProfileVisibility] =
-    useState<ProfileVisibility | null>(null);
-  // İncelemeyi bekleyen fotoğraf var mı — kapının engelleyici mi bilgilendirici
-  // mi olacağını bu belirliyor (bkz. ProfileHiddenGate). `null` = bilinmiyor.
-  const [photosAwaitingReview, setPhotosAwaitingReview] = useState<
-    boolean | null
-  >(null);
+  // Görünürlük MOD BAŞINA: iki modun bloğu + foto listesi birlikte tutulur,
+  // kapı AKTİF modunkini okur. Eskiden sabit `profileVisibility` (Flört)
+  // okunuyordu — yalnız Arkadaş'la kaydolan kullanıcı, Arkadaş'ta görünürken
+  // Flört yüzünden "0 fotoğrafın var" kapısını görüyordu.
+  // `null` = BİLİNMİYOR (henüz cevap gelmedi) — kapı yalnız açıkça "Visible
+  // değil" denince açılır, aksi halde deploy öncesi herkesi engellerdik.
+  const [visibilitySource, setVisibilitySource] =
+    useState<Record<string, unknown> | null>(null);
+  const { mode: appMode } = useAppMode();
+  const profileVisibility = useMemo(
+    () => modeVisibilityOf(visibilitySource, appMode),
+    [visibilitySource, appMode],
+  );
+  // İncelemeyi bekleyen fotoğraf var mı (aktif modun listesinde) — kapının
+  // bekleme mi aksiyon mu kipinde olacağını bu belirliyor (bkz.
+  // ProfileHiddenGate). `null` = bilinmiyor.
+  const photosAwaitingReview = useMemo(
+    () => modeAwaitingReviewOf(visibilitySource, appMode),
+    [visibilitySource, appMode],
+  );
   // Ekranların okuduğu görünürlük bağlamı (Discover kaydırmayı buna göre
   // kapatıyor). Redux'a yazılmıyor — gerekçe profileVisibilityContext'te.
   const profileVisibilityInfo = useMemo(
@@ -1492,16 +1503,27 @@ export default function AppNavigator() {
           return;
         }
         profileService.bustProfileCache();
-        const nextVisibility = normalizeProfileVisibility(payload);
-        if (nextVisibility) setProfileVisibility(nextVisibility);
-        // Gövde yalnız DEĞİŞEN fotoyu taşıyor (liste değil): buradan "bekleyen
-        // foto kaldı mı" sorusu cevaplanamaz. Alan gelirse kullan, gelmezse
+        // Gövde iki modun görünürlük bloğunu da taşıyor; yalnız TANINAN blok
+        // yazılır (bilinmeyen state mevcut bilgiyi ezmesin — normalizer null).
+        // Gövde yalnız DEĞİŞEN fotoyu taşıyor (liste değil): "bekleyen foto
+        // kaldı mı" buradan cevaplanamaz. Liste gelirse kullan, gelmezse
         // mevcut bilgiyi koru ve kanonik listeyi tazele — aksi halde son
         // inceleme bittikten sonra bayrak `true` kalır ve kapı, engelleyici
         // olması gerekirken bilgilendirme kipinde kalırdı.
-        const nextAwaiting = hasPhotosAwaitingReview(payload);
-        if (nextAwaiting !== null) setPhotosAwaitingReview(nextAwaiting);
-        else uiBus.emit('profileDirty');
+        const patch: Record<string, unknown> = {};
+        let carriesList = false;
+        for (const mode of ['Dating', 'Friends'] as const) {
+          const { visibilityKey, listKey } = modePhotoFields(mode);
+          if (modeVisibilityOf(payload, mode)) patch[visibilityKey] = (payload as any)[visibilityKey];
+          if (Array.isArray((payload as any)?.[listKey])) {
+            patch[listKey] = (payload as any)[listKey];
+            carriesList = true;
+          }
+        }
+        if (Object.keys(patch).length > 0) {
+          setVisibilitySource((prev) => ({ ...(prev ?? {}), ...patch }));
+        }
+        if (!carriesList) uiBus.emit('profileDirty');
         // Profil ekranı mount ise kendi tazelemesini yapsın; değilse cache
         // bust'ı sayesinde bir sonraki açılışta taze veri gelir.
         uiBus.emit('photoModerationChanged', payload);
@@ -2181,8 +2203,7 @@ export default function AppNavigator() {
     const verified = user?.isMailVerified || user?.isProfileCreated;
     if (!isAuthenticated || !verified) {
       setMyPhoto(null);
-      setProfileVisibility(null);
-      setPhotosAwaitingReview(null);
+      setVisibilitySource(null);
       // Sonraki oturum kendi dil tercihiyle gelsin (latch bir kullanıcıya ait).
       resetServerLanguageSync();
       return;
@@ -2199,8 +2220,15 @@ export default function AppNavigator() {
           reconcileServerLanguage(p, store.getState()?.settings?.language);
           if (cancelled) return;
           setMyPhoto(resolveMainPhotoUri(p) ?? null);
-          setProfileVisibility(normalizeProfileVisibility(p));
-          setPhotosAwaitingReview(hasPhotosAwaitingReview(p));
+          // Kanonik cevap: iki modun bloğu ve listesi birden — mevcut bilgiyi
+          // tamamen DEĞİŞTİRİR (hub yamasının aksine).
+          const next: Record<string, unknown> = {};
+          for (const mode of ['Dating', 'Friends'] as const) {
+            const { visibilityKey, listKey } = modePhotoFields(mode);
+            next[visibilityKey] = p?.[visibilityKey];
+            next[listKey] = p?.[listKey];
+          }
+          setVisibilitySource(next);
           if (__DEV__) {
             mark('profile-loaded');
             summary();

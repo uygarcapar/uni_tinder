@@ -1,5 +1,10 @@
 import type { AppMode } from "@/features/discover/modeTheme";
 import { resolveEditMode } from "./editMode";
+import {
+  hasPhotosAwaitingReview,
+  normalizeProfileVisibility,
+  type ProfileVisibility,
+} from "./photoModeration";
 
 /**
  * Mod başına foto ALAN ADLARININ tek çözücüsü.
@@ -79,6 +84,39 @@ export function modeMainPhotoOf(profile: unknown, active: AppMode): any | null {
     if (main) return main;
   }
   return null;
+}
+
+/**
+ * Modun görünürlük bloğu (`profileVisibility` / `friendsProfileVisibility`).
+ * `null` sözleşmesi `normalizeProfileVisibility` ile aynı: alan yoksa
+ * BİLİNMİYOR, "gizli" değil.
+ *
+ * Global görünürlük kapısı eskiden sabit `profileVisibility`'yi okuyordu —
+ * yalnız Arkadaş'la kaydolan kullanıcı, Arkadaş'ta 2 onaylı fotoğrafı varken
+ * Flört bloğu yüzünden "0 fotoğrafın var" kapısını görüyordu.
+ */
+export function modeVisibilityOf(
+  source: unknown,
+  mode: AppMode,
+): ProfileVisibility | null {
+  if (source == null || typeof source !== "object") return null;
+  return normalizeProfileVisibility({
+    profileVisibility: (source as any)[modePhotoFields(mode).visibilityKey],
+  });
+}
+
+/**
+ * Modun listesinde incelemeyi bekleyen fotoğraf var mı. `null` = liste yok,
+ * BİLİNMİYOR (bkz. `hasPhotosAwaitingReview`).
+ */
+export function modeAwaitingReviewOf(
+  source: unknown,
+  mode: AppMode,
+): boolean | null {
+  if (source == null || typeof source !== "object") return null;
+  return hasPhotosAwaitingReview({
+    photosList: (source as any)[modePhotoFields(mode).listKey],
+  });
 }
 
 /**

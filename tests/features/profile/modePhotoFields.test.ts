@@ -8,9 +8,11 @@
  */
 
 import {
+  modeAwaitingReviewOf,
   modeMainPhotoOf,
   modePhotoFields,
   modePhotosOf,
+  modeVisibilityOf,
   patchPhotoInBothLists,
 } from "@/features/profile/modePhotoFields";
 
@@ -147,5 +149,44 @@ describe("patchPhotoInBothLists", () => {
   it("isabet yoksa aynı referans döner", () => {
     const input = profile();
     expect(patchPhotoInBothLists(input, "yok", (p) => ({ ...p }))).toBe(input);
+  });
+});
+
+describe("modeVisibilityOf / modeAwaitingReviewOf", () => {
+  // Prod vakası (2026-11-09): Flört hiç açılmamış, Arkadaş'ta 2 onaylı foto.
+  const friendsOnly = {
+    profileVisibility: {
+      state: "ModeNotOpened",
+      visiblePhotoCount: 0,
+      requiredPhotoCount: 2,
+      reasonCode: "mode_not_opened",
+    },
+    friendsProfileVisibility: {
+      state: "Visible",
+      visiblePhotoCount: 2,
+      requiredPhotoCount: 2,
+      reasonCode: null,
+    },
+    photosList: [],
+    friendsPhotosList: [
+      { photoId: 1, moderationStatus: "Approved" },
+      { photoId: 2, moderationStatus: "Pending" },
+    ],
+  };
+
+  it("aktif modun bloğunu okur", () => {
+    expect(modeVisibilityOf(friendsOnly, "Friends")!.state).toBe("Visible");
+    expect(modeVisibilityOf(friendsOnly, "Dating")!.state).toBe("ModeNotOpened");
+  });
+
+  it("bekleyen fotoğrafı aktif modun listesinden sayar", () => {
+    expect(modeAwaitingReviewOf(friendsOnly, "Friends")).toBe(true);
+    expect(modeAwaitingReviewOf(friendsOnly, "Dating")).toBe(false);
+  });
+
+  it("kaynak ya da alan yoksa null — BİLİNMİYOR", () => {
+    expect(modeVisibilityOf(null, "Dating")).toBeNull();
+    expect(modeVisibilityOf({}, "Friends")).toBeNull();
+    expect(modeAwaitingReviewOf({}, "Friends")).toBeNull();
   });
 });

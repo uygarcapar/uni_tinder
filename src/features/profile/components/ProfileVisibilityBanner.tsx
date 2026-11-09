@@ -5,6 +5,7 @@ import { AlertTriangle, Clock } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors, ink, isLight } from "@/shared/theme/colors";
 import {
+  isHiddenInOpenMode,
   resolveRequiredPhotoCount,
   type ProfileVisibility,
 } from "@/features/profile/photoModeration";
@@ -185,8 +186,9 @@ export default function ProfileVisibilityBanner({
   const waiting =
     state === "HiddenUnderReview" || awaitingReview === true || reviewing > 0;
   // Profil keşiften düştü mü. `state` null iken (bilinmiyor) ve `Visible` iken
-  // YOK — deploy öncesi herkese uyarı basmayalım.
-  const hidden = !!state && state !== "Visible";
+  // YOK — deploy öncesi herkese uyarı basmayalım. `ModeNotOpened` de YOK:
+  // mod açılmamış, "fotoğraf eksik" demek yanlış çözüm önerir.
+  const hidden = isHiddenInOpenMode(visibility);
   // "Fotoğraf eksik" satırı yalnız BEKLEYEN foto yokken: inceleme sürerken
   // yapılacak iş yok, eklenen yeni foto da incelemeye girer (rehber §5.2).
   const showPhotosNeeded = hidden && !waiting;

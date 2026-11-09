@@ -259,7 +259,13 @@ export type ProfileVisibilityState =
   | 'Visible'
   | 'HiddenInsufficientPhotos'
   | 'HiddenUnderReview'
-  | 'Suspended';
+  | 'Suspended'
+  /**
+   * Kullanıcı bu modun profilini hiç açmadı (ör. yalnız Arkadaş'la kaydoldu,
+   * Flört bloğu). Sorun fotoğraf DEĞİL — "fotoğraf ekle" denmez, çözüm modu
+   * açmak. Sunucu sırası: Suspended > ModeNotOpened > HiddenInsufficientPhotos.
+   */
+  | 'ModeNotOpened';
 
 export interface ProfileVisibility {
   state: ProfileVisibilityState;
@@ -274,6 +280,7 @@ const KNOWN_VISIBILITY_STATES: ReadonlySet<string> = new Set<string>([
   'HiddenInsufficientPhotos',
   'HiddenUnderReview',
   'Suspended',
+  'ModeNotOpened',
 ]);
 
 /**
@@ -298,6 +305,20 @@ export function isProfileHidden(
   visibility: ProfileVisibility | null | undefined,
 ): boolean {
   return !!visibility && visibility.state !== 'Visible';
+}
+
+/**
+ * Profil, kullanıcının AÇTIĞI bir modda keşiften mi düştü — görünürlük
+ * kapısının ve şeridin "fotoğraf eksik / inceleme" uyarısı için ölçütü.
+ *
+ * `ModeNotOpened` gizli sayılmaz: o modun havuzuna hiç girilmedi, fotoğraf
+ * eklemek bir şey çözmüyor. Yalnız Arkadaş'la kaydolan kullanıcıya Flört
+ * bloğu üzerinden "0 fotoğrafın var" demek bu ayrımın yokluğundan çıkıyordu.
+ */
+export function isHiddenInOpenMode(
+  visibility: ProfileVisibility | null | undefined,
+): boolean {
+  return isProfileHidden(visibility) && visibility!.state !== 'ModeNotOpened';
 }
 
 /**

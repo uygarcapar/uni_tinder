@@ -3,6 +3,7 @@ import {
   normalizeProfileVisibility,
   getModerationTone,
   isBlockingPhoto,
+  isHiddenInOpenMode,
   isProfileHidden,
   requiresUserAction,
   resolveRequiredPhotoCount,
@@ -168,6 +169,30 @@ describe('normalizeProfileVisibility', () => {
     // Deploy öncesi pencerede engelleyici kapı herkese açılmamalı.
     expect(normalizeProfileVisibility({ displayName: 'Ada' })).toBeNull();
     expect(isProfileHidden(null)).toBe(false);
+  });
+
+  it('ModeNotOpened tanınır ama "açık modda gizli" sayılmaz', () => {
+    // Prod vakası (2026-11-09): yalnız Arkadaş'la kaydolan kullanıcıya Flört
+    // bloğu üzerinden "0 fotoğrafın var" kapısı açılıyordu.
+    const v = normalizeProfileVisibility({
+      profileVisibility: {
+        state: 'ModeNotOpened',
+        visiblePhotoCount: 0,
+        requiredPhotoCount: 2,
+        reasonCode: 'mode_not_opened',
+      },
+    });
+    expect(v!.state).toBe('ModeNotOpened');
+    expect(isProfileHidden(v)).toBe(true);
+    expect(isHiddenInOpenMode(v)).toBe(false);
+  });
+
+  it('açık modda foto eksikliği "açık modda gizli" sayılır', () => {
+    const v = normalizeProfileVisibility({
+      profileVisibility: { state: 'HiddenInsufficientPhotos', visiblePhotoCount: 0 },
+    });
+    expect(isHiddenInOpenMode(v)).toBe(true);
+    expect(isHiddenInOpenMode(null)).toBe(false);
   });
 
   it('bilinmeyen state’i yok sayar', () => {

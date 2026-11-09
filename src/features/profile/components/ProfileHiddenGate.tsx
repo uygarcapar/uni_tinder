@@ -7,7 +7,10 @@ import { useTranslation } from "react-i18next";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { colors, ink } from "@/shared/theme/colors";
-import type { ProfileVisibility } from "@/features/profile/photoModeration";
+import {
+  isHiddenInOpenMode,
+  type ProfileVisibility,
+} from "@/features/profile/photoModeration";
 
 /**
  * Profil keşif havuzundan düştüğünde açılan BİLGİLENDİRME kapısı.
@@ -97,8 +100,9 @@ export default function ProfileHiddenGate({
    * doğrudan açılıyor; kapanış da hep KULLANICININ kapanışı, o yüzden
    * programatik kapanışı ayırt eden `blockingRef` de kalktı.
    */
-  const open =
-    !!state && state !== "Visible" && !suspended && !dismissed;
+  // `ModeNotOpened` hiç açmaz (isHiddenInOpenMode): kullanıcı o modu açmadı,
+  // "fotoğraf ekle" çözüm değil.
+  const open = isHiddenInOpenMode(visibility) && !suspended && !dismissed;
 
   useEffect(() => {
     onOpenChange?.(open);
