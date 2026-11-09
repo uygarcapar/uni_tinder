@@ -7,6 +7,7 @@ import {
   Image,
   Animated,
   StyleSheet,
+  Pressable,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
@@ -16,6 +17,7 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { colors, onMediaAt } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import LegalSheet, { type LegalDocument } from "../components/LegalSheet";
+import { Check } from "@/shared/icons";
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
 const { width, height } = Dimensions.get("window");
@@ -49,7 +51,7 @@ const VIDEO_SHIFT = 64;
 // testID açıkça listeleniyor: props `any` olsa da bileşen destructuring
 // yaptığı için listelenmeyen hiçbir prop TouchableOpacity'ye GEÇMİYOR —
 // eklenmeseydi e2e seçicisi sessizce kaybolurdu.
-const PressableScaleButton = ({ onPress, style, className, children, testID }: any) => {
+const PressableScaleButton = ({ onPress, style, className, children, testID, disabled }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -70,9 +72,11 @@ const PressableScaleButton = ({ onPress, style, className, children, testID }: a
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={{ transform: [{ scale }], opacity: disabled ? 0.45 : 1 }}>
       <TouchableOpacity
         testID={testID}
+        disabled={disabled}
+        accessibilityState={{ disabled: !!disabled }}
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -89,6 +93,9 @@ const PressableScaleButton = ({ onPress, style, className, children, testID }: a
 export default function WelcomeScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Welcome'>) {
   const { t } = useTranslation();
   const [legalDoc, setLegalDoc] = useState<LegalDocument | null>(null);
+  // App Review 1.2: kayıt ve girişten önce işaretsiz başlayan açık onay.
+  const [termsAgreed, setTermsAgreed] = useState(false);
+  const toggleTerms = () => setTermsAgreed((v) => !v);
 
   const player = useVideoPlayer(BACKGROUND_VIDEO, (p) => {
     p.loop = true;
@@ -148,9 +155,65 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
 
         {/* Alt Kısım - Butonlar */}
         <View className="space-y-4 mb-4">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 }}>
+            <Pressable
+              testID="welcome-terms-check"
+              onPress={toggleTerms}
+              hitSlop={12}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: termsAgreed }}
+              accessibilityLabel={t('auth.welcome.termsLink')}
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 7,
+                borderCurve: "continuous",
+                borderWidth: 1.5,
+                borderColor: colors.onMedia,
+                backgroundColor: termsAgreed ? colors.onMedia : "transparent",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {termsAgreed ? (
+                <Check size={16} color={colors.onMediaInverse} strokeWidth={3} />
+              ) : null}
+            </Pressable>
+            <Text
+              onPress={toggleTerms}
+              suppressHighlighting
+              className="text-sm"
+              style={{ flex: 1, color: colors.onMedia }}
+            >
+              {t('auth.welcome.termsAccept')
+                .split('<1>')[0]}
+              <Text
+                className=" underline"
+                suppressHighlighting
+                accessibilityRole="link"
+                onPress={() => setLegalDoc('terms')}
+              >
+                {t('auth.welcome.termsLink')}
+              </Text>
+              {t('auth.welcome.termsAccept')
+                .split('</1>')[1]?.split('<2>')[0]}
+              <Text
+                className=" underline"
+                suppressHighlighting
+                accessibilityRole="link"
+                onPress={() => setLegalDoc('privacy')}
+              >
+                {t('auth.welcome.privacyLink')}
+              </Text>
+              {t('auth.welcome.termsAccept')
+                .split('</2>')[1]}
+            </Text>
+          </View>
+
           <View className="flex flex-col gap-3">
             <PressableScaleButton
               testID="welcome-btn-signup"
+              disabled={!termsAgreed}
               onPress={() => navigation.navigate("RegisterStep1")}
               style={{
                 borderRadius: 999,
@@ -168,6 +231,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
 
             <PressableScaleButton
               testID="welcome-btn-login"
+              disabled={!termsAgreed}
               onPress={() => navigation.navigate("Login")}
               className="border-[0.5px] py-[20px] items-center"
               style={{
@@ -182,35 +246,6 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
               </Text>
             </PressableScaleButton>
           </View>
-
-          {/* Link'ler iç içe <Text> — sarmalayan paragraf akışı bozulmasın diye
-              TouchableOpacity kullanılmıyor; iç <Text>'in kendi onPress'i var.
-              suppressHighlighting: iOS'ta basılıyken metnin gri kutuya
-              dönmesini engeller, video üstünde çirkin duruyor. */}
-          <Text className="opacity-70 text-sm text-center mt-8" style={{ color: colors.onMedia }}>
-            {t('auth.welcome.termsAccept')
-              .split('<1>')[0]}
-            <Text
-              className=" underline"
-              suppressHighlighting
-              accessibilityRole="link"
-              onPress={() => setLegalDoc('terms')}
-            >
-              {t('auth.welcome.termsLink')}
-            </Text>
-            {t('auth.welcome.termsAccept')
-              .split('</1>')[1]?.split('<2>')[0]}
-            <Text
-              className=" underline"
-              suppressHighlighting
-              accessibilityRole="link"
-              onPress={() => setLegalDoc('privacy')}
-            >
-              {t('auth.welcome.privacyLink')}
-            </Text>
-            {t('auth.welcome.termsAccept')
-              .split('</2>')[1]}
-          </Text>
         </View>
       </View>
 

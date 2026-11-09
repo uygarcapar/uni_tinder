@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import LegalSheet, { type LegalDocument } from "@/features/auth/components/LegalSheet";
 import {
   View,
   Text,
@@ -1339,6 +1340,7 @@ export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
  */
 export function PurchaseFinePrint({ flow }: { flow: PurchaseFlow }) {
   const { t, purchasing, restoring, handleRestore } = flow;
+  const [legalDoc, setLegalDoc] = useState<LegalDocument | null>(null);
 
   return (
     <View style={{ paddingTop: 4 }}>
@@ -1373,6 +1375,24 @@ export function PurchaseFinePrint({ flow }: { flow: PurchaseFlow }) {
       >
         {t('purchase.cta.appStoreDisclaimer')}
       </Text>
+
+      {/* App Review 3.1.2(c): satın alma ekranında Koşullar ve Gizlilik linki. */}
+      <View style={{ flexDirection: "row", justifyContent: "center", gap: 16, marginTop: 10 }}>
+        {(["terms", "privacy"] as const).map((doc) => (
+          <TouchableOpacity
+            key={doc}
+            testID={`purchase-legal-${doc}`}
+            onPress={() => setLegalDoc(doc)}
+            accessibilityRole="link"
+            hitSlop={8}
+          >
+            <Text style={{ color: colors.textMuted, fontSize: 12, textDecorationLine: "underline" }}>
+              {t(doc === "terms" ? "auth.welcome.termsLink" : "auth.welcome.privacyLink")}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <LegalSheet document={legalDoc} onClose={() => setLegalDoc(null)} />
     </View>
   );
 }

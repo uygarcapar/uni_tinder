@@ -230,7 +230,7 @@ const tr = {
     welcome: {
       signupButton: 'Hesap Oluştur',
       loginButton: 'Zaten Hesabım Var',
-      termsAccept: 'Devam ederek <1>Kullanım Koşulları</1> ve <2>Gizlilik Politikası</2>\'nı kabul etmiş olursun.',
+      termsAccept: '<1>Kullanım Koşulları</1> ve <2>Gizlilik Politikası</2>\'nı kabul ediyorum.',
       termsLink: 'Kullanım Koşulları',
       privacyLink: 'Gizlilik Politikası',
     },
@@ -253,7 +253,7 @@ const tr = {
           'Profilinde verdiğin bilgilerin doğru ve güncel olmasından sen sorumlusun. Şifreni kimseyle paylaşma; hesabından yapılan tüm işlemler sana aittir. Hesabına izinsiz erişildiğini düşünüyorsan şifreni değiştir ve destek ekibine haber ver.',
         sectionTitle3: 'Topluluk Kuralları',
         section3Content:
-          'Taciz, tehdit, nefret söylemi, cinsel içerikli veya çıplaklık içeren paylaşımlar, reşit olmayan kişilere ait içerik, sahte profiller, başkasına ait fotoğraf kullanımı, spam, reklam ve ticari kullanım, para talebi veya dolandırıcılık girişimi yasaktır. Bu kuralları ihlal eden içerikleri kaldırma ve hesabı kapatma hakkımız saklıdır.',
+          'Taciz, tehdit, nefret söylemi, cinsel içerikli veya çıplaklık içeren paylaşımlar, reşit olmayan kişilere ait içerik, sahte profiller, başkasına ait fotoğraf kullanımı, spam, reklam ve ticari kullanım, para talebi veya dolandırıcılık girişimi yasaktır. Bu kuralları ihlal eden içerikleri kaldırma ve hesabı kapatma hakkımız saklıdır. Uygunsuz içeriğe ve kötüye kullanıma sıfır tolerans uyguluyoruz: şikayetleri 24 saat içinde inceliyor, ihlal eden içeriği kaldırıyor ve ihlali yapan kullanıcıyı uygulamadan çıkarıyoruz.',
         sectionTitle4: 'Paylaştığın İçerik',
         section4Content:
           'Yüklediğin fotoğraflar ve yazdığın metinler sana aittir. Bu içerikleri uygulamada gösterebilmemiz için bize sınırlı bir kullanım izni vermiş olursun; bu izin yalnızca hizmeti sunmak içindir ve içeriği sildiğinde ya da hesabını kapattığında sona erer. Fotoğraflar kurallara uygunluk açısından moderasyondan geçebilir.',
@@ -262,7 +262,7 @@ const tr = {
           'Plus+ abonelikleri App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire ve Spark gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
-          'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
+          'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır. Engellediğin kullanıcılar ekibimize bildirilir ve incelenir.',
         sectionTitle7: 'Sorumluluğun Sınırı',
         section7Content:
           "Lit yalnızca tanışmayı kolaylaştıran bir platformdur; kullanıcıların kimliğini, beyanlarını veya davranışlarını garanti etmez. Tanıştığın kişilerle buluşurken dikkatli ol ve kendi güvenliğini önceliklendir. Hizmet 'olduğu gibi' sunulur; bakım, güncelleme veya teknik nedenlerle kesintiler yaşanabilir.",
@@ -700,11 +700,12 @@ const tr = {
     step9: {
       title: 'Konumun',
       description: 'Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.',
-      allowButton: 'Konumuma İzin Ver',
+      allowButton: 'Devam',
+      continueWithout: 'Konumsuz devam et',
       retryButton: 'Tekrar Dene',
       privacyNote: 'Tam adresin kimseyle paylaşılmaz, profilinde yalnızca şehir ve ilçen görünür.',
-      deniedTitle: 'Konum izni gerekli',
-      deniedDescription: 'Eşleşme için konumuna ihtiyacımız var. Ayarlar\'dan konum iznini açıp geri dönebilirsin.',
+      deniedTitle: 'Konum izni kapalı',
+      deniedDescription: 'Konumun olmadan şehrini ve mesafeyi gösteremeyiz. Ayarlar\'dan açabilir ya da konumsuz devam edebilirsin.',
       openSettings: 'Ayarlar\'a Git',
     },
     step10: {
@@ -1095,10 +1096,6 @@ const tr = {
     // birebir — modeTheme.ts anahtarı `discover.mode.*.${mode}` diye kuruyor,
     // yani buradaki adlar wire değerleridir, çevrilmez.
     mode: {
-      coach: {
-        title: 'Flört profili açmak için buraya dokun',
-        dismiss: 'Şimdi değil',
-      },
       title: {
         Dating: 'Flört',
         Friends: 'Arkadaş',
@@ -2135,7 +2132,7 @@ const tr = {
         captureError: 'Kare çekilemedi, tekrar dene.',
         permissionMessage:
           'Fotoğrafını doğrulayabilmek için kamera erişimine ihtiyacımız var.',
-        grantPermission: 'Kameraya İzin Ver',
+        grantPermission: 'Devam',
       },
       result: {
         successTitle: 'Fotoğrafın doğrulandı!',
@@ -2510,7 +2507,7 @@ const tr = {
       subscribe: 'Abone Ol',
       restore: 'Satın alımları geri yükle',
       trialDisclaimer: 'İlk {{days}} gün ücretsiz kullanabilirsin, ardından {{price}}/{{period}} olarak otomatik yenilenir.',
-      appStoreDisclaimer: 'Lit Plus aboneliği, App Store üzerinden otomatik olarak yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin onaylanmasından sonra App Store hesabınızdan ücretlendirilir.',
+      appStoreDisclaimer: 'Lit Plus otomatik yenilenen bir aboneliktir. Ücret, satın alma onaylandığında App Store hesabından alınır. Dönem bitiminden en az 24 saat önce iptal etmezsen abonelik aynı süre ve ücretle yenilenir. Aboneliğini App Store hesap ayarlarından yönetebilir ve iptal edebilirsin.',
     },
   },
   // Ürün adı MODA GÖRE ({{fire}}): Flört'te "Fire", Arkadaş'ta "Spark".
@@ -2973,7 +2970,7 @@ const tr = {
     permission: {
       title: 'Kampüse vardığında haberin olsun',
       body: 'Konum iznini "Her zaman"a alırsan, kampüsüne girdiğinde sana haber veririz. Lit seni sürekli takip etmez; yalnızca kendi kampüsünün sınırına girip çıktığını bilir.',
-      allow: 'Her zaman izin ver',
+      allow: 'Devam',
       later: 'Şimdilik hayır',
       openSettings: 'Ayarlar\'ı aç',
       deniedBody: 'İzni Ayarlar\'dan "Her zaman"a alabilirsin. Vermezsen de kampüsteyken paylaşabilirsin, yalnızca bildirim gelmez.',

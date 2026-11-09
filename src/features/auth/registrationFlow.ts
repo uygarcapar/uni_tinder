@@ -22,7 +22,7 @@ export const REGISTRATION_FLOW = [
   'RegisterStep9',
   'RegisterStep12',
   // Mod adımı yok: kayıt hep Arkadaş modunda, Flört profili uygulamadan açılıyor
-  // (bkz. DiscoverModeCoach).
+  // (bkz. ModeSelectorSheet).
   // Kiminle ilgilendiğin — flörtte HER ZAMAN, arkadaşta YALNIZ Non-Binary
   // kullanıcıda (orada soru "arkadaş modunda kimleri görmek istersin" hâline
   // geliyor). Arkadaşta ikili kategorilerde adım atlanıyor ve değeri sunucu

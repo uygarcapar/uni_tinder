@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": false,
       "requireFullScreen": true,
-      "buildNumber": "56",
+      "buildNumber": "57",
       "bundleIdentifier": "com.uygarcapar.lit",
       "associatedDomains": [
         "applinks:lit.4ourstack.com",
@@ -143,7 +143,7 @@
           "locationAlwaysPermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
           "locationAlwaysAndWhenInUsePermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
           "motionUsagePermission": "Lit uses motion data to orient the camera correctly while you take a photo and to improve location accuracy.",
-          "isIosBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": false
         }

@@ -224,7 +224,7 @@ const en = {
     welcome: {
       signupButton: 'Create Account',
       loginButton: 'I Already Have an Account',
-      termsAccept: 'By continuing, you agree to our <1>Terms of Service</1> and <2>Privacy Policy</2>.',
+      termsAccept: 'I agree to the <1>Terms of Use</1> and <2>Privacy Policy</2>.',
       termsLink: 'Terms of Service',
       privacyLink: 'Privacy Policy',
     },
@@ -247,7 +247,7 @@ const en = {
           'You are responsible for keeping the information on your profile accurate and up to date. Never share your password. Everything done from your account is attributed to you. If you believe someone else has accessed your account, change your password and contact support.',
         sectionTitle3: 'Community Rules',
         section3Content:
-          'Harassment, threats, hate speech, sexual or nude content, content involving minors, fake profiles, using someone else\'s photos, spam, advertising and commercial use, requests for money and any attempt at fraud are prohibited. We may remove content and close accounts that break these rules.',
+          'Harassment, threats, hate speech, sexual or nude content, content involving minors, fake profiles, using someone else\'s photos, spam, advertising and commercial use, requests for money and any attempt at fraud are prohibited. We may remove content and close accounts that break these rules. We have zero tolerance for objectionable content and abusive users: we review reports within 24 hours, remove violating content and eject the user who posted it.',
         sectionTitle4: 'Content You Share',
         section4Content:
           'The photos you upload and the text you write remain yours. You grant us a limited permission to display them so we can run the service; that permission exists only for providing the service and ends when you delete the content or close your account. Photos may go through moderation to check they follow the rules.',
@@ -256,7 +256,7 @@ const en = {
           'Plus+ subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires and Sparks are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
-          'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again.',
+          'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again. Users you block are reported to our team for review.',
         sectionTitle7: 'Limits of Our Responsibility',
         section7Content:
           'Lit is a platform that makes meeting people easier; we do not guarantee the identity, statements or behaviour of other users. Be careful when you meet someone and put your own safety first. The service is provided "as is" and may be interrupted for maintenance, updates or technical reasons.',
@@ -693,11 +693,12 @@ const en = {
     step9: {
       title: 'Your Location',
       description: 'We need your location to show your city and the people near you.',
-      allowButton: 'Allow Location Access',
+      allowButton: 'Continue',
+      continueWithout: 'Continue without location',
       retryButton: 'Try Again',
       privacyNote: 'Your exact address is never shared. Only your city and district appear on your profile.',
-      deniedTitle: 'Location permission required',
-      deniedDescription: 'We need your location to find matches. Enable location access in Settings and come back.',
+      deniedTitle: 'Location is off',
+      deniedDescription: 'Without your location we cannot show your city or distance. You can turn it on in Settings or continue without it.',
       openSettings: 'Open Settings',
     },
     step10: {
@@ -1085,10 +1086,6 @@ const en = {
     // values exactly — modeTheme.ts builds `discover.mode.*.${mode}`, so these
     // names are wire values and are not translated.
     mode: {
-      coach: {
-        title: 'Tap here to open a dating profile',
-        dismiss: 'Not now',
-      },
       title: {
         Dating: 'Dating',
         Friends: 'Friends',
@@ -2075,7 +2072,7 @@ const en = {
         captureError: "We couldn't take the frame. Try again.",
         permissionMessage:
           'We need camera access so you can verify your photos.',
-        grantPermission: 'Allow camera',
+        grantPermission: 'Continue',
       },
       result: {
         successTitle: 'Your photos are verified!',
@@ -2436,7 +2433,7 @@ const en = {
       subscribe: 'Subscribe',
       restore: 'Restore Purchases',
       trialDisclaimer: 'Try free for {{days}} days, then {{price}}/{{period}}, renewed automatically.',
-      appStoreDisclaimer: 'Lit Plus subscription is automatically renewed through the App Store. Your account will be charged from your App Store account after purchase confirmation.',
+      appStoreDisclaimer: 'Lit Plus is an auto-renewing subscription. Payment is charged to your App Store account when you confirm the purchase. It renews for the same period and price unless cancelled at least 24 hours before the period ends. You can manage or cancel it in your App Store account settings.',
     },
   },
   // Product name is mode-aware ({{fire}}): "Fire" in Dating, "Spark" in
@@ -2835,7 +2832,7 @@ const en = {
     permission: {
       title: 'Know when you get to campus',
       body: 'Set location access to "Always" and we will let you know when you arrive on your campus. Lit does not track you continuously; it only knows when you cross your own campus boundary.',
-      allow: 'Always allow',
+      allow: 'Continue',
       later: 'Not now',
       openSettings: 'Open Settings',
       deniedBody: 'You can switch it to "Always" in Settings. Even without it you can post while on campus, you just will not get a heads-up.',

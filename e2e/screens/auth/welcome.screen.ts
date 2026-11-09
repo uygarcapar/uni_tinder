@@ -1,5 +1,5 @@
 import { BaseScreen } from '../base.screen';
-import { byText, tx } from '../../support/selectors';
+import { byText, idOf, tx } from '../../support/selectors';
 
 export class WelcomeScreen extends BaseScreen {
   /** Tur 1'de WelcomeScreen.tsx'e eklenecek kök işaretçi. */
@@ -35,11 +35,18 @@ export class WelcomeScreen extends BaseScreen {
       );
   }
 
+  /** Kayıt ve giriş butonları koşullar işaretlenene kadar pasif. */
+  async acceptTerms(): Promise<void> {
+    await idOf('welcome-terms-check').click();
+  }
+
   async startRegister(): Promise<void> {
+    await this.acceptTerms();
     await byText('auth.welcome.signupButton').click();
   }
 
   async goToLogin(): Promise<void> {
+    await this.acceptTerms();
     await byText('auth.welcome.loginButton').click();
   }
 

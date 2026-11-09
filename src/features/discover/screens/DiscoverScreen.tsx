@@ -48,7 +48,6 @@ import SwipeWrapper, {
 import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import DiscoverActionRail from "@/features/discover/components/DiscoverActionRail";
-import DiscoverModeCoach from "@/features/discover/components/DiscoverModeCoach";
 import DiscoverSwipeDemo from "@/features/discover/components/DiscoverSwipeDemo";
 import { appPrefs } from "@/shared/utils/appPrefs";
 import { photoNoteTarget } from "@/features/discover/noteTarget";
@@ -1590,15 +1589,13 @@ export default function DiscoverScreen() {
 
   const [modePickerVisible, setModePickerVisible] = useState(false);
   const isFocused = useIsFocused();
-  const modeCoachKey = `discoverModeCoachSeen:${currentUserId}`;
-  const [modeCoachSeen, setModeCoachSeen] = useState(
-    () => !currentUserId || appPrefs.getBoolean(modeCoachKey) === true,
+  const swipeDemoKey = `discoverSwipeDemoSeen:${currentUserId}`;
+  const [swipeDemoSeen, setSwipeDemoSeen] = useState(
+    () => !currentUserId || appPrefs.getBoolean(swipeDemoKey) === true,
   );
-  const [swipeDemoDone, setSwipeDemoDone] = useState(false);
-  const finishSwipeDemo = useEvent(() => setSwipeDemoDone(true));
-  const finishModeCoach = useEvent(() => {
-    if (currentUserId) appPrefs.set(modeCoachKey, true);
-    setModeCoachSeen(true);
+  const finishSwipeDemo = useEvent(() => {
+    if (currentUserId) appPrefs.set(swipeDemoKey, true);
+    setSwipeDemoSeen(true);
   });
   // Hangi modun kurulumu açık; `null` = sheet kapalı.
   const [setupMode, setSetupMode] = useState<AppMode | null>(null);
@@ -3322,12 +3319,11 @@ export default function DiscoverScreen() {
     awaitingFreshDeck ||
     (potentialMatches.length > currentIndex && !coverSettled);
 
-  // Yalnız Flört profili kapalı kullanıcıya, kapak yerine oturduktan sonra.
-  const showModeCoach =
+  // Kapak yerine oturduktan sonra, hesap başına bir kez.
+  const showSwipeDemo =
     isFocused &&
-    !modeCoachSeen &&
-    openModes?.Friends === true &&
-    openModes?.Dating === false &&
+    !swipeDemoSeen &&
+    potentialMatches.length > currentIndex &&
     !deckSkeletonOnly &&
     !deckSkeletonOverlay;
 
@@ -3624,20 +3620,7 @@ export default function DiscoverScreen() {
         />
       </View>
 
-      {/* Perde üst şeritten ÖNCE: mod başlığı üstünde parlak ve dokunulabilir kalıyor. */}
-      {showModeCoach && !swipeDemoDone && potentialMatches.length > currentIndex && (
-        <DiscoverSwipeDemo onDone={finishSwipeDemo} />
-      )}
-      {showModeCoach && (swipeDemoDone || potentialMatches.length <= currentIndex) && (
-        <DiscoverModeCoach
-          top={
-            insets.top +
-            Math.max(DISCOVER_HEADER_HEIGHT, DISCOVER_GLASS_BUTTON_SIZE) +
-            4
-          }
-          onDismiss={finishModeCoach}
-        />
-      )}
+      {showSwipeDemo && <DiscoverSwipeDemo onDone={finishSwipeDemo} />}
 
       {/* ── YÜZEN ÜST CHROME ────────────────────────────────────────────────
           Kendi zemini olan bir header şeridi YOK (istek): solda geri al,
@@ -3686,10 +3669,7 @@ export default function DiscoverScreen() {
         <ModeTitle
           testID="discover-btn-mode"
           mode={mode}
-          onPress={() => {
-            finishModeCoach();
-            setModePickerVisible(true);
-          }}
+          onPress={() => setModePickerVisible(true)}
           onSurface={headerOnSurface}
         />
 

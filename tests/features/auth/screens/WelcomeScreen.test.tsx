@@ -49,3 +49,17 @@ it('kapat butonu sheet\'i kapatıyor', () => {
 
   expect(queryByTestId('app-modal')).toBeNull();
 });
+
+it('koşullar işaretlenmeden kayıt ve giriş açılmıyor', () => {
+  nav.navigate.mockClear();
+  const { getByTestId } = renderScreen();
+
+  expect(getByTestId('welcome-terms-check').props.accessibilityState).toEqual({ checked: false });
+  fireEvent.press(getByTestId('welcome-btn-signup'));
+  fireEvent.press(getByTestId('welcome-btn-login'));
+  expect(nav.navigate).not.toHaveBeenCalled();
+
+  fireEvent.press(getByTestId('welcome-terms-check'));
+  fireEvent.press(getByTestId('welcome-btn-signup'));
+  expect(nav.navigate).toHaveBeenCalledWith('RegisterStep1');
+});

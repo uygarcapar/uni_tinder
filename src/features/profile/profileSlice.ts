@@ -272,8 +272,8 @@ export const completeProfile = createAsyncThunk(
 interface RegisterAndCompleteArgs {
   photos: string[];
   mainPhotoIndex: number;
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export const registerAndComplete = createAsyncThunk(
@@ -313,8 +313,11 @@ export const registerAndComplete = createAsyncThunk(
       put("Height", profile.height);
       put("Department", profile.department);
       put("YearOfStudy", profile.yearOfStudy);
-      put("Latitude", Number(latitude).toFixed(8));
-      put("Longitude", Number(longitude).toFixed(8));
+      // Kullanıcı konum vermediyse alanlar hiç gönderilmiyor.
+      if (latitude != null && longitude != null) {
+        put("Latitude", Number(latitude).toFixed(8));
+        put("Longitude", Number(longitude).toFixed(8));
+      }
 
       // ⚠️ MOD. Wire'da opsiyonel ve sunucu yokluğunda "Dating" sayıyor (eski
       // istemci sözleşmesi); yeni kayıt her zaman açıkça gönderiyor.

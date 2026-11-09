@@ -99,6 +99,12 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
    * gidebiliyor. Bayrak olmadan ekran blur olduktan SONRA navigate ya da
    * sheet açılması mümkün — ikisi de kullanıcıyı bıraktığı yerden koparırdı.
    */
+  const continueWithoutLocation = useCallback(() => {
+    dispatch(updateMultipleFields({ latitude: null, longitude: null }));
+    setSheetVisible(false);
+    navigation.navigate("RegisterStep12");
+  }, [dispatch, navigation]);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -221,6 +227,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
       </View>
 
       <LocationPermissionSheet
+        onSkip={continueWithoutLocation}
         visible={sheetVisible}
         requestOnOpen={autoRequest}
         onClose={() => setSheetVisible(false)}

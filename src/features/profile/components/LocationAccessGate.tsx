@@ -19,10 +19,9 @@ import { devLog } from "@/shared/utils/devLog";
  * arkasında RegisterStep9 ekranı olmadığı için sheet o ekranın düzenini
  * kendisi taşıyor.
  *
- * ⚠️ KAPATILAMAZ: kayıttaki zorunluluk girişte de aynen geçerli — izin
- * verilmeden uygulama kullanılamıyor. Reddedilirse sheet "Ayarlar'a Git" +
- * "Tekrar Dene" hâlinde kalıyor ve Ayarlar'dan dönüş AppState ile yakalanıyor
- * (bkz. LocationPermissionSheet). Tek çıkış yolu uygulamayı kapatmak.
+ * YALNIZ HENÜZ SORULMAMIŞSA AÇILIYOR. Reddeden kullanıcıya tekrar sorulmuyor ve
+ * uygulama konumsuz da kullanılıyor (App Review 5.1.1(iv)); reddi bu oturumda
+ * gören kullanıcı "konumsuz devam" ile kapıyı kapatıyor.
  *
  * KONTROL KULLANICI BAŞINA BİR KEZ; sonucu da modülde duruyor. Component
  * state'i tek başına yetmezdi: tema değişimi AppNavigator'ı `key` ile remount
@@ -74,7 +73,7 @@ export default function LocationAccessGate({
       Location.getForegroundPermissionsAsync()
         .then(({ status }) => {
           checkedUserKey = userKey;
-          permissionMissing = status !== "granted";
+          permissionMissing = status === "undetermined";
           if (!cancelled) setNeeded(permissionMissing);
         })
         .catch((err) => devLog("[locationGate] permission check failed:", err));
@@ -105,6 +104,11 @@ export default function LocationAccessGate({
     setNeeded(false);
   }, []);
 
+  const handleSkip = useCallback(() => {
+    permissionMissing = false;
+    setNeeded(false);
+  }, []);
+
   /**
    * Görünürlük TÜRETİLİYOR, ayrı bir state değil: üstümüze daha öncelikli bir
    * kapı açıldığında sheet iniyor, o kapı kapanınca kendiliğinden geri geliyor.
@@ -119,6 +123,7 @@ export default function LocationAccessGate({
       onGranted={handleGranted}
       layout="page"
       dismissible={false}
+      onSkip={handleSkip}
     />
   );
 }

@@ -128,7 +128,8 @@ export default function CampusAlwaysPrimingSheet({
       visible={visible}
       onClose={onClose}
       enableDynamicSizing
-      enablePanDownToClose
+      // İzin ekranında tek çıkış sistem penceresi; red sonrası kapatılabilir.
+      enablePanDownToClose={state === "denied"}
       // gorhom'un varsayılan tutamacı sabit gri (#80808080) — açık modda zemine
       // gömülüyor. `ink` tema ile dönüyor, kardeş sheet'lerle de aynı değer.
       handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
@@ -192,22 +193,24 @@ export default function CampusAlwaysPrimingSheet({
             </Text>
           </AnimatedPressable>
 
-          <AnimatedPressable
-            pressScale={0.98}
-            onPress={onClose}
-            accessibilityRole="button"
-            style={{ paddingVertical: 13, alignItems: "center" }}
-          >
-            <Text
-              style={{
-                color: colors.textSecondary,
-                fontSize: 15,
-                fontWeight: "600",
-              }}
+          {state === "denied" ? (
+            <AnimatedPressable
+              pressScale={0.98}
+              onPress={onClose}
+              accessibilityRole="button"
+              style={{ paddingVertical: 13, alignItems: "center" }}
             >
-              {t("campus.permission.later")}
-            </Text>
-          </AnimatedPressable>
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: "600",
+                }}
+              >
+                {t("campus.permission.later")}
+              </Text>
+            </AnimatedPressable>
+          ) : null}
         </View>
       </BottomSheetView>
     </AppBottomSheet>

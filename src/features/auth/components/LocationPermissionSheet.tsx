@@ -59,6 +59,8 @@ interface LocationPermissionSheetProps {
   requestOnOpen?: boolean;
   /** İzin alındı — parent koordinatı okur/navigate eder. Promise boyunca spinner döner. */
   onGranted: () => void | Promise<unknown>;
+  /** Verilirse reddedilmiş hâlde "konumsuz devam" çıkar (App Review 5.1.1(iv)). */
+  onSkip?: () => void;
   /**
    * "centered" — kısa sheet, arkasında zaten aynı içeriği taşıyan bir ekran var.
    * "page" — RegisterStep9 düzeninin sheet içindeki karşılığı; sheet tek başına
@@ -84,6 +86,7 @@ export default function LocationPermissionSheet({
   onClose,
   requestOnOpen = false,
   onGranted,
+  onSkip,
   layout = "centered",
   dismissible = true,
   testID = "sheet-location",
@@ -212,7 +215,7 @@ export default function LocationPermissionSheet({
   const primaryButton = (
     <View style={{ width: "100%" }}>
       <AnimatedPressable
-        // Tek CTA: izin reddedilmemişse "İzin Ver", reddedilmişse "Ayarlar".
+        // Tek CTA: izin reddedilmemişse nötr "Devam", reddedilmişse "Ayarlar".
         testID="sheet-location-allow"
         onPress={denied ? handleOpenSettings : handleRequest}
         disabled={busy}
@@ -270,8 +273,8 @@ export default function LocationPermissionSheet({
 
   const retryLink = denied ? (
     <TouchableOpacity
-      testID="sheet-location-retry"
-      onPress={handleRequest}
+      testID={onSkip ? "sheet-location-skip" : "sheet-location-retry"}
+      onPress={onSkip ?? handleRequest}
       disabled={busy}
       activeOpacity={0.8}
       style={{
@@ -282,7 +285,7 @@ export default function LocationPermissionSheet({
       }}
     >
       <Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "600" }}>
-        {t("auth.step9.retryButton")}
+        {onSkip ? t("auth.step9.continueWithout") : t("auth.step9.retryButton")}
       </Text>
     </TouchableOpacity>
   ) : null;

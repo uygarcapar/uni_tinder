@@ -118,7 +118,8 @@
     "autolinking": {
       "ios": {
         "buildFromSource": [
-          "expo-camera"
+          "expo-camera",
+          "expo-location"
         ]
       }
     }

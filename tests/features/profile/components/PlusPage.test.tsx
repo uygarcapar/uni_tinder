@@ -1,6 +1,7 @@
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );
+jest.mock('@/shared/components/AppModal');
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
