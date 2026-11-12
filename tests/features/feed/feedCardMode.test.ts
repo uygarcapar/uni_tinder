@@ -62,12 +62,19 @@ describe("resolveCardMode", () => {
     // Kullanıcı az önce Arkadaş'ı seçtiyse akışta da arkadaş aradığını
     // varsaymak doğru taraf.
     expect(resolveCardMode(["Dating", "Friends"], "Friends")).toBe("Friends");
-    expect(resolveCardMode(["Dating", "Friends"], "Dating")).toBe("Dating");
   });
 
   it("seçili mod uygun değilse listedeki ilk uygun moda düşüyor", () => {
     expect(resolveCardMode(["Friends"], "Dating")).toBe("Friends");
-    expect(resolveCardMode(["Dating"], "Friends")).toBe("Dating");
+  });
+
+  /**
+   * Bu build'de Flört yok (modeTheme > APP_MODES): yazar yalnız Flört'te
+   * açıksa kart SALT OKUNUR — Flört beğenisi gönderilemez.
+   */
+  it("yalnız Flört uygunsa null — kart salt okunur", () => {
+    expect(resolveCardMode(["Dating"], "Friends")).toBeNull();
+    expect(resolveCardMode(["Dating"], "Dating")).toBeNull();
   });
 
   it("hiçbir mod uygun değilse null — kart SALT OKUNUR", () => {
@@ -394,14 +401,17 @@ describe("authorLikedMe", () => {
 
 describe("normalizeModes", () => {
   it("geçerli değerleri sırasıyla koruyor", () => {
-    expect(normalizeModes(["Friends", "Dating"])).toEqual(["Friends", "Dating"]);
+    expect(normalizeModes(["Friends", "Dating"])).toEqual(["Friends"]);
   });
 
   it("mükerrerleri eliyor", () => {
-    expect(normalizeModes(["Dating", "Dating", "Friends"])).toEqual([
-      "Dating",
+    expect(normalizeModes(["Friends", "Friends", "Dating"])).toEqual([
       "Friends",
     ]);
+  });
+
+  it("bu build'de seçilemeyen modu (Flört) atıyor", () => {
+    expect(normalizeModes(["Dating"])).toEqual([]);
   });
 
   it("liste olmayan girdide boş dizi", () => {

@@ -206,15 +206,15 @@ describe('karar sonrası akış satırındaki not butonu', () => {
   /**
    * Mod `variables`ta yoksa mutasyonun SUNUCUYA GÖNDERDİĞİ değere düşülüyor
    * (`loadAppMode`) — iki yerin ayrışması yanlış kapsamı yamalardı. Diskte
-   * seçim yokken varsayılan Flört, yani kapanmamalı.
+   * seçim yokken varsayılan bu build'in tek modu (Arkadaş), yani kapanmalı.
    */
-  it('mod verilmediğinde diskteki seçime düşüyor (seçim yokken Flört → kapanmaz)', async () => {
+  it('mod verilmediğinde diskteki seçime düşüyor (seçim yokken Arkadaş → kapanır)', async () => {
     const { result } = renderSwipe();
     result.current.mutate({ direction: 'right', userId: TARGET } as any);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(rows()[0].note?.state).toBe('Ok');
+    expect(rows()[0].note?.state).toBe('AlreadySwiped');
   });
 
   /**

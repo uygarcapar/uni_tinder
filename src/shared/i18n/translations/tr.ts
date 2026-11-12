@@ -155,7 +155,7 @@ const tr = {
   deleteAccount: {
     alertTitle: 'Hesabını kalıcı olarak sil',
     alertMsg:
-      'Profilin, eşleşmelerin ve tüm mesajların anında silinir. Bu işlem geri alınamaz.\n\nSadece ara vermek istiyorsan bunun yerine hesabını dondurabilirsin.',
+      'Profilin, bağlantıların ve tüm mesajların anında silinir. Bu işlem geri alınamaz.\n\nHesabını silmek Plus+ aboneliğini iptal etmez. Tekrar ücret alınmaması için aboneliği App Store abonelik ayarlarından iptal et.\n\nSadece ara vermek istiyorsan bunun yerine hesabını dondurabilirsin.',
     cancel: 'Vazgeç',
     confirm: 'Kalıcı Olarak Sil',
     passwordLabel: 'Şifren',
@@ -259,7 +259,7 @@ const tr = {
           'Yüklediğin fotoğraflar ve yazdığın metinler sana aittir. Bu içerikleri uygulamada gösterebilmemiz için bize sınırlı bir kullanım izni vermiş olursun; bu izin yalnızca hizmeti sunmak içindir ve içeriği sildiğinde ya da hesabını kapattığında sona erer. Fotoğraflar kurallara uygunluk açısından moderasyondan geçebilir.',
         sectionTitle5: 'Plus+ ve Satın Alımlar',
         section5Content:
-          'Plus+ abonelikleri App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire ve Spark gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
+          'Plus+ abonelikleri cihazının uygulama mağazası üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire ve Spark gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
           'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır. Engellediğin kullanıcılar ekibimize bildirilir ve incelenir.',
@@ -268,7 +268,7 @@ const tr = {
           "Lit yalnızca tanışmayı kolaylaştıran bir platformdur; kullanıcıların kimliğini, beyanlarını veya davranışlarını garanti etmez. Tanıştığın kişilerle buluşurken dikkatli ol ve kendi güvenliğini önceliklendir. Hizmet 'olduğu gibi' sunulur; bakım, güncelleme veya teknik nedenlerle kesintiler yaşanabilir.",
         sectionTitle8: 'Değişiklikler ve İletişim',
         section8Content:
-          'Bu koşulları zaman zaman güncelleyebiliriz. Önemli değişiklikleri uygulama üzerinden duyururuz; güncellemeden sonra Lit\'i kullanmaya devam etmen yeni koşulları kabul ettiğin anlamına gelir. Sorularınız için destek@lit.com adresinden bize ulaşabilirsiniz.',
+          'Bu koşulları zaman zaman güncelleyebiliriz. Önemli değişiklikleri uygulama üzerinden duyururuz; güncellemeden sonra Lit\'i kullanmaya devam etmen yeni koşulları kabul ettiğin anlamına gelir. Sorularınız için info@4ourstack.com adresinden bize ulaşabilirsiniz.',
       },
     },
     login: {
@@ -468,7 +468,7 @@ const tr = {
 
         **Cihaz ve teknik veriler.** Bildirim gönderebilmek için cihaz kimliğiniz (token), platform ve uygulama sürümünüz, IP adresiniz, istemci bilgisi ile hata ve çökme kayıtları.
 
-        **Abonelik verileri.** Plus+ abonelik durumunuz ve satın alma geçmişiniz. Kart ve ödeme bilgileriniz App Store veya Google Play tarafından işlenir; bu bilgiler bize iletilmez ve tarafımızca saklanmaz.
+        **Abonelik verileri.** Plus+ abonelik durumunuz ve satın alma geçmişiniz. Kart ve ödeme bilgileriniz cihazınızın uygulama mağazası tarafından işlenir; bu bilgiler bize iletilmez ve tarafımızca saklanmaz.
 
         **Güvenlik ve moderasyon verileri.** Yaptığınız veya hakkınızda yapılan bildirimler, engellemeler, fotoğraf moderasyonu sonuçları, itirazlarınız ile askıya alma veya hesap kapatma kayıtları.
 
@@ -477,7 +477,7 @@ const tr = {
 
       sectionTitle3: 'Özel Nitelikli Kişisel Veriler',
       section3Content: `
-        lit bir tanışma uygulaması olduğu için iki noktada KVKK'nın 6. maddesi anlamında özel nitelikli kişisel veri işlenebilir:
+        lit'in profil ve doğrulama özelliklerinin işleyişi nedeniyle iki noktada KVKK'nın 6. maddesi anlamında özel nitelikli kişisel veri işlenebilir:
 
         **Cinsel yönelime ilişkin veriler.** Eşleşme tercihleriniz, cinsel yaşamınıza ilişkin bir bilgi ortaya koyabilir.
 
@@ -662,7 +662,7 @@ const tr = {
     },
     step6: {
       title: 'Yaşını gir.',
-      description: 'Doğum tarihin, doğru eşleşmeler bulmamıza yardımcı olur.',
+      description: 'Doğum tarihin 18 yaşından büyük olduğunu doğrular.',
       dayLabel: 'Gün',
       dayPlaceholder: 'gg',
       monthLabel: 'Ay',
@@ -1076,7 +1076,7 @@ const tr = {
       // Boş sohbette tek dokunuşla gönderilen açılış önerileri (pill).
       suggestion1: 'Selam',
       suggestion2: 'Nasıl gidiyor?',
-      suggestion3: 'Profilin çok iyi',
+      suggestion3: 'Bu hafta neler yapıyorsun?',
       suggestion4: 'Bugün ne yaptın?',
     },
     media: {
@@ -1316,7 +1316,7 @@ const tr = {
       // sayfanın adı yazıyor — orada satılacak bir şey kalmadı.
       pageTitle: "Lit Plus'a Geç",
       pageTitlePremium: 'Lit Plus+ üyesisin',
-      description: 'Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!',
+      description: 'Lit Plus ile seni beğenenleri gör, daha fazla kurtarma hakkı al ve kampüste daha çok kişiyle tanış.',
       // Başlıkla aynı ayrım: aboneye satış cümlesi değil, zaten sahip olduğu
       // şeyi anlatan bir cümle yazıyor.
       descriptionPremium: 'Bütün plus özellikleri açık. Aboneliğinin durumu aşağıdaki kartta.',
@@ -1734,7 +1734,7 @@ const tr = {
     // kaldı" demek olmayan bir sayacı ima ederdi. Free'ye teklif başlığın
     // yanındaki pill'den geliyor (viewLikersAction).
     recoverUnlimited: 'Kurtarma hakkın sınırsız.',
-    recoverSuccessTitle: 'Eşleşme kurtarıldı 💞',
+    recoverSuccessTitle: 'Eşleşme kurtarıldı',
     recoverSuccessMessage: 'Zaten seni beğenmişti, sohbet birazdan açılacak.',
     recoverFailed: 'Kurtarılamadı.',
   },
@@ -1859,7 +1859,7 @@ const tr = {
       smoking: 'Sigara Kullanımı',
       smokingDescription: 'Yaşam tarzını belirterek sana en uygun kişileri bul.',
       zodiac: 'Burç',
-      zodiacDescription: 'Burcunu ekle, astroloji uyumunu ve potansiyel eşleşmeleri keşfet.',
+      zodiacDescription: 'Burcunu profiline ekle.',
       relationshipIntent: 'İlişki Niyetin',
       relationshipIntentDescription: 'Ne aradığını belirterek, seninle aynı beklentilere sahip kişilerle tanış.',
       completeButton: 'Tamamla',

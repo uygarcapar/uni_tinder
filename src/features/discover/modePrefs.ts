@@ -1,5 +1,5 @@
 import { appPrefs } from "@/shared/utils/appPrefs";
-import { DEFAULT_APP_MODE, isAppMode, type AppMode } from "./modeTheme";
+import { DEFAULT_APP_MODE, isEnabledAppMode, type AppMode } from "./modeTheme";
 
 /**
  * Seçili uygulama modunun (Dating/Friends) oturumlar arası kalıcılığı
@@ -54,7 +54,9 @@ export function peekAppMode(userId?: string | null): AppMode | null {
     if (!parsed || parsed.v !== SCHEMA_VERSION) return null;
     // Bilinmeyen değer (eski sürüm / kurcalanmış disk) sorgu parametresine
     // girmemeli: sunucu 400 döndürür.
-    return isAppMode(parsed.mode) ? parsed.mode : null;
+    // Bu build'de seçilemeyen mod (eski sürümden kalan Dating) seçim
+    // sayılmıyor — varsayılana düşülüyor.
+    return isEnabledAppMode(parsed.mode) ? parsed.mode : null;
   } catch {
     return null;
   }

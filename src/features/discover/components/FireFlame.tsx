@@ -35,7 +35,7 @@ import FlameCanvas, {
   FlameWarmCanvas,
   prewarmFlameWave,
 } from "@/features/discover/components/FireFlameCanvas";
-import { isAppMode, type AppMode } from "@/features/discover/modeTheme";
+import { isEnabledAppMode, type AppMode } from "@/features/discover/modeTheme";
 
 /**
  * Kart değişimini bekleten taraf (bkz. flameSweep) "flameSweepCover" olayını
@@ -95,7 +95,7 @@ export default function FireFlame() {
   useEffect(
     () =>
       uiBus.on("flamePull", (payload?: { mode?: AppMode }) => {
-        setPull({ mode: isAppMode(payload?.mode) ? payload.mode : undefined });
+        setPull({ mode: isEnabledAppMode(payload?.mode) ? payload.mode : undefined });
       }),
     [],
   );
@@ -148,7 +148,7 @@ export default function FireFlame() {
       const hold = !!payload?.hold;
       // Bilinmeyen/eksik mod canvas'ın kendi varsayılanına (Dating) düşsün —
       // `isAppMode` kapısı, uiBus tipsiz olduğu için.
-      const mode = isAppMode(payload?.mode) ? payload.mode : undefined;
+      const mode = isEnabledAppMode(payload?.mode) ? payload.mode : undefined;
       holding = hold;
       // Üst üste kutlamalarda YENİ key veriliyor: canvas remount olur, dalga
       // baştan başlar. Aynı key kalsaydı ikinci alev, birincinin ekranı terk

@@ -1,7 +1,7 @@
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { File, UploadType } from "expo-file-system";
-import type { AppMode } from "@/features/discover/modeTheme";
+import { DEFAULT_APP_MODE, type AppMode } from "@/features/discover/modeTheme";
 import { CAMPUS_CODES } from "./campusCodes";
 import { normalizeCampusBoundary } from "./campusBoundary";
 import type {
@@ -104,12 +104,12 @@ class CampusService {
   /**
    * Yüzeyin durumu — MOD'LU.
    *
-   * `mode` BOŞSA parametre HİÇ gönderilmiyor (`getMoments` ile aynı kural):
-   * boş string sunucuda enum çözümlemesini patlatıyor. Parametresiz çağrı
-   * sunucuda `Dating` sayılıyor, diğer mod'lu uçlarla aynı varsayılan.
+   * `mode` BOŞSA bu build'in tek modu (`DEFAULT_APP_MODE`) gidiyor: boş string
+   * sunucuda enum çözümlemesini patlatıyor, parametresiz çağrı da sunucuda
+   * `Dating` sayılıyor (`getMoments` ile aynı kural).
    */
   getMe(mode?: AppMode | null): Promise<CampusMeDto> {
-    const query = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+    const query = `?mode=${encodeURIComponent(mode || DEFAULT_APP_MODE)}`;
     return guard(
       () => api.get(`${API_ENDPOINTS.CAMPUS_ME}${query}`),
       (res) => requireResult<CampusMeDto>(res, "me"),
@@ -119,8 +119,9 @@ class CampusService {
   /**
    * An listesi — cursor sayfalama.
    *
-   * `mode` BOŞSA parametre HİÇ gönderilmiyor: boş string sunucuda enum
-   * çözümlemesini patlatıyor (`swipeService.modeParam` ile aynı kural).
+   * `mode` BOŞSA bu build'in tek modu gidiyor: boş string sunucuda enum
+   * çözümlemesini patlatıyor, parametresiz çağrı Dating sayılıyor
+   * (`swipeService.modeParam` ile aynı kural).
    */
   getMoments(args: {
     mode?: AppMode | null;
@@ -128,7 +129,7 @@ class CampusService {
     pageSize?: number;
   }): Promise<CampusMomentsPage> {
     const params = new URLSearchParams();
-    if (args.mode) params.set("mode", args.mode);
+    params.set("mode", args.mode || DEFAULT_APP_MODE);
     if (args.cursor) params.set("cursor", args.cursor);
     params.set("pageSize", String(args.pageSize ?? DEFAULT_PAGE_SIZE));
     return guard(
@@ -216,9 +217,9 @@ class CampusService {
    * kullanıcıya gösterilecek bir sınır değil.
    */
   passMoment(id: string, mode?: AppMode | null): Promise<void> {
-    // ⚠️ `mode` ANIN MODUYLA AYNI olmak zorunda (sözleşme §7). Boşsa parametre
-    // HİÇ gönderilmiyor — boş string sunucuda enum çözümlemesini patlatıyor.
-    const query = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+    // ⚠️ `mode` ANIN MODUYLA AYNI olmak zorunda (sözleşme §7). Boşsa bu
+    // build'in tek modu gidiyor — modsuz çağrı sunucuda Dating sayılıyor.
+    const query = `?mode=${encodeURIComponent(mode || DEFAULT_APP_MODE)}`;
     return guard(
       () => api.post(`${API_ENDPOINTS.CAMPUS_MOMENT_PASS(id)}${query}`, {}),
       () => undefined,

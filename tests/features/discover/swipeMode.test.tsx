@@ -115,6 +115,7 @@ describe('useSwipeMutation — mod her aksiyonda gidiyor', () => {
     result.current.mutate({ direction: 'right', userId: TARGET });
 
     await waitFor(() => expect(mockLikeUser).toHaveBeenCalled());
-    expect(mockLikeUser.mock.calls[0][2]).toBe('Dating');
+    // Varsayılan bu build'in tek modu (modeTheme > APP_MODES).
+    expect(mockLikeUser.mock.calls[0][2]).toBe('Friends');
   });
 });

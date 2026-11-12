@@ -40,7 +40,7 @@ const post = (over: Partial<FeedPostDto> = {}): FeedPostDto =>
     status: "Published",
     replyCount: null,
     reply: { state: "Ok", conversationId: null },
-    note: { state: "Ok", availableModes: ["Dating"] },
+    note: { state: "Ok", availableModes: ["Friends"] },
     ...over,
   }) as FeedPostDto;
 
@@ -101,7 +101,7 @@ describe("postNoteRequest", () => {
     expect(postNoteRequest(post(), 3, "Dating")).toEqual({
       action: "send",
       userId: "u1",
-      mode: "Dating",
+      mode: "Friends",
       paywallReason: null,
     });
   });

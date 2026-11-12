@@ -30,7 +30,10 @@ import {
 // Plan kartının zemini upsell kartıyla ORTAK (gradyan + varsa fotoğraf).
 import { PlusCardArt, isPlusArtWarm } from "@/features/profile/plusCardArt";
 import { useAppMode } from "@/features/discover/useAppMode";
-import { modeFireTint } from "@/features/discover/modeTheme";
+import {
+  MODE_SWITCHING_ENABLED,
+  modeFireTint,
+} from "@/features/discover/modeTheme";
 import { colors, ink, onMediaAt } from "@/shared/theme/colors";
 
 /**
@@ -586,8 +589,14 @@ export function PurchaseHeading({ flow }: { flow: PurchaseFlow }) {
             `description` anahtarını okuyor ama orada metin üç satıra
             kırpılıyor (`numberOfLines={3}`) ve dördüncü cümle tabloyu
             iteceğine görünmeden kesilirdi. */}
-        {" "}
-        {t('discover.premium.descriptionModes')}
+        {/* Tek modlu build'de (Flört yok) "iki modda geçerli" demek yalan
+            olurdu — not yalnız mod seçimi varken çiziliyor. */}
+        {MODE_SWITCHING_ENABLED ? (
+          <>
+            {" "}
+            {t('discover.premium.descriptionModes')}
+          </>
+        ) : null}
       </Text>
     </View>
   );

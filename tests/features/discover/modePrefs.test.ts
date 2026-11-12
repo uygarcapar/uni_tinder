@@ -34,18 +34,18 @@ describe('modePrefs', () => {
   it('anahtar userId ile scope’lu — başka kullanıcıya sızmıyor', () => {
     saveAppMode(USER, 'Friends');
     expect(peekAppMode('user-2')).toBeNull();
-    expect(loadAppMode('user-2')).toBe('Dating');
+    expect(loadAppMode('user-2')).toBe('Friends');
   });
 
-  it('yazılmamışken load Dating, peek null', () => {
-    expect(loadAppMode(USER)).toBe('Dating');
+  it('yazılmamışken load Friends, peek null', () => {
+    expect(loadAppMode(USER)).toBe('Friends');
     expect(peekAppMode(USER)).toBeNull();
   });
 
   it('userId yokken yazma no-op, okuma varsayılan', () => {
     saveAppMode(undefined, 'Friends');
     expect(peekAppMode(undefined)).toBeNull();
-    expect(loadAppMode(undefined)).toBe('Dating');
+    expect(loadAppMode(undefined)).toBe('Friends');
   });
 
   it('bozuk JSON / eski şema / bilinmeyen değer = seçim yok', () => {
@@ -58,7 +58,13 @@ describe('modePrefs', () => {
     // Bilinmeyen değer sorgu parametresine girmemeli (sunucu 400 döner).
     appPrefs.set(KEY, JSON.stringify({ v: 1, mode: 'Hookup' }));
     expect(peekAppMode(USER)).toBeNull();
-    expect(loadAppMode(USER)).toBe('Dating');
+    expect(loadAppMode(USER)).toBe('Friends');
+  });
+
+  it('eski sürümden kalan Flört seçimi = seçim yok (bu build\'de Flört yok)', () => {
+    appPrefs.set(KEY, JSON.stringify({ v: 1, mode: 'Dating' }));
+    expect(peekAppMode(USER)).toBeNull();
+    expect(loadAppMode(USER)).toBe('Friends');
   });
 });
 
@@ -96,10 +102,15 @@ describe('writeAppMode', () => {
   });
 
   it('seçim HİÇ yokken varsayılan moda yazmak da bir değişim', () => {
-    // Disk boş + "Dating" yazımı: peek null olduğu için gerçek bir seçim
+    // Disk boş + "Friends" yazımı: peek null olduğu için gerçek bir seçim
     // kaydediliyor, olay da atılıyor.
-    expect(writeAppMode(USER, 'Dating')).toBe(true);
-    expect(peekAppMode(USER)).toBe('Dating');
+    expect(writeAppMode(USER, 'Friends')).toBe(true);
+    expect(peekAppMode(USER)).toBe('Friends');
+  });
+
+  it('bu build\'de seçilemeyen mod (Flört) yazılmıyor — bildirimden de', () => {
+    expect(writeAppMode(USER, 'Dating')).toBe(false);
+    expect(peekAppMode(USER)).toBeNull();
   });
 
   it('bilinmeyen değer yazılmıyor', () => {

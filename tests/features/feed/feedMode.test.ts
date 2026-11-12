@@ -98,22 +98,21 @@ describe('oturum aynası', () => {
     expect(feedAllowedForSession()).toBe(true);
   });
 
-  it('diskteki Flört tercihi tohumlanınca kapalı', () => {
+  it('eski sürümden kalan Flört tercihi Arkadaş sayılıyor — akış açık', () => {
+    // Bu build'de Flört seçilemiyor (modeTheme > APP_MODES).
     saveAppMode(USER, 'Dating');
     initFeedMode(USER);
-    expect(feedAllowedForSession()).toBe(false);
+    expect(feedAllowedForSession()).toBe(true);
   });
 
-  it('oturum ortasında mod değişimini CANLI izliyor', () => {
-    saveAppMode(USER, 'Dating');
-    initFeedMode(USER);
+  it('oturum ortasında mod değişimini CANLI izliyor, Flört olayını yok sayıyor', () => {
     expect(feedAllowedForSession()).toBe(false);
 
     uiBus.emit(APP_MODE_EVENT, { mode: 'Friends' });
     expect(feedAllowedForSession()).toBe(true);
 
     uiBus.emit(APP_MODE_EVENT, { mode: 'Dating' });
-    expect(feedAllowedForSession()).toBe(false);
+    expect(feedAllowedForSession()).toBe(true);
   });
 
   it('bilinmeyen moddaki olay aynayı BOZMUYOR', () => {
@@ -148,21 +147,19 @@ describe('openFeed mod kapısı', () => {
     expect(mockNavigate).toHaveBeenCalled();
   });
 
-  it('Flört modunda açmıyor ve NAVIGATE ETMİYOR', () => {
+  it('mod bilinmezken açmıyor ve NAVIGATE ETMİYOR', () => {
     enableFeedFlag();
-    saveAppMode(USER, 'Dating');
-    initFeedMode(USER);
+    // Ayna tohumlanmadı → kapalı (bu build'de Flört yok; kapalı hâlin tek
+    // kaynağı tohumlanmamış oturum).
 
     expect(openFeed('feed')).toBe(false);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('Flört modunda BEKLEYEN İSTEK de bırakmıyor', () => {
+  it('mod bilinmezken BEKLEYEN İSTEK de bırakmıyor', () => {
     // Yoksa kullanıcı Arkadaş'a geçip akışa girdiğinde günler önceki bir
     // bildirim isteği sayfayı çeviriyordu (feedEntry > pendingPage kalıcı).
     enableFeedFlag();
-    saveAppMode(USER, 'Dating');
-    initFeedMode(USER);
 
     openFeed('mine');
     expect(consumeFeedRequest()).toBeNull();

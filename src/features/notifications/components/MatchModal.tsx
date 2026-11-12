@@ -16,7 +16,7 @@ import lazyChunk from "@/shared/components/lazyChunk";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
 import { flameCurtainGeometry } from "@/features/discover/components/flameWavePath";
-import { isAppMode, DEFAULT_APP_MODE } from "@/features/discover/modeTheme";
+import { isEnabledAppMode, DEFAULT_APP_MODE } from "@/features/discover/modeTheme";
 import uiBus from "@/shared/services/uiBus";
 import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
@@ -332,7 +332,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
    * Alan YOKSA Dating: eski sunucu `mode` göndermiyor ve bugünkü tüm
    * eşleşmeler flört eşleşmesi.
    */
-  const curtainMode = isAppMode(match?.mode) ? match.mode : DEFAULT_APP_MODE;
+  const curtainMode = isEnabledAppMode(match?.mode) ? match.mode : DEFAULT_APP_MODE;
 
   if (!match) return null;
 

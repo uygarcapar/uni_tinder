@@ -149,7 +149,7 @@ const en = {
   deleteAccount: {
     alertTitle: 'Permanently delete your account',
     alertMsg:
-      'Your profile, matches and all messages are deleted immediately. This cannot be undone.\n\nIf you just need a break, you can deactivate your account instead.',
+      'Your profile, connections and all messages are deleted immediately. This cannot be undone.\n\nDeleting your account does not cancel a Plus+ subscription. Cancel it in your App Store subscription settings so you are not charged again.\n\nIf you just need a break, you can deactivate your account instead.',
     cancel: 'Cancel',
     confirm: 'Delete Permanently',
     passwordLabel: 'Your password',
@@ -253,7 +253,7 @@ const en = {
           'The photos you upload and the text you write remain yours. You grant us a limited permission to display them so we can run the service; that permission exists only for providing the service and ends when you delete the content or close your account. Photos may go through moderation to check they follow the rules.',
         sectionTitle5: 'Plus+ and Purchases',
         section5Content:
-          'Plus+ subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires and Sparks are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
+          'Plus+ subscriptions are sold through your device’s app store and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires and Sparks are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
           'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again. Users you block are reported to our team for review.',
@@ -262,7 +262,7 @@ const en = {
           'Lit is a platform that makes meeting people easier; we do not guarantee the identity, statements or behaviour of other users. Be careful when you meet someone and put your own safety first. The service is provided "as is" and may be interrupted for maintenance, updates or technical reasons.',
         sectionTitle8: 'Changes and Contact',
         section8Content:
-          'We may update these terms from time to time. We announce significant changes in the app, and continuing to use Lit after an update means you accept the new terms. For questions, reach us at destek@lit.com.',
+          'We may update these terms from time to time. We announce significant changes in the app, and continuing to use Lit after an update means you accept the new terms. For questions, reach us at info@4ourstack.com.',
       },
     },
     login: {
@@ -463,7 +463,7 @@ const en = {
 
         **Device and technical data.** Your device identifier (token) so we can send notifications, your platform and app version, your IP address, client information, and error and crash records.
 
-        **Subscription data.** Your Plus+ subscription status and purchase history. Your card and payment details are processed by the App Store or Google Play; that information is not passed to us and is not stored by us.
+        **Subscription data.** Your Plus+ subscription status and purchase history. Your card and payment details are processed by your device's app store; that information is not passed to us and is not stored by us.
 
         **Safety and moderation data.** Reports you make or that are made about you, blocks, photo moderation results, your appeals, and suspension or account closure records.
 
@@ -472,7 +472,7 @@ const en = {
 
       sectionTitle3: 'Special Categories of Personal Data',
       section3Content: `
-        Because lit is a dating application, special categories of personal data within the meaning of Article 6 of KVKK may be processed in two places:
+        Because of how lit's profile and verification features work, special categories of personal data within the meaning of Article 6 of KVKK may be processed in two places:
 
         **Data relating to sexual orientation.** Your match preferences may reveal information about your sexual life.
 
@@ -657,7 +657,7 @@ const en = {
     },
     step6: {
       title: 'Enter your age.',
-      description: 'Your date of birth helps us find the right matches for you.',
+      description: 'Your date of birth confirms you are 18 or older.',
       dayLabel: 'Day',
       dayPlaceholder: 'dd',
       monthLabel: 'Month',
@@ -1066,7 +1066,7 @@ const en = {
       // One-tap opener suggestions shown as pills in an empty chat.
       suggestion1: 'Hey',
       suggestion2: 'How’s it going?',
-      suggestion3: 'Love your profile',
+      suggestion3: 'What are you up to this week?',
       suggestion4: 'What did you get up to today?',
     },
     media: {
@@ -1295,7 +1295,7 @@ const en = {
       // instead of a sales line — there is nothing left to sell there.
       pageTitle: 'Get Lit Plus',
       pageTitlePremium: "You're a Lit Plus+ member",
-      description: 'Speed up your matches with Lit Plus, see who likes you, and discover more!',
+      description: 'See who likes you, get more recoveries and meet more people on campus with Lit Plus.',
       // Same split as the title: subscribers get a sentence about what they
       // already have, not a pitch for something they have already bought.
       descriptionPremium: 'Every plus feature is unlocked. Your subscription status is on the card below.',
@@ -1682,7 +1682,7 @@ const en = {
     // counter that does not exist. Free users get the offer from the pill next
     // to the heading instead (viewLikersAction).
     recoverUnlimited: 'Recoveries are unlimited.',
-    recoverSuccessTitle: 'Match recovered 💞',
+    recoverSuccessTitle: 'Match recovered',
     recoverSuccessMessage: 'They already liked you. The chat will open shortly.',
     recoverFailed: 'Could not recover.',
   },
@@ -1805,7 +1805,7 @@ const en = {
       smoking: 'Smoking',
       smokingDescription: 'Find people most suited to you by specifying your lifestyle.',
       zodiac: 'Zodiac Sign',
-      zodiacDescription: 'Add your zodiac sign and discover astrological compatibility and potential matches.',
+      zodiacDescription: 'Add your zodiac sign to your profile.',
       relationshipIntent: 'What You Are Looking For',
       relationshipIntentDescription: 'By specifying what you are looking for, meet people with the same expectations as you.',
       completeButton: 'Complete',

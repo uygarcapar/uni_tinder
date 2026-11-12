@@ -1,7 +1,7 @@
 import { Easing } from 'react-native';
 import { Notifier } from 'react-native-notifier';
 import i18n from '@/shared/i18n';
-import { isAppMode, modeTitleKey } from '@/features/discover/modeTheme';
+import { isAppMode, isEnabledAppMode, modeTitleKey } from '@/features/discover/modeTheme';
 import { readAppModeFor, writeAppMode } from '@/features/discover/useAppMode';
 import { navigationRef } from '@/shared/services/navigationRef';
 import MessageToast, { MessageToastProps } from '@/shared/components/toaster/MessageToast';
@@ -81,6 +81,9 @@ export function showMessageToast({
   mode,
   selfUserId,
 }: ShowMessageToastArg) {
+  // Bu build'de seçilemeyen modun (Flört) sohbeti listede görünmüyor; ona
+  // götüren bir toast da çıkmıyor.
+  if (isAppMode(mode) && !isEnabledAppMode(mode)) return;
   const convMode = isAppMode(mode) ? mode : null;
   const modeLabel =
     convMode && convMode !== readAppModeFor(selfUserId)

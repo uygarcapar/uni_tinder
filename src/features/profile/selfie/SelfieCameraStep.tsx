@@ -234,11 +234,17 @@ export default function SelfieCameraStep({
               : t("profile.permissions.openSettings")}
           </Text>
         </AnimatedPressable>
-        <AnimatedPressable onPress={onCancel} pressScale={1}>
-          <Text style={{ padding: 8, fontSize: 14, color: colors.textSecondary }}>
-            {t("common.cancel")}
-          </Text>
-        </AnimatedPressable>
+        {/* Sistem izin penceresinden ÖNCEKİ ekranda tek, nötr bir buton
+            olmalı (App Store 5.1.1(iv)) — İptal yalnız pencere artık
+            açılamıyorken (reddedilmiş izin, Ayarlar yolu) çiziliyor. Reddeden
+            kullanıcı bir sonraki çizimde bu çıkışı buluyor. */}
+        {canAsk ? null : (
+          <AnimatedPressable onPress={onCancel} pressScale={1}>
+            <Text style={{ padding: 8, fontSize: 14, color: colors.textSecondary }}>
+              {t("common.cancel")}
+            </Text>
+          </AnimatedPressable>
+        )}
       </Centered>
     );
   }

@@ -110,7 +110,7 @@ import {
   useAppMode,
   writeAppMode,
 } from '@/features/discover/useAppMode';
-import { isAppMode } from '@/features/discover/modeTheme';
+import { isAppMode, isEnabledAppMode } from '@/features/discover/modeTheme';
 import { referralKeys } from '@/features/profile/referralKeys';
 import { REFERRAL_NOTIFICATION_TYPES } from '@/features/notifications/notificationsService';
 import { checkPendingNotices, markNoticeSeen } from '@/features/notifications/pendingNoticesService';
@@ -1151,6 +1151,9 @@ export default function AppNavigator() {
          * taşımıyorsa bugünkü davranış korunur.
          */
         const likeMode = payload?.mode;
+        // Bu build'de Flört yok (bkz. modeTheme > APP_MODES): o moddan gelen
+        // beğeni listede de görünmüyor, toast'ı da çıkmıyor.
+        if (isAppMode(likeMode) && !isEnabledAppMode(likeMode)) return;
         const meId = store.getState()?.auth?.user?.id;
         const isOtherMode =
           isAppMode(likeMode) && likeMode !== readAppModeFor(meId);

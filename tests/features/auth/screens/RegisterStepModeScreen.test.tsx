@@ -98,32 +98,27 @@ beforeEach(() => {
   });
 });
 
+// Bu build'de yalnız Arkadaş seçilebilir (modeTheme > APP_MODES): ekran tek
+// kart çiziyor, Flört kartı hiç yok. (Kayıt akışı bu adımı zaten atlıyor —
+// bkz. registrationFlow — ekran yalnız rotada kayıtlı.)
 it("karta basmak modu store'a yazıyor", () => {
   const { getByTestId } = setup();
-  fireEvent.press(getByTestId('reg-mode-Dating'));
+  fireEvent.press(getByTestId('reg-mode-Friends'));
   expect(mockDispatch).toHaveBeenCalledWith({
     type: 'auth/updateRegistrationField',
-    payload: { field: 'mode', value: 'Dating' },
+    payload: { field: 'mode', value: 'Friends' },
   });
 });
 
-it('ikinci karta basınca seçim el değiştiriyor — tek tik', () => {
-  const screen = setup();
-  fireEvent.press(screen.getByTestId('reg-mode-Dating'));
-  fireEvent.press(screen.getByTestId('reg-mode-Friends'));
-  expect(mockAuthState.registrationForm.mode).toBe('Friends');
-
-  screen.rerender(<RegisterStepModeScreen navigation={nav} route={{} as any} />);
-  expect(screen.queryAllByText('sficon:checkmark')).toHaveLength(1);
+it('Flört kartı çizilmiyor', () => {
+  const { queryByTestId } = setup();
+  expect(queryByTestId('reg-mode-Dating')).toBeNull();
 });
 
 it("store'da mode varken ekran tikli açılıyor", () => {
   mockAuthState = { registrationForm: { mode: 'Friends' } };
   const { getAllByText, getByTestId } = setup();
   expect(getAllByText('sficon:checkmark')).toHaveLength(1);
-  // Checkbox YUVASI iki kartta da çizili — eski satır kartında bu yuva yoktu,
-  // ekranın gerçekten fotoğraflı ModeChoiceCard'a geçtiğini bu ayırt ediyor.
-  expect(getByTestId('mode-card-Dating-checkbox')).toBeTruthy();
   expect(getByTestId('mode-card-Friends-checkbox')).toBeTruthy();
 });
 

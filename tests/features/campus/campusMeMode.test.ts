@@ -103,11 +103,12 @@ describe('campusService.getMe — mod parametresi', () => {
     expect(urlOf(mockGet.mock.calls[0])).toContain('mode=Friends');
   });
 
-  it('mod boşsa parametre HİÇ gitmiyor', async () => {
-    // Boş string sunucuda enum çözümlemesini patlatıyor (`getMoments` ve
-    // `passMoment` ile aynı kural); parametresiz çağrı sunucuda Dating.
+  it('mod boşsa bu build\'in tek modu gidiyor', async () => {
+    // Boş string sunucuda enum çözümlemesini patlatıyor, parametresiz çağrı
+    // da sunucuda Dating sayılıyor (`getMoments` ve `passMoment` ile aynı
+    // kural) — bu build'de Flört yok, mod her zaman açık gidiyor.
     await campusService.getMe(null);
-    expect(urlOf(mockGet.mock.calls[0])).not.toContain('mode');
+    expect(urlOf(mockGet.mock.calls[0])).toContain('mode=Friends');
   });
 });
 

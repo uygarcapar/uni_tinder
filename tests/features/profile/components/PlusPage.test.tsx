@@ -206,9 +206,9 @@ describe('PlusPage — render & loading', () => {
     await waitFor(() => tree.getByTestId('plan-card-monthly'));
     for (const key of PREMIUM_BENEFIT_KEYS) {
       // `fire` satırı ürün adını {{fire}} ile alıyor; test varsayılan modda
-      // (Dating) render ettiği için beklenen ad "Fire".
+      // (Friends) render ettiği için beklenen ad "Spark".
       const label = i18n.t(premiumBenefitLabelKey(key), {
-        fire: i18n.t('discover.mode.fireName.Dating'),
+        fire: i18n.t('discover.mode.fireName.Friends'),
       });
       expect(label).not.toContain('premium.benefits');
       expect(tree.getByText(label)).toBeTruthy();
@@ -222,7 +222,7 @@ describe('PlusPage — render & loading', () => {
     expect(tree.getByText('Satın alımları geri yükle')).toBeTruthy();
     // Marka başlığı KALDIRILDI (sekme + zemin zaten söylüyor) — tepede yalnız
     // tek cümlelik vaat duruyor.
-    expect(tree.getByText(/Lit Plus ile eşleşmelerini hızlandır/)).toBeTruthy();
+    expect(tree.getByText(/Lit Plus ile seni beğenenleri gör/)).toBeTruthy();
   });
 
   // Katalog YALNIZ sayfa bir kez görüldüğünde çekiliyor: sekmeye hiç
@@ -429,7 +429,7 @@ describe('PlusPage — purchase flow', () => {
     mockGetOfferings.mockResolvedValue({});
     const tree = setup();
     await waitFor(() =>
-      tree.getByText(/Lit Plus ile eşleşmelerini hızlandır/)
+      tree.getByText(/Lit Plus ile seni beğenenleri gör/)
     );
 
     expect(tree.queryByTestId('plan-card-monthly')).toBeNull();

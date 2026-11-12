@@ -65,10 +65,10 @@ import en from '@/shared/i18n/translations/en';
 
 /**
  * Metinler artık ürün adını {{fire}} ile alıyor (moda göre fire/spark,
- * küçük harf — jest fısıltısı kaydı). Varsayılan mod Dating → "fire";
+ * küçük harf — jest fısıltısı kaydı). Varsayılan mod Friends → "spark";
  * ham sözlük değeri değil, EKRANDA görünen hâli bekleniyor.
  */
-const withFire = (s: string, fire = 'fire') => s.replace(/\{\{fire\}\}/g, fire);
+const withFire = (s: string, fire = 'spark') => s.replace(/\{\{fire\}\}/g, fire);
 const PULL_HINT = withFire(tr.discover.swipe.firePullHint);
 const RELEASE_HINT = withFire(tr.discover.swipe.fireReleaseHint);
 
@@ -133,18 +133,19 @@ describe('FirePullHint', () => {
     expect(lineOpacity(tree, RELEASE_HINT)).toBe(1);
   });
 
-  it('Arkadaş modunda ürün adı "spark" — "fire" hiçbir satırda geçmiyor', () => {
+  it('Flört modunda ürün adı "fire" — "spark" hiçbir satırda geçmiyor', () => {
     // Mod prop'la geliyor (DiscoverScreen > useAppMode); ad hâlâ küçük harf,
-    // jest fısıltısı kaydı korunuyor.
+    // jest fısıltısı kaydı korunuyor. Bu build'de Flört seçilemiyor ama
+    // bileşen iki modu da çizebiliyor.
     pull.value = 0.5;
-    const tree = render(<FirePullHint mode="Friends" />);
+    const tree = render(<FirePullHint mode="Dating" />);
     expect(
-      lineOpacity(tree, withFire(tr.discover.swipe.firePullHint, 'spark')),
+      lineOpacity(tree, withFire(tr.discover.swipe.firePullHint, 'fire')),
     ).toBe(1);
     expect(
-      lineOpacity(tree, withFire(tr.discover.swipe.fireReleaseHint, 'spark')),
+      lineOpacity(tree, withFire(tr.discover.swipe.fireReleaseHint, 'fire')),
     ).toBe(0);
-    expect(tree.queryByText(/fire/i)).toBeNull();
+    expect(tree.queryByText(/spark/i)).toBeNull();
   });
 
   it('devir SADECE eşiğe bağlı — çekişle scrub edilemiyor', () => {

@@ -3,4 +3,4 @@
  * `contactSupport` aksiyonu aynı adresi kullanıyor; iki yerde ayrı sabit
  * tutulunca biri güncellenip diğeri unutuluyordu.
  */
-export const SUPPORT_EMAIL = "destek@lit.com";
+export const SUPPORT_EMAIL = "info@4ourstack.com";

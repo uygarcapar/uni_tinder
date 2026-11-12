@@ -45,9 +45,10 @@ afterEach(() => {
 });
 
 describe("modeTheme — mod farkındalı getter'lar", () => {
-  it("iki modu tanır, varsayılan Dating", () => {
-    expect(APP_MODES).toEqual(["Dating", "Friends"]);
-    expect(DEFAULT_APP_MODE).toBe("Dating");
+  it("bu build'de yalnız Arkadaş seçilebilir, varsayılan Friends", () => {
+    // Flört derleme zamanında kapalı (App Store 4.3(b)); uzaktan açılamaz.
+    expect(APP_MODES).toEqual(["Friends"]);
+    expect(DEFAULT_APP_MODE).toBe("Friends");
   });
 
   it("vurgu rengi moda göre ayrışıyor", () => {
@@ -180,37 +181,34 @@ describe("Fire/Spark yüzeyleri tek moddan okuyor", () => {
 
 describe("modePrefs — kalıcılık", () => {
   it("yazılmamışken varsayılana düşer", () => {
-    expect(loadAppMode(USER)).toBe("Dating");
+    expect(loadAppMode(USER)).toBe("Friends");
   });
 
   it("userId yoksa ne okur ne yazar", () => {
     saveAppMode(null, "Friends");
-    expect(loadAppMode(null)).toBe("Dating");
-    expect(loadAppMode(undefined)).toBe("Dating");
+    expect(loadAppMode(null)).toBe("Friends");
+    expect(loadAppMode(undefined)).toBe("Friends");
   });
 
   it("gidiş-dönüş", () => {
     saveAppMode(USER, "Friends");
     expect(loadAppMode(USER)).toBe("Friends");
-    saveAppMode(USER, "Dating");
-    expect(loadAppMode(USER)).toBe("Dating");
   });
 
-  it("kullanıcı başına ayrı", () => {
-    saveAppMode(USER, "Friends");
-    saveAppMode("user-2", "Dating");
+  it("eski sürümden kalan Flört seçimi varsayılana düşer", () => {
+    // Bu build'de Flört seçilemiyor (modeTheme > APP_MODES).
+    saveAppMode(USER, "Dating");
     expect(loadAppMode(USER)).toBe("Friends");
-    expect(loadAppMode("user-2")).toBe("Dating");
   });
 
   it("bozuk JSON varsayılana düşer", () => {
     appPrefs.set(`appMode:${USER}`, "{not json");
-    expect(loadAppMode(USER)).toBe("Dating");
+    expect(loadAppMode(USER)).toBe("Friends");
   });
 
   it("eski şema sürümü varsayılana düşer", () => {
     appPrefs.set(`appMode:${USER}`, JSON.stringify({ v: 0, mode: "Friends" }));
-    expect(loadAppMode(USER)).toBe("Dating");
+    expect(loadAppMode(USER)).toBe("Friends");
   });
 
   it("kurcalanmış mod değeri varsayılana düşer", () => {
@@ -219,6 +217,7 @@ describe("modePrefs — kalıcılık", () => {
       `appMode:${USER}`,
       JSON.stringify({ v: 1, mode: "StudyPartner" as AppMode }),
     );
-    expect(loadAppMode(USER)).toBe("Dating");
+    expect(loadAppMode(USER)).toBe("Friends");
   });
 });
+

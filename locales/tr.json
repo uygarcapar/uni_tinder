@@ -1,9 +1,9 @@
 {
   "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
-  "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
-  "NSCameraUsageDescription": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
-  "NSLocationWhenInUseUsageDescription": "Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.",
+  "NSPhotoLibraryUsageDescription": "Profiline ve paylaşımlarına fotoğraf ekleyebilmen için galeri erişimine izin vermen gerekir.",
+  "NSCameraUsageDescription": "Profilin, paylaşımların ve kampüs anların için fotoğraf çekebilmen ve profil fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
+  "NSLocationWhenInUseUsageDescription": "Şehrini göstermek, kişilerin ne kadar uzakta olduğunu göstermek ve kampüs anı paylaşırken kampüste olduğunu doğrulamak için konumunu kullanırız.",
   "NSLocationAlwaysAndWhenInUseUsageDescription": "Kampüsüne vardığında seni haberdar edebilmemiz ve kampüsteyken paylaşım yapabilmen için konumun arka planda da kullanılır. Lit seni sürekli takip etmez; yalnızca kendi kampüsünün sınırına girip çıktığını bilir.",
   "NSLocationAlwaysUsageDescription": "Kampüsüne vardığında seni haberdar edebilmemiz ve kampüsteyken paylaşım yapabilmen için konumun arka planda da kullanılır. Lit seni sürekli takip etmez; yalnızca kendi kampüsünün sınırına girip çıktığını bilir.",
-  "NSMotionUsageDescription": "Fotoğraf çekerken kameranın doğru yönlenmesi ve konumunun daha isabetli belirlenmesi için hareket verisi kullanılır."
+  "NSMotionUsageDescription": "Hareket verisi yalnızca fotoğraf çekerken kameranın doğru yönlenmesi için kullanılır."
 }

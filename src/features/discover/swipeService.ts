@@ -1,5 +1,6 @@
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import { DEFAULT_APP_MODE } from '@/features/discover/modeTheme';
 import { noteTargetPayload } from '@/features/discover/noteTarget';
 import type {
   PotentialMatchesResult,
@@ -46,16 +47,19 @@ const emptyResult: PotentialMatchesResult = {
 };
 
 /**
- * `mode` WIRE'DA OPSİYONEL ve bu bilinçli: sunucu alanı görmediğinde "Dating"
- * sayıyor (eski istemci sözleşmesi). Boş/null modu HİÇ GÖNDERMİYORUZ —
- * `mode=` biçiminde boş bir parametre sunucuda enum çözümlemesini patlatır.
+ * `mode` wire'da opsiyonel ama sunucu alanı görmediğinde "Dating" sayıyor
+ * (eski istemci sözleşmesi). Bu build'de Flört yok (bkz. modeTheme >
+ * APP_MODES), o yüzden mod bilinmiyorsa da HER ZAMAN açık gönderiliyor:
+ * `DEFAULT_APP_MODE`. Boş string asla gitmiyor — `mode=` biçiminde boş bir
+ * parametre sunucuda enum çözümlemesini patlatır.
  */
 const modeParam = (mode?: string | null): string =>
-  mode ? `&mode=${encodeURIComponent(mode)}` : "";
+  `&mode=${encodeURIComponent(mode || DEFAULT_APP_MODE)}`;
 
-/** Gövdeli isteklerin karşılığı: alan ya dolu gidiyor ya hiç gitmiyor. */
-const modeBody = (mode?: string | null): Record<string, string> =>
-  mode ? { mode } : {};
+/** Gövdeli isteklerin karşılığı: alan her zaman dolu gidiyor. */
+const modeBody = (mode?: string | null): Record<string, string> => ({
+  mode: mode || DEFAULT_APP_MODE,
+});
 
 /**
  * Kararın HANGİ YÜZEYDEN geldiği — kampüs anları için.
@@ -172,7 +176,7 @@ class SwipeService {
     // Kart MODA GÖRE geliyor: `prompts` o modun cevaplarını, niyet alanı da
     // o modun niyetini taşıyor (bkz. backend ProfileCardDto notu).
     return api.get(
-      `${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}${mode ? `?mode=${encodeURIComponent(mode)}` : ""}`,
+      `${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}?mode=${encodeURIComponent(mode || DEFAULT_APP_MODE)}`,
     );
   }
 

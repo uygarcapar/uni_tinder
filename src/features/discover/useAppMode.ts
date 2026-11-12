@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppSelector } from "@/shared/hooks/redux";
 import uiBus from "@/shared/services/uiBus";
 import { loadAppMode, peekAppMode, saveAppMode } from "./modePrefs";
-import { DEFAULT_APP_MODE, isAppMode, type AppMode } from "./modeTheme";
+import { DEFAULT_APP_MODE, isEnabledAppMode, type AppMode } from "./modeTheme";
 
 /**
  * Seçili uygulama modunun OKUMA/YAZMA kapısı — Keşif ve Beğeniler aynı değeri
@@ -48,14 +48,14 @@ export function useAppMode(): {
       const next = payload?.mode;
       // Kurcalanmış/eski payload state'e girmesin — sorgu parametresine
       // gidiyor ve sunucu tanımadığı `mode`a 400 döner.
-      if (isAppMode(next)) setLocal(next);
+      if (isEnabledAppMode(next)) setLocal(next);
     });
     return off;
   }, []);
 
   const setMode = useCallback(
     (next: AppMode) => {
-      if (!isAppMode(next)) return;
+      if (!isEnabledAppMode(next)) return;
       writeAppMode(userId, next);
       // Kendi state'i olaydan BAĞIMSIZ hizalanıyor: `writeAppMode` değer
       // zaten aynıysa olay atmıyor, ama bu hook'un çağıranı yine de güncel
@@ -96,7 +96,7 @@ export function writeAppMode(
   userId: string | null | undefined,
   next: AppMode,
 ): boolean {
-  if (!isAppMode(next)) return false;
+  if (!isEnabledAppMode(next)) return false;
   const changed = peekAppMode(userId) !== next;
   saveAppMode(userId, next);
   if (changed) uiBus.emit(APP_MODE_EVENT, { mode: next });

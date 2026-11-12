@@ -39,7 +39,11 @@ const ModeTitle = memo(function ModeTitle({
   testID,
 }: {
   mode: AppMode;
-  onPress: () => void;
+  /**
+   * Yoksa başlık düz yazı: chevron çizilmiyor, dokunuş bir şey açmıyor. Bu
+   * build'de tek mod var (bkz. modeTheme > MODE_SWITCHING_ENABLED).
+   */
+  onPress?: () => void;
   /** e2e seçicisi — mod seçici sheet'inin tetiği. */
   testID?: string;
   /**
@@ -82,6 +86,8 @@ const ModeTitle = memo(function ModeTitle({
         testID={testID}
         activeOpacity={1}
         onPress={onPress}
+        disabled={!onPress}
+        accessibilityRole={onPress ? "button" : "header"}
         // Dokunma hedefi metinden bir tık geniş (parmak için), ama satırın
         // tamamı kadar değil.
         hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
@@ -136,6 +142,7 @@ const ModeTitle = memo(function ModeTitle({
 
             Opaklık burada güvenli: cam YOK (başlık düz yazı), yani
             "ata zincirinde opacity<1 → efekt render edilmiyor" tuzağı geçersiz. */}
+        {onPress ? (
         <View style={{ width: CHEVRON_SIZE, height: CHEVRON_SIZE }}>
           <SFIcon
             name="chevron.down"
@@ -172,6 +179,7 @@ const ModeTitle = memo(function ModeTitle({
             />
           </Animated.View>
         </View>
+        ) : null}
       </TouchableOpacity>
     </View>
   );

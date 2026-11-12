@@ -37,18 +37,38 @@ import {
 
 export type AppMode = "Dating" | "Friends";
 
-export const APP_MODES: readonly AppMode[] = ["Dating", "Friends"];
+/**
+ * Bu build'de SEÇİLEBİLEN modlar. Flört bu sürümde YOK (2026-11-12, App Store
+ * 4.3(b): uygulama "arkadaş edin" olarak listeleniyor). Bu bir DERLEME ZAMANI
+ * sabiti, uzaktan bayrak DEĞİL — sunucudan açılabilen bir Flört, onaydan sonra
+ * gizli özellik açmak demek olurdu (2.5.19). Flört geri gelecekse yeni build ve
+ * yeni review ile gelir.
+ *
+ * `AppMode` tipi iki değeri de tutmaya devam ediyor: sunucu eski hesaplarda
+ * Dating payload'ı (eşleşme, beğeni) gönderebilir ve tip koruması onları
+ * çözebilmeli. Seçilemeyen mod hiçbir yerde AKTİF mod olmuyor
+ * (bkz. `isEnabledAppMode`, modePrefs, useAppMode).
+ */
+export const APP_MODES: readonly AppMode[] = ["Friends"];
+
+/** Birden fazla mod yoksa mod seçici çizilmiyor (Keşif başlığı, Profil). */
+export const MODE_SWITCHING_ENABLED = APP_MODES.length > 1;
 
 /**
- * Varsayılan mod. Eski istemci sözleşmesinin istemci-içi aynası: sunucu
- * `mode` görmediğinde Dating sayıyor, istemci de bilmediğinde Dating'e düşer
- * (modPrefs'te kayıt yoksa, payload'da alan yoksa).
+ * Varsayılan mod — bu build'in tek modu. İstemci bilmediğinde (modePrefs'te
+ * kayıt yok, payload'da alan yok) buna düşer ve istekte `mode`u HER ZAMAN açık
+ * gönderir: sunucu `mode` görmezse Dating sayıyor.
  */
-export const DEFAULT_APP_MODE: AppMode = "Dating";
+export const DEFAULT_APP_MODE: AppMode = "Friends";
 
 /** Bilinmeyen diske/payload'a karşı tip koruması (modePrefs + bildirimler). */
 export function isAppMode(value: unknown): value is AppMode {
   return value === "Dating" || value === "Friends";
+}
+
+/** Bu build'de aktif olabilen bir mod mu (bkz. APP_MODES). */
+export function isEnabledAppMode(value: unknown): value is AppMode {
+  return isAppMode(value) && APP_MODES.includes(value);
 }
 
 /**

@@ -148,7 +148,7 @@ function buildStore() {
             partnerDisplayName: 'Ayşe',
             partnerProfileImageUrl: null,
             isActive: true,
-            mode: 'Dating',
+            mode: 'Friends',
             unreadCount: 0,
             lastMessageAt: new Date().toISOString(),
           },
@@ -243,7 +243,7 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     // modun sohbetine navigasyon yapılıyordu. Mod süzgecinin SQL tarafı
     // messageSearchRepo.test.ts'te; burada sınanan şey EKRANIN onu GEÇMESİ.
     expect(mockSearchMessages).toHaveBeenCalledWith('sinema', {
-      mode: 'Dating',
+      mode: 'Friends',
       limit: expect.any(Number),
     });
     // Üç sekme sayfası (Tümü/Okunmamış/Kapalı) aynı anda canlı (bkz. ekranın
@@ -328,7 +328,7 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
 
     expect(mockSearchMessages).toHaveBeenCalledTimes(1);
     expect(mockSearchMessages).toHaveBeenCalledWith('sin', {
-      mode: 'Dating',
+      mode: 'Friends',
       limit: expect.any(Number),
     });
   });

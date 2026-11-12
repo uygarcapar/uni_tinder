@@ -268,7 +268,8 @@ export const API_ENDPOINTS = {
   //     (FeedReplyQueryService), istenirse doldurulacak.
   FEED_POST_AUTHOR_PROFILE: (id: string, mode?: string | null) =>
     `/api/feed/posts/${encodeURIComponent(id)}/author-profile${
-      mode ? `?mode=${encodeURIComponent(mode)}` : ""
+      // Modsuz çağrı sunucuda Dating sayılıyor; bu build'in tek modu Friends.
+      `?mode=${encodeURIComponent(mode || "Friends")}`
     }`,
   // Bir gönderiye BİR KEZ yanıt verilebilir (UT-7323). Yanıt verene sahibin
   // kabul/red kararı BİLDİRİLMEZ ve hak geri gelmez; kabulde MatchNotification.

@@ -74,6 +74,8 @@ import {
   messageDeleted,
   messageEdited,
 } from "@/features/chat/chatSlice";
+import { queryClient } from "@/shared/queries/queryClient";
+import { invalidateRelationSurfaces } from "@/shared/services/relationSurfaces";
 import chatService, { HISTORY_PAGE_SIZE } from "@/features/chat/chatService";
 import { newClientMessageId } from "@/features/chat/clientMessageId";
 import {
@@ -2289,13 +2291,19 @@ function ChatScreen({
     try {
       await moderationService.blockUser(partner.userId);
       Alert.alert(t("chat.block.title"), t("chat.block.message"));
+      // Engelleme eşleşmeyi KALICI kapatır — liste satırı aktif kalmasın ve
+      // kişi akış/deste/beğeniler/kampüs yüzeylerinden hemen düşsün
+      // (MessagesScreen > handleSheetBlock ve şikayet+engel yolu ile aynı).
+      dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
+      dispatch(fetchConversations({ force: true }));
+      invalidateRelationSurfaces(queryClient);
       navigation.goBack();
     } catch (err: any) {
       // UT-6801 (kendini engelleme) istemci bug'ına yakın ama gösteriliyor:
       // partner id'si karışmışsa kullanıcı en azından neden olmadığını görür.
       Alert.alert(t("common.error"), chatErrorText(err, t, "chat.block.error"));
     }
-  }, [partner?.userId, navigation, t]);
+  }, [partner?.userId, conversationId, dispatch, navigation, t]);
 
   const closePartnerProfile = useCallback(() => {
     setProfileVisible(false);

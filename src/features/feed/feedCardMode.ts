@@ -1,4 +1,4 @@
-import { isAppMode, type AppMode } from "@/features/discover/modeTheme";
+import { isEnabledAppMode, type AppMode } from "@/features/discover/modeTheme";
 import { isUnlockedLike } from "@/features/discover/likeUnlock";
 
 /**
@@ -284,7 +284,9 @@ export function normalizeModes(value: unknown): AppMode[] {
   if (!Array.isArray(value)) return [];
   const out: AppMode[] = [];
   for (const raw of value) {
-    if (isAppMode(raw) && !out.includes(raw)) out.push(raw);
+    // Bu build'de seçilemeyen mod (Flört) listeye girmiyor: yazar yalnız
+    // orada açıksa kart salt okunur kalır (bkz. modeTheme > APP_MODES).
+    if (isEnabledAppMode(raw) && !out.includes(raw)) out.push(raw);
   }
   return out;
 }

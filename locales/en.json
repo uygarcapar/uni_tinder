@@ -1,9 +1,9 @@
 {
   "NSMicrophoneUsageDescription": "Lit needs microphone access so you can send voice messages.",
-  "NSPhotoLibraryUsageDescription": "Lit needs photo library access so you can choose your profile photos.",
-  "NSCameraUsageDescription": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
-  "NSLocationWhenInUseUsageDescription": "Lit needs your location to show your city and the people near you.",
+  "NSPhotoLibraryUsageDescription": "Lit needs photo library access so you can choose photos for your profile and posts.",
+  "NSCameraUsageDescription": "Lit needs camera access so you can take photos for your profile, posts and campus moments, and verify that your profile photos are really you.",
+  "NSLocationWhenInUseUsageDescription": "Lit uses your location to show your city, show how far away people are and check that you are on campus when you post a campus moment.",
   "NSLocationAlwaysAndWhenInUseUsageDescription": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
   "NSLocationAlwaysUsageDescription": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
-  "NSMotionUsageDescription": "Lit uses motion data to orient the camera correctly while you take a photo and to improve location accuracy."
+  "NSMotionUsageDescription": "Lit uses motion data only to orient the camera correctly while you take a photo."
 }

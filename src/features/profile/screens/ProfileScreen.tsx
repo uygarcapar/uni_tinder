@@ -113,6 +113,7 @@ import {
 // tutmuyor.
 import { useAppMode } from "@/features/discover/useAppMode";
 import {
+  MODE_SWITCHING_ENABLED,
   modeFireGradient,
   modeFireNameKey,
   type AppMode,
@@ -2504,7 +2505,11 @@ export default function ProfileScreen() {
                     size={HERO_AVATAR}
                     loading={!myProfile}
                     onPress={() => mainPhoto && setPreviewVisible(true)}
-                    onLongPress={() => setModePickerVisible(true)}
+                    onLongPress={
+                      MODE_SWITCHING_ENABLED
+                        ? () => setModePickerVisible(true)
+                        : undefined
+                    }
                     ringColors={modeFireGradient(mode)}
                   />
 

@@ -609,7 +609,7 @@ describe('not butonu', () => {
     const onNote = jest.fn();
     render(
       <FeedPostCard
-        post={post({ note: { state: 'Ok', availableModes: ['Dating'] } })}
+        post={post({ note: { state: 'Ok', availableModes: ['Friends'] } })}
         onNote={onNote}
       />,
     );
@@ -640,7 +640,7 @@ describe('not butonu', () => {
   });
 
   it('onNote verilmezse çizilmiyor — basılacak yeri olmayan buton olmaz', () => {
-    render(<FeedPostCard post={post({ note: { state: 'Ok', availableModes: ['Dating'] } })} />);
+    render(<FeedPostCard post={post({ note: { state: 'Ok', availableModes: ['Friends'] } })} />);
     expect(screen.queryByTestId('feed-post-note')).toBeNull();
   });
 });
@@ -648,7 +648,7 @@ describe('not butonu', () => {
 it('state Ok ama yazar null ise buton çizilmiyor (ölü buton)', () => {
   render(
     <FeedPostCard
-      post={post({ author: null, note: { state: 'Ok', availableModes: ['Dating'] } })}
+      post={post({ author: null, note: { state: 'Ok', availableModes: ['Friends'] } })}
       onNote={jest.fn()}
     />,
   );

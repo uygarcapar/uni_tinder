@@ -1,8 +1,7 @@
 import uiBus from "@/shared/services/uiBus";
 import { APP_MODE_EVENT, readAppModeFor } from "@/features/discover/useAppMode";
 import {
-  DEFAULT_APP_MODE,
-  isAppMode,
+  isEnabledAppMode,
   type AppMode,
 } from "@/features/discover/modeTheme";
 
@@ -43,11 +42,12 @@ export function feedAllowedInMode(mode: unknown): boolean {
 }
 
 /**
- * Oturumun modu. Tohumlanmadan önce `DEFAULT_APP_MODE` (Flört) — yani kapalı.
- * "Bilmiyorsak gizli taraf doğru", latch'in `unknown → kapalı` kuralının
- * aynısı: olmayan bir sekmeye yönlendirmek ölü dokunuş üretir.
+ * Oturumun modu. Tohumlanmadan önce `null` — yani kapalı. "Bilmiyorsak gizli
+ * taraf doğru", latch'in `unknown → kapalı` kuralının aynısı: olmayan bir
+ * sekmeye yönlendirmek ölü dokunuş üretir. (Eskiden bu boşluğu varsayılan
+ * Flört dolduruyordu; varsayılan artık Arkadaş, o yüzden açık bir `null`.)
  */
-let sessionMode: AppMode = DEFAULT_APP_MODE;
+let sessionMode: AppMode | null = null;
 
 /** Açılışta (auth çözüldükten sonra) bir kez — bkz. AppNavigator. */
 export function initFeedMode(userId?: string | null): void {
@@ -56,7 +56,7 @@ export function initFeedMode(userId?: string | null): void {
 
 /** Çıkışta — sonraki kullanıcının oturumuna önceki modun sızmaması için. */
 export function resetFeedModeSession(): void {
-  sessionMode = DEFAULT_APP_MODE;
+  sessionMode = null;
 }
 
 // Mod oturum içinde değişiyor (Keşif başlığı, Profil avatarı, bildirim/toast
@@ -64,7 +64,7 @@ export function resetFeedModeSession(): void {
 // singleton, uygulama ayakta olduğu sürece güncel kalması gerekiyor.
 uiBus.on(APP_MODE_EVENT, (payload: any) => {
   // Kurcalanmış/bilinmeyen değer aynayı bozmasın (useAppMode'daki aynı kapı).
-  if (isAppMode(payload?.mode)) sessionMode = payload.mode;
+  if (isEnabledAppMode(payload?.mode)) sessionMode = payload.mode;
 });
 
 /** Hook'suz yollar için (feedEntry > openFeed). */

@@ -64,13 +64,13 @@ describe('fetchWhoLikedMe — mod süzgeci', () => {
     // Parametrenin atlanması sunucuda "Dating" demekle aynı sonucu verse de
     // sözleşmeyi örtük bırakırdı; uç her zaman açıkça çağrılıyor.
     await run(USER);
-    expect(mockGetWhoLikedMe).toHaveBeenCalledWith(1, 10, 10, 'Dating');
+    expect(mockGetWhoLikedMe).toHaveBeenCalledWith(1, 10, 10, 'Friends');
   });
 
   it('kullanıcı kimliği yoksa (henüz oturum yok) varsayılan mod', async () => {
     saveAppMode(USER, 'Friends');
     await run(null);
-    expect(mockGetWhoLikedMe).toHaveBeenCalledWith(1, 10, 10, 'Dating');
+    expect(mockGetWhoLikedMe).toHaveBeenCalledWith(1, 10, 10, 'Friends');
   });
 
   it('sayaç toplamdan, küme yüklenen sayfadan — mod eklenirken bozulmadı', async () => {

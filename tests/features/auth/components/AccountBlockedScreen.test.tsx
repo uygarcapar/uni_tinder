@@ -107,7 +107,7 @@ describe('AccountBlockedScreen', () => {
     fireEvent.press(tree.getByText("Destek'e Yaz"));
 
     expect(openURL).toHaveBeenCalledWith(
-      `mailto:destek@lit.com?subject=${encodeURIComponent('Hesap itirazı (UT-1007)')}`,
+      `mailto:info@4ourstack.com?subject=${encodeURIComponent('Hesap itirazı (UT-1007)')}`,
     );
     openURL.mockRestore();
   });

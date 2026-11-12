@@ -45,6 +45,8 @@ import {
   conversationDeactivated,
   conversationRestored,
 } from "@/features/chat/chatSlice";
+import { queryClient } from "@/shared/queries/queryClient";
+import { invalidateRelationSurfaces } from "@/shared/services/relationSurfaces";
 import chatService, { HISTORY_PAGE_SIZE } from "@/features/chat/chatService";
 import { useDrafts } from "@/features/chat/draftStore";
 import {
@@ -1102,6 +1104,7 @@ export default function MessagesScreen() {
           }),
         );
         dispatch(fetchConversations({ force: true }));
+        invalidateRelationSurfaces(queryClient);
       } catch (err: any) {
         Alert.alert(t("common.error"), chatErrorText(err, t, "chat.block.error"));
       }

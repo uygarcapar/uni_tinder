@@ -59,8 +59,9 @@ describe('swipeService.likeUser — kaynak alanları', () => {
     const body = post.mock.calls[0][1];
     expect(body.source).toBe('CampusMoment');
     expect('momentId' in body).toBe(false);
-    // Mod boşsa o da hiç gitmiyor (sunucuda enum çözümlemesini patlatıyor).
-    expect('mode' in body).toBe(false);
+    // Mod boşsa bu build'in tek modu gidiyor: modsuz istek sunucuda Dating
+    // sayılıyor, boş string de enum çözümlemesini patlatıyor.
+    expect(body.mode).toBe('Friends');
   });
 
   it('GEÇME swipe ucuna GİTMİYOR — kampüsün kendi ucu var', () => {

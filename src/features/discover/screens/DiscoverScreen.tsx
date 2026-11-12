@@ -108,6 +108,7 @@ import ModeSetupSheet from "../components/ModeSetupSheet";
 import { useAppMode } from "../useAppMode";
 import {
   APP_MODES,
+  MODE_SWITCHING_ENABLED,
   modeAccent,
   modeFireNameKey,
   type AppMode,
@@ -3669,7 +3670,11 @@ export default function DiscoverScreen() {
         <ModeTitle
           testID="discover-btn-mode"
           mode={mode}
-          onPress={() => setModePickerVisible(true)}
+          onPress={
+            MODE_SWITCHING_ENABLED
+              ? () => setModePickerVisible(true)
+              : undefined
+          }
           onSurface={headerOnSurface}
         />
 
